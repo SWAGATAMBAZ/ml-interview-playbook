@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cheat sheet & model chooser · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script>
+</head>
+<body data-page="cheatsheet">
+<main>
+<div class="eyebrow">Practice · The night-before-the-interview page</div>
+<h1>Cheat sheet & model chooser</h1>
+<p class="lede">Everything you need to revise in 30 minutes: an interactive “which model?” chooser, a side-by-side comparison of every model, all the assumptions in one table, key hyperparameters, must-know formulas and a final checklist. Printable (Ctrl/⌘ + P).</p>
+<div class="toc"><a href="#chooser">Model chooser</a><a href="#compare">Model comparison</a><a href="#assumptions">Assumptions</a><a href="#hp">Key hyperparameters</a><a href="#formulas">Formulas</a><a href="#scaling">Scaling & encoding</a><a href="#top">Top 30 questions</a><a href="#day">Interview-day checklist</a></div>
+
+<h2 id="chooser">Which model should I start with?</h2>
+<div class="widget" id="chooser">
+<div class="widget-title">Model chooser</div><div class="widget-sub">Answer a few questions; the recommendation updates live.</div>
+<div class="chooser-q"><b>1. What's the task?</b><br><div class="seg" data-q="task"><button data-v="cls" class="on">Classification</button><button data-v="reg">Regression</button><button data-v="clu">Clustering</button><button data-v="anom">Anomaly detection</button><button data-v="ts">Forecasting</button><button data-v="dim">Dim. reduction</button></div></div>
+<div class="chooser-q"><b>2. Data type</b><br><div class="seg" data-q="data"><button data-v="tab" class="on">Tabular, mixed</button><button data-v="text">Text / sparse</button><button data-v="img">Images / audio</button></div></div>
+<div class="chooser-q"><b>3. Rows</b><br><div class="seg" data-q="n"><button data-v="small">&lt; 5k</button><button data-v="med" class="on">5k–1M</button><button data-v="big">&gt; 1M</button></div></div>
+<div class="chooser-q"><b>4. Interpretability required?</b><br><div class="seg" data-q="interp"><button data-v="high">Must explain (regulated)</button><button data-v="some" class="on">Nice to have</button><button data-v="none">Accuracy first</button></div></div>
+<div class="chooser-q"><b>5. Latency budget</b><br><div class="seg" data-q="lat"><button data-v="tight">&lt; 10 ms / edge</button><button data-v="normal" class="on">Normal</button><button data-v="batch">Batch</button></div></div>
+<div class="readout" id="chooserOut" style="font-family:var(--sans)"></div>
+</div>
+
+<h2 id="compare">Model comparison</h2>
+<div class="table-wrap"><table>
+<tr><th>Model</th><th>Type</th><th>Scaling?</th><th>Handles non-linearity</th><th>Interpretability</th><th>Train / predict speed</th><th>Outlier sensitivity</th><th>Best for</th></tr>
+<tr><td><a href="linear-regression.html">Linear regression</a></td><td>Parametric</td><td>For GD/regularised</td><td>No (engineer features)</td><td>High</td><td>Fast / fast</td><td>High</td><td>Baselines, inference, additive effects</td></tr>
+<tr><td><a href="regularization.html">Ridge / Lasso / EN</a></td><td>Parametric</td><td>Yes</td><td>No</td><td>High (Lasso sparse)</td><td>Fast / fast</td><td>High</td><td>Many / correlated features, p &gt; n</td></tr>
+<tr><td><a href="logistic-regression.html">Logistic regression</a></td><td>Parametric</td><td>Yes (regularised)</td><td>No</td><td>High (odds ratios)</td><td>Fast / fast</td><td>Medium</td><td>Credit scoring, text, calibrated baseline</td></tr>
+<tr><td><a href="knn.html">kNN</a></td><td>Non-parametric, lazy</td><td>Yes!</td><td>Yes</td><td>Medium (by example)</td><td>None / slow</td><td>Medium</td><td>Small low-d data, similarity search</td></tr>
+<tr><td><a href="naive-bayes.html">Naive Bayes</a></td><td>Generative</td><td>No</td><td>Limited</td><td>Medium</td><td>Very fast / very fast</td><td>Low</td><td>Text, tiny data, streaming</td></tr>
+<tr><td><a href="svm.html">SVM</a></td><td>Max-margin</td><td>Yes!</td><td>Yes (kernels)</td><td>Low (kernel)</td><td>Slow on big n / medium</td><td>Medium</td><td>High-d small/medium data</td></tr>
+<tr><td><a href="decision-trees.html">Decision tree</a></td><td>Non-parametric</td><td>No</td><td>Yes</td><td>High (shallow)</td><td>Fast / very fast</td><td>Low (features)</td><td>Rules, explanation, ensemble base</td></tr>
+<tr><td><a href="random-forest.html">Random Forest</a></td><td>Bagging</td><td>No</td><td>Yes</td><td>Medium (importance, SHAP)</td><td>Medium (parallel) / medium</td><td>Low</td><td>Robust tabular baseline</td></tr>
+<tr><td><a href="boosting.html">GBM / XGBoost / LightGBM / CatBoost</a></td><td>Boosting</td><td>No</td><td>Yes</td><td>Medium (SHAP)</td><td>Medium / fast</td><td>Medium</td><td>Best accuracy on tabular data</td></tr>
+<tr><td><a href="kmeans.html">K-means</a></td><td>Clustering</td><td>Yes</td><td>Convex clusters only</td><td>High (centroids)</td><td>Fast</td><td>High</td><td>Segmentation</td></tr>
+<tr><td><a href="clustering.html">DBSCAN / GMM / hierarchical</a></td><td>Clustering</td><td>Yes</td><td>Yes / elliptical / depends</td><td>Medium</td><td>Medium / medium / slow</td><td>Low / medium / varies</td><td>Arbitrary shapes, soft clusters, taxonomy</td></tr>
+<tr><td><a href="dim-reduction.html">PCA</a></td><td>Linear projection</td><td>Yes</td><td>No (kernel PCA: yes)</td><td>Low–medium</td><td>Fast</td><td>High</td><td>Compression, decorrelation</td></tr>
+<tr><td>Neural networks</td><td>Parametric (huge)</td><td>Yes</td><td>Yes</td><td>Low</td><td>Slow (GPU) / medium</td><td>Medium</td><td>Images, text, audio, very large data</td></tr>
+</table></div>
+
+<h2 id="assumptions">Assumptions at a glance</h2>
+<div class="table-wrap"><table>
+<tr><th>Model / test</th><th>Key assumptions</th></tr>
+<tr><td>Linear regression</td><td>Linearity; independent errors; homoscedasticity; normal errors (for inference); no perfect multicollinearity; exogeneity</td></tr>
+<tr><td>Logistic regression</td><td>Linearity in the log-odds; independent observations; little multicollinearity; no extreme outliers; enough events per variable</td></tr>
+<tr><td>Naive Bayes</td><td>Features conditionally independent given the class; (Gaussian NB) normal features per class</td></tr>
+<tr><td>LDA / QDA</td><td>Gaussian classes; LDA: shared covariance (QDA: class-specific)</td></tr>
+<tr><td>kNN</td><td>Nearby points share labels (smoothness); meaningful distance metric; scaled features</td></tr>
+<tr><td>SVM</td><td>Classes separable (after kernel mapping) with a margin; scaled features</td></tr>
+<tr><td>Decision trees / ensembles</td><td>Few: rows i.i.d.; axis-aligned splits can approximate the function</td></tr>
+<tr><td>K-means</td><td>Spherical, similar-size, similar-density clusters; K known; Euclidean geometry</td></tr>
+<tr><td>GMM</td><td>Data from a mixture of Gaussians</td></tr>
+<tr><td>PCA</td><td>Linear structure; variance = information; scaled features</td></tr>
+<tr><td>ARIMA</td><td>Stationarity after differencing; linear dependence on past values/errors; white-noise residuals</td></tr>
+<tr><td>t-test</td><td>Independent samples; approximately normal means (CLT); Welch handles unequal variances</td></tr>
+<tr><td>χ² test</td><td>Independent observations; expected counts ≥ 5 per cell</td></tr>
+<tr><td>A/B test</td><td>Random assignment; stable unit treatment (no interference); consistent measurement; fixed horizon (no peeking)</td></tr>
+</table></div>
+
+<h2 id="hp">The hyperparameters you must know</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Model</th><th>Tune first</th><th>Direction to reduce overfitting</th></tr>
+<tr><td>Ridge/Lasso</td><td>alpha (l1_ratio)</td><td>↑ alpha</td></tr>
+<tr><td>Logistic / SVM</td><td>C (gamma, kernel)</td><td>↓ C, ↓ gamma</td></tr>
+<tr><td>kNN</td><td>n_neighbors, weights, metric</td><td>↑ k</td></tr>
+<tr><td>Decision tree</td><td>max_depth, min_samples_leaf, ccp_alpha</td><td>↓ depth, ↑ min leaf, ↑ ccp_alpha</td></tr>
+<tr><td>Random Forest</td><td>max_features, n_estimators, min_samples_leaf</td><td>↓ max_features, ↑ min leaf (more trees never hurts)</td></tr>
+<tr><td>GBM / XGBoost</td><td>learning_rate + n_estimators (early stopping), max_depth, min_child_weight, subsample, colsample, lambda, gamma</td><td>↓ lr, ↓ depth, ↑ min_child_weight, ↓ subsample, ↑ lambda/gamma</td></tr>
+<tr><td>LightGBM</td><td>num_leaves, min_child_samples, learning_rate, feature_fraction</td><td>↓ num_leaves, ↑ min_child_samples</td></tr>
+<tr><td>K-means / GMM</td><td>K, init, n_init / covariance_type</td><td>—</td></tr>
+<tr><td>DBSCAN</td><td>eps, min_samples</td><td>—</td></tr>
+<tr><td>Naive Bayes</td><td>alpha / var_smoothing</td><td>↑ alpha</td></tr>
+</table></div>
+
+<h2 id="formulas">Must-know formulas</h2>
+<div class="grid two">
+<div class="card"><h4>Regression</h4><p>\(\hat\beta=(X^TX)^{-1}X^Ty\) · Ridge \((X^TX+\alpha I)^{-1}X^Ty\)<br>\(R^2=1-\frac{SSE}{SST}\) · \(R^2_{adj}=1-(1-R^2)\frac{n-1}{n-p-1}\)<br>VIF \(=\frac{1}{1-R_j^2}\)</p></div>
+<div class="card"><h4>Classification</h4><p>\(\sigma(z)=\frac1{1+e^{-z}}\) · log-loss \(-[y\log p+(1-y)\log(1-p)]\)<br>Precision \(\frac{TP}{TP+FP}\) · Recall \(\frac{TP}{TP+FN}\) · F1 \(\frac{2PR}{P+R}\)<br>Odds ratio \(e^{w}\)</p></div>
+<div class="card"><h4>Trees & boosting</h4><p>Gini \(1-\sum p_k^2\) · Entropy \(-\sum p_k\log_2p_k\)<br>XGB leaf \(w^*=-\frac{G}{H+\lambda}\) · gain \(\frac12[\frac{G_L^2}{H_L+\lambda}+\frac{G_R^2}{H_R+\lambda}-\frac{G^2}{H+\lambda}]-\gamma\)<br>Bagging variance \(\rho\sigma^2+\frac{1-\rho}{B}\sigma^2\)</p></div>
+<div class="card"><h4>Unsupervised</h4><p>K-means \(J=\sum_k\sum_{x\in C_k}\lVert x-\mu_k\rVert^2\)<br>Silhouette \(\frac{b-a}{\max(a,b)}\)<br>PCA: eigenvectors of \(\Sigma\); explained var \(\lambda_j/\sum\lambda\)</p></div>
+<div class="card"><h4>Statistics</h4><p>SE \(=\sigma/\sqrt n\) · CI \(\bar x\pm z\,\sigma/\sqrt n\)<br>Two-prop z \(\frac{\hat p_B-\hat p_A}{\sqrt{\hat p(1-\hat p)(1/n_A+1/n_B)}}\)<br>Sample size \(n\approx16\sigma^2/\delta^2\) per group</p></div>
+<div class="card"><h4>Bias–variance & drift</h4><p>\(E[(y-\hat f)^2]=\text{Bias}^2+\text{Var}+\sigma^2\)<br>PSI \(=\sum(A-E)\ln\frac AE\): &lt;0.1 ok, &gt;0.25 alert<br>Bayes \(P(A|B)=\frac{P(B|A)P(A)}{P(B)}\)</p></div>
+</div>
+
+<h2 id="scaling">Scaling & encoding quick rules</h2>
+<ul><li><b>Scale:</b> linear/logistic (regularised or GD), SVM, kNN, K-means, PCA, neural nets. <b>Don't need to:</b> trees, RF, GBMs, Naive Bayes.</li><li><b>Encode:</b> one-hot (low cardinality, linear models), ordinal (ordered or trees), target encoding with cross-fitting (high cardinality), native categorical (LightGBM/CatBoost).</li><li><b>Missing:</b> median + indicator; iterative imputation; native NaN in boosters. Always fit inside the pipeline.</li><li><b>Imbalance:</b> PR-AUC; class weights; threshold tuning; resampling in training folds only.</li></ul>
+
+<h2 id="top">Top 30 questions to rehearse out loud</h2>
+<ol class="two-col">
+<li><a href="fundamentals.html#qa">Explain the bias–variance trade-off</a></li>
+<li><a href="fundamentals.html#fit">How do you detect and prevent overfitting?</a></li>
+<li><a href="linear-regression.html#assumptions">Assumptions of linear regression</a></li>
+<li><a href="linear-regression.html#qa">Homoscedasticity & how to fix heteroscedasticity</a></li>
+<li><a href="linear-regression.html#qa">Multicollinearity & VIF</a></li>
+<li><a href="linear-regression.html#metrics">R² vs adjusted R²</a></li>
+<li><a href="regularization.html#sparsity">Why L1 gives sparsity, L2 doesn't</a></li>
+<li><a href="logistic-regression.html#math">Why log-loss, not MSE, for logistic regression</a></li>
+<li><a href="logistic-regression.html#interpret">Interpret a logistic coefficient</a></li>
+<li><a href="naive-bayes.html#qa">Why is Naive Bayes “naive”, and why does it still work?</a></li>
+<li><a href="svm.html#kernel">Kernel trick; C and gamma</a></li>
+<li><a href="knn.html#curse">Curse of dimensionality</a></li>
+<li><a href="decision-trees.html#criteria">Gini vs entropy; how a tree splits</a></li>
+<li><a href="random-forest.html#math">Why random forests reduce variance</a></li>
+<li><a href="boosting.html#gbm">How gradient boosting works</a></li>
+<li><a href="random-forest.html#vs">Bagging vs boosting; RF vs GBM</a></li>
+<li><a href="xgboost.html#xgb">What makes XGBoost/LightGBM/CatBoost special</a></li>
+<li><a href="kmeans.html#choosek">K-means: choosing K & limitations</a></li>
+<li><a href="dim-reduction.html#pca">PCA intuition & why standardise</a></li>
+<li><a href="metrics.html#cls">Precision vs recall; when to use which</a></li>
+<li><a href="metrics.html#roc">ROC-AUC vs PR-AUC</a></li>
+<li><a href="data-prep.html#imbalance">Handling imbalanced data</a></li>
+<li><a href="data-prep.html#missing">Handling missing values</a></li>
+<li><a href="data-prep.html#leakage">Data leakage examples</a></li>
+<li><a href="validation.html#cv">Cross-validation types; time-series CV</a></li>
+<li><a href="validation.html#tuning">Grid vs random vs Bayesian search</a></li>
+<li><a href="performance.html#framework">Your model is underperforming — what now?</a></li>
+<li><a href="statistics.html#ht">p-values, Type I/II errors, power</a></li>
+<li><a href="statistics.html#ab">Design an A/B test</a></li>
+<li><a href="mlops.html#drift">Data vs concept drift; monitoring in production</a></li>
+</ol>
+
+<h2 id="day">Interview-day checklist</h2>
+<ul>
+<li>For every answer: <b>definition → intuition → maths (one line) → when it breaks → practical example</b>.</li>
+<li>Always mention trade-offs and how you'd validate (“I'd check with CV / an A/B test”).</li>
+<li>Tie models to business outcomes and metrics.</li>
+<li>Have 2–3 project stories (STAR) covering: messy data, a model that failed and why, a production/monitoring lesson, impact in numbers.</li>
+<li>Coding: clarify, write simple correct code, test on a tiny example, discuss complexity.</li>
+<li>Ask clarifying questions in case/design rounds before proposing models.</li>
+</ul>
+
+<script>
+(function () {
+  const st = { task: "cls", data: "tab", n: "med", interp: "some", lat: "normal" };
+  function rec() {
+    const { task, data, n, interp, lat } = st; let r = [], why = [];
+    if (task === "cls" || task === "reg") {
+      if (data === "img") { r = ["Pretrained CNN / vision transformer (fine-tune)"]; why.push("Unstructured data → deep learning with transfer learning."); }
+      else if (data === "text") {
+        r = interp === "high" ? ["TF-IDF + logistic regression (L1/L2)"] : n === "small" ? ["TF-IDF + logistic regression / linear SVM", "Naive Bayes baseline"] : ["Fine-tuned transformer (or sentence embeddings + logistic regression)", "TF-IDF + linear model baseline"];
+        why.push("Sparse high-dimensional text suits linear models; transformers win with enough data.");
+      } else {
+        if (interp === "high") { r = [task === "cls" ? "Logistic regression (with binning/WoE, splines)" : "Linear regression / GAM", "Shallow decision tree or monotone-constrained GBM + SHAP"]; why.push("Regulated settings need transparent, stable models; monotone constraints keep GBMs explainable."); }
+        else if (n === "small") { r = [task === "cls" ? "Regularised logistic regression" : "Ridge / Lasso", "Random Forest", "SVM (RBF) with CV"]; why.push("Small data → low-variance models, careful CV (repeated/stratified)."); }
+        else { r = ["Gradient boosting (LightGBM / XGBoost / CatBoost)", "Random Forest as a robust baseline", task === "cls" ? "Logistic regression baseline" : "Linear baseline"]; why.push("Tabular data with enough rows → boosted trees usually win; keep a linear baseline."); }
+        if (n === "big") why.push("> 1M rows: LightGBM / histogram methods, or SGD-based linear models; subsample for tuning.");
+      }
+      if (lat === "tight") why.push("Tight latency: prefer linear models or small GBMs exported to ONNX/Treelite; precompute features; avoid kNN and kernel SVMs.");
+      if (task === "cls") why.push("Check class balance → PR-AUC, class weights, threshold tuning.");
+    } else if (task === "clu") { r = ["K-means (scaled features) to start", "GMM for soft/elliptical clusters", "HDBSCAN / DBSCAN for irregular shapes + noise", "Hierarchical (Ward) for a dendrogram (n < ~20k)"]; why.push("Choose K with silhouette/BIC + business sense; reduce dimensions with PCA first if d is large."); }
+    else if (task === "anom") { r = ["Isolation Forest", "Local Outlier Factor (local densities)", "Robust z-scores / IQR per feature as a baseline", data === "img" ? "Autoencoder reconstruction error" : "Supervised GBM once labels exist"]; why.push("Set thresholds by alert capacity; evaluate with precision@k on reviewed cases."); }
+    else if (task === "ts") { r = ["Seasonal-naive baseline", n === "small" ? "ETS / SARIMA / Prophet" : "Global LightGBM with lag, rolling & calendar features", "Quantile models for intervals"]; why.push("Validate with rolling-origin backtests; never shuffle; watch for leakage in rolling features."); }
+    else { r = ["PCA (standardised) for compression/decorrelation", "UMAP / t-SNE for 2-D visualisation only", "LDA if labels exist and class separation is the goal"]; why.push("Pick n_components by explained variance or downstream CV."); }
+    document.getElementById("chooserOut").innerHTML = `<b>Start with:</b><ol style="margin:6px 0">${r.map(x => `<li>${x}</li>`).join("")}</ol><b>Why:</b><ul style="margin:6px 0">${why.map(x => `<li>${x}</li>`).join("")}</ul>`;
+  }
+  document.querySelectorAll("#chooser .seg").forEach(s => s.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; s.querySelectorAll("button").forEach(x => x.classList.remove("on")); b.classList.add("on"); st[s.dataset.q] = b.dataset.v; rec(); }));
+  rec();
+})();
+</script>
+</main>
+</body>
+</html>

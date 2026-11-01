@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Linear regression · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="linear-regression">
+<main>
+<div class="eyebrow">Supervised · Regression · The model every interview starts with</div>
+<h1>Linear regression</h1>
+<p class="lede">Predict a continuous target as a weighted sum of features. It is simple, but interviewers use it to probe whether you really understand loss functions, optimisation, assumptions, diagnostics, multicollinearity and inference. Know this page cold.</p>
+<div class="toc"><a href="#pitch">30-sec answer</a><a href="#intuition">Intuition</a><a href="#math">Maths</a><a href="#assumptions">Assumptions</a><a href="#demo">Assumption demo</a><a href="#diagnostics">Diagnostics & fixes</a><a href="#inference">Coefficients & inference</a><a href="#metrics">R² vs adjusted R²</a><a href="#hp">Parameters</a><a href="#improve">Improving it</a><a href="#procon">Pros/cons</a><a href="#code">sklearn & statsmodels</a><a href="#labs">Labs</a><a href="#qa">Interview Q&A</a></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“Linear regression models the target as \(\hat y = \beta_0 + \beta_1x_1 + \dots + \beta_px_p\). We choose the coefficients that minimise the sum of squared residuals (OLS), which has a closed-form solution \(\hat\beta = (X^TX)^{-1}X^Ty\) or can be found by gradient descent. Under the Gauss–Markov assumptions — linearity, independent errors, constant error variance, no perfect multicollinearity, and errors with zero mean — OLS is the best linear unbiased estimator; adding normal errors gives valid t-tests and confidence intervals. I check the assumptions with residual plots, Q-Q plots, VIF, Breusch–Pagan and Durbin–Watson, and I regularise with Ridge or Lasso when there are many or correlated features.”</p></div>
+
+<h2 id="intuition">Intuition</h2>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Plot house size against price and draw the straight line that sits “closest” to all the dots. “Closest” means the vertical gaps (residuals) between dots and line, squared and added up, are as small as possible. The slope tells you how many rupees each extra square foot adds, holding everything else fixed.</p></div>
+<div class="grid">
+<div class="card"><div class="kicker">model</div><h4>Linear in parameters</h4><p>“Linear” refers to the coefficients, not the features. \(y=\beta_0+\beta_1x+\beta_2x^2\) is still linear regression.</p></div>
+<div class="card"><div class="kicker">loss</div><h4>Squared error</h4><p>Squaring makes the loss smooth and convex (one global minimum) and equals maximum likelihood under Gaussian noise — but it also makes OLS sensitive to outliers.</p></div>
+<div class="card"><div class="kicker">output</div><h4>Conditional mean</h4><p>OLS estimates \(E[y\mid x]\). If you need the median or a quantile, use MAE / quantile regression instead.</p></div>
+</div>
+
+<h2 id="math">The maths you need to explain</h2>
+<h3>1 · Model and loss</h3>
+<div class="callout math"><div class="tag">∑ Formulation</div>
+$$\hat y = X\beta,\qquad X\in\mathbb R^{n\times(p+1)}\ \text{(first column of 1s for the intercept)}$$
+$$J(\beta)=\frac1n\sum_{i=1}^n (y_i-\hat y_i)^2 = \frac1n\lVert y-X\beta\rVert^2$$</div>
+<h3>2 · Closed form (normal equation)</h3>
+<p>Set the gradient to zero: \(\nabla_\beta J = -\tfrac2n X^T(y-X\beta)=0 \Rightarrow X^TX\beta = X^Ty\), so</p>
+<div class="callout math"><div class="tag">∑ Normal equation</div>$$\hat\beta=(X^TX)^{-1}X^Ty$$
+<p>Geometrically, \(X\hat\beta\) is the orthogonal projection of \(y\) onto the column space of \(X\): residuals are perpendicular to every feature (\(X^Te=0\)). Consequences: residuals sum to zero (with an intercept) and the fitted line passes through \((\bar x,\bar y)\).</p></div>
+<p><b>Cost:</b> forming \(X^TX\) is \(O(np^2)\) and inverting it \(O(p^3)\). Fine for \(p\) up to a few thousand; for huge \(p\) or streaming data use (stochastic) gradient descent. In practice libraries solve via QR or SVD (more numerically stable than inverting), and if \(X^TX\) is singular (perfect collinearity or \(p>n\)) the pseudo-inverse or Ridge is used.</p>
+<h3>3 · Gradient descent</h3>
+<div class="callout math"><div class="tag">∑ Update rule</div>$$\beta \leftarrow \beta - \eta\,\nabla J = \beta + \frac{2\eta}{n}X^T(y-X\beta)$$
+<p>Batch GD uses all rows per step; SGD one row; mini-batch a few dozen to a few hundred. Feature scaling matters a lot for GD (elongated loss contours → zig-zagging), but not for the closed form.</p></div>
+<div class="widget" data-demo="gd"><div class="widget-title">Gradient descent on a 1-D loss</div><div class="widget-sub">Too small η crawls, too large η oscillates or diverges. For this quadratic, η &gt; 1 diverges because each step multiplies the error by (1 − 2η).</div></div>
+<h3>4 · Why squared error = maximum likelihood</h3>
+<p>If \(y_i = x_i^T\beta + \varepsilon_i\) with \(\varepsilon_i\sim\mathcal N(0,\sigma^2)\) i.i.d., the log-likelihood is \(-\tfrac{n}{2}\log(2\pi\sigma^2)-\tfrac1{2\sigma^2}\sum(y_i-x_i^T\beta)^2\). Maximising it over \(\beta\) is exactly minimising the sum of squared errors. (Laplace noise → MAE; this is a favourite follow-up.)</p>
+<h3>5 · Variance of the estimates</h3>
+<p>\(\operatorname{Var}(\hat\beta)=\sigma^2(X^TX)^{-1}\), estimated with \(\hat\sigma^2=\tfrac{\text{RSS}}{n-p-1}\). Standard errors are the square roots of the diagonal. When features are highly correlated, \(X^TX\) is near-singular, its inverse explodes and so do the standard errors — that is multicollinearity in one line.</p>
+
+<h2 id="assumptions">Assumptions (memorise “LINE + M”)</h2>
+<div class="table-wrap"><table>
+<tr><th>Assumption</th><th>What it means</th><th>If violated</th><th>How to check</th><th>Fix</th></tr>
+<tr><td><b>L</b>inearity</td><td>\(E[y\mid x]\) is linear in the parameters</td><td>Biased predictions, systematic errors</td><td>Residuals vs fitted (U-shape), partial-residual plots</td><td>Transform features (log, polynomial, splines), interactions, non-linear model</td></tr>
+<tr><td><b>I</b>ndependence of errors</td><td>No autocorrelation between residuals</td><td>SEs too small → overconfident p-values</td><td>Durbin–Watson (≈2 good; &lt;1.5 positive autocorrelation), ACF of residuals</td><td>Lag features, time-series models, clustered / Newey–West SEs</td></tr>
+<tr><td><b>N</b>ormality of errors</td><td>\(\varepsilon\sim\mathcal N(0,\sigma^2)\)</td><td>Only affects inference (CIs, p-values) in small samples; predictions fine. CLT rescues large n</td><td>Q-Q plot, Shapiro–Wilk, Jarque–Bera</td><td>Transform y, bootstrap CIs, robust regression</td></tr>
+<tr><td><b>E</b>qual variance (homoscedasticity)</td><td>\(\operatorname{Var}(\varepsilon\mid x)=\sigma^2\) constant</td><td>Coefficients still unbiased but inefficient; SEs/p-values wrong</td><td>Residuals vs fitted (funnel), Breusch–Pagan, White test</td><td>Log/Box-Cox y, Weighted Least Squares, heteroscedasticity-robust (HC3) SEs</td></tr>
+<tr><td>No perfect <b>M</b>ulticollinearity</td><td>No feature is an exact linear combination of others</td><td>\(X^TX\) singular; high correlation → unstable, large-SE coefficients with flipping signs</td><td>Correlation matrix, VIF &gt; 5–10, condition number</td><td>Drop/combine features, PCA, Ridge</td></tr>
+<tr><td>Exogeneity</td><td>\(E[\varepsilon\mid X]=0\): no omitted variable correlated with x</td><td>Biased, inconsistent coefficients (omitted-variable bias)</td><td>Domain knowledge</td><td>Add the confounder, instrumental variables, experiments</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Common trap</div><p>“The features (or y) must be normally distributed” is <b>wrong</b>. The assumption is about the <b>errors</b> (residuals), and it only matters for inference. Skewed features are fine; skewed residuals are what you check.</p></div>
+<div class="callout interview"><div class="tag">💬 Gauss–Markov theorem</div><p>Under linearity, exogeneity, homoscedasticity, no autocorrelation and full rank (no normality needed), OLS is <b>BLUE</b> — the Best (lowest-variance) Linear Unbiased Estimator. Normality is added only for exact small-sample t and F tests.</p></div>
+
+<h2 id="demo">See each violation</h2>
+<div class="widget" data-demo="linfit"><div class="widget-title">Residual diagnostics playground</div><div class="widget-sub">Switch scenarios and read the residual plot exactly as you would in an interview whiteboard question.</div></div>
+
+<h2 id="diagnostics">Diagnostics & fixes cheat-table</h2>
+<div class="table-wrap"><table>
+<tr><th>Tool</th><th>Detects</th><th>Rule of thumb</th></tr>
+<tr><td>Residuals vs fitted</td><td>Non-linearity, heteroscedasticity, outliers</td><td>Should be a random horizontal band</td></tr>
+<tr><td>Q-Q plot of residuals</td><td>Non-normal errors, heavy tails</td><td>Points on the 45° line</td></tr>
+<tr><td>Scale–location plot</td><td>Heteroscedasticity</td><td>Flat trend of √|standardised residual|</td></tr>
+<tr><td>VIF \(=1/(1-R_j^2)\)</td><td>Multicollinearity</td><td>&gt;5 concerning, &gt;10 serious</td></tr>
+<tr><td>Cook's distance / leverage</td><td>Influential points</td><td>Cook's D &gt; 4/n or &gt; 1 → inspect</td></tr>
+<tr><td>Breusch–Pagan / White</td><td>Heteroscedasticity</td><td>p &lt; 0.05 → reject constant variance</td></tr>
+<tr><td>Durbin–Watson</td><td>First-order autocorrelation</td><td>Range 0–4, ≈2 none, &lt;1.5 positive</td></tr>
+<tr><td>Shapiro–Wilk / Jarque–Bera</td><td>Normality of residuals</td><td>Very sensitive at large n — prefer the Q-Q plot</td></tr>
+</table></div>
+
+<h2 id="inference">Interpreting coefficients & inference</h2>
+<ul>
+<li><b>\(\beta_j\)</b>: expected change in y for a one-unit increase in \(x_j\), <i>holding other features constant</i>. With correlated features that “holding constant” is unrealistic, which is why interpretations get shaky.</li>
+<li><b>Log transforms:</b> log(y) ~ x → a unit increase in x changes y by ≈ \(100\beta\)%; y ~ log(x) → a 1% increase in x changes y by \(\beta/100\); log–log → \(\beta\) is an elasticity.</li>
+<li><b>t-test</b> per coefficient: \(t=\hat\beta_j/\text{SE}(\hat\beta_j)\), H₀: \(\beta_j=0\). <b>F-test</b>: are all slopes jointly zero?</li>
+<li><b>Dummy variable trap:</b> one-hot encoding k categories with an intercept → drop one level (it becomes the baseline), or perfect collinearity.</li>
+<li><b>Standardised coefficients</b> (after scaling features) allow comparing importance across features with different units.</li>
+<li>Statistical significance ≠ practical importance ≠ causality.</li>
+</ul>
+
+<h2 id="metrics">R², adjusted R² and error metrics</h2>
+<div class="callout math"><div class="tag">∑ Definitions</div>
+$$R^2 = 1-\frac{\text{RSS}}{\text{TSS}} = 1-\frac{\sum (y_i-\hat y_i)^2}{\sum (y_i-\bar y)^2}\qquad R^2_{adj}=1-(1-R^2)\frac{n-1}{n-p-1}$$</div>
+<ul>
+<li>R² = share of variance in y explained. It <b>never decreases</b> when you add a feature (even pure noise) on training data. Adjusted R² penalises extra features and can go down.</li>
+<li>R² can be negative on a test set (model worse than predicting the mean).</li>
+<li>Use RMSE (same units as y, penalises large errors), MAE (robust, median-oriented), MAPE (relative, breaks near y = 0). See <a href="metrics.html">Evaluation metrics</a>.</li>
+<li>A high R² doesn't mean assumptions hold, and a low R² can still give useful, significant coefficients (noisy human behaviour).</li>
+</ul>
+
+<h2 id="hp">Parameters & “hyperparameters”</h2>
+<p>Plain OLS has no hyperparameters to tune — its knobs are modelling choices. The regularised versions add α (see <a href="regularization.html">Ridge/Lasso/ElasticNet</a>).</p>
+<div class="table-wrap"><table class="hp">
+<tr><th>Knob</th><th>What it does</th><th>Guidance</th></tr>
+<tr><td>fit_intercept</td><td>Learns β₀</td><td>Keep True unless data are centred</td></tr>
+<tr><td>positive</td><td>Forces all coefficients ≥ 0</td><td>Useful for physically non-negative effects (e.g., media mix)</td></tr>
+<tr><td>feature set</td><td>Which transforms, interactions, polynomial degree</td><td>The real tuning: choose by CV</td></tr>
+<tr><td>SGDRegressor: eta0, learning_rate, max_iter, penalty, alpha</td><td>GD-based fitting for big data</td><td>Scale features; use “invscaling”/“adaptive” schedules</td></tr>
+<tr><td>HuberRegressor: epsilon</td><td>Robust to outliers (quadratic near 0, linear in tails)</td><td>epsilon ≈ 1.35 gives 95% efficiency on normal data</td></tr>
+</table></div>
+
+<h2 id="improve">How to improve a linear model</h2>
+<ol>
+<li><b>Look at residuals first</b> — patterns tell you what is missing.</li>
+<li><b>Feature engineering:</b> log-transform skewed variables, polynomial terms or splines for curvature, interaction terms (\(x_1x_2\)) for effects that depend on each other, binning for thresholds.</li>
+<li><b>Handle outliers & leverage:</b> investigate, cap/winsorise, or use Huber / RANSAC / quantile regression.</li>
+<li><b>Multicollinearity:</b> drop or combine features with high VIF, or use Ridge.</li>
+<li><b>Many features / overfitting:</b> Lasso or Elastic Net with CV-chosen α; feature selection.</li>
+<li><b>Heteroscedastic target</b> (e.g., prices): model log(y) and back-transform (beware the retransformation bias).</li>
+<li>If relationships are fundamentally non-linear with interactions, move to tree ensembles — and use linear regression as the baseline.</li>
+</ol>
+
+<h2 id="procon">Pros, cons and when to use</h2>
+<div class="procon"><div class="pro"><h4>✅ Strengths</h4><ul><li>Fast, closed-form, scales well</li><li>Highly interpretable coefficients, inference (CIs, p-values)</li><li>Strong baseline; good extrapolation when the relationship really is linear</li><li>Low variance with enough data</li></ul></div>
+<div class="con"><h4>❌ Weaknesses</h4><ul><li>High bias for non-linear relationships unless you engineer features</li><li>Sensitive to outliers and multicollinearity</li><li>Needs encoding of categoricals, no automatic interactions</li><li>Assumptions needed for valid inference</li></ul></div></div>
+<p><b>Use when</b> you need explainability (pricing, econometrics, regulated settings), a baseline, or the signal is roughly additive. <b>Avoid</b> for complex interactions or when only raw predictive accuracy on tabular data matters (try gradient boosting).</p>
+
+<h2 id="code">Code you should be able to write from memory</h2>
+<script type="text/plain" class="snippet" data-title="scikit-learn: pipeline + CV">
+from sklearn.datasets import load_diabetes
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, r2_score
+
+X, y = load_diabetes(return_X_y=True, as_frame=True)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42)
+
+model = make_pipeline(StandardScaler(), LinearRegression())
+print("CV R2:", cross_val_score(model, X_tr, y_tr, cv=5, scoring="r2").mean())
+model.fit(X_tr, y_tr)
+pred = model.predict(X_te)
+print("test RMSE:", mean_squared_error(y_te, pred) ** 0.5, "R2:", r2_score(y_te, pred))
+print(dict(zip(X.columns, model[-1].coef_.round(2))))
+</script>
+<script type="text/plain" class="snippet" data-title="statsmodels: inference & diagnostics">
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.stats.diagnostic import het_breuschpagan
+from statsmodels.stats.stattools import durbin_watson
+
+Xc = sm.add_constant(X_tr)
+ols = sm.OLS(y_tr, Xc).fit()            # .fit(cov_type="HC3") for robust SEs
+print(ols.summary())                     # coefs, SEs, t, p, R2, adj R2, F
+vif = {c: variance_inflation_factor(Xc.values, i) for i, c in enumerate(Xc.columns) if c != "const"}
+lm_stat, lm_p, f_stat, f_p = het_breuschpagan(ols.resid, Xc)
+print("BP p-value:", lm_p, "DW:", durbin_watson(ols.resid))
+</script>
+
+<h2 id="labs">Hands-on labs</h2>
+<p class="small">Labs run real Python (NumPy, pandas, scikit-learn, statsmodels) in your browser. The first run downloads the runtime (~20 MB, cached afterwards). Edit, press <span class="kbd">Ctrl</span>+<span class="kbd">Enter</span> to run, then <b>Check my answer</b>.</p>
+
+<div class="lab" data-id="lr-normal-eq" data-title="OLS from scratch with the normal equation">
+<div class="lab-task"><p>Add an intercept column to <code>X</code> and compute <code>beta</code> = \((X^TX)^{-1}X^Ty\) using NumPy. Prefer <code>np.linalg.solve</code> over explicitly inverting. <code>beta[0]</code> should be the intercept.</p></div>
+<div data-part="hint">Use <code>np.column_stack([np.ones(len(X)), X])</code> to add the 1s column.</div>
+<div data-part="hint"><code>np.linalg.solve(A, b)</code> solves A·x = b. Here A = Xbᵀ Xb and b = Xbᵀ y.</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+rng = np.random.default_rng(0)
+X = rng.normal(size=(200, 3))
+y = 4 + X @ np.array([2.0, -1.0, 0.5]) + rng.normal(scale=0.3, size=200)
+
+# TODO: build Xb with a column of ones, then solve the normal equation
+Xb = None
+beta = None
+print(beta)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+rng = np.random.default_rng(0)
+X = rng.normal(size=(200, 3))
+y = 4 + X @ np.array([2.0, -1.0, 0.5]) + rng.normal(scale=0.3, size=200)
+
+Xb = np.column_stack([np.ones(len(X)), X])
+beta = np.linalg.solve(Xb.T @ Xb, Xb.T @ y)
+print(beta.round(3))   # ≈ [4, 2, -1, 0.5]
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert beta is not None, "beta is still None"
+beta = np.asarray(beta).ravel()
+assert beta.shape == (4,), f"beta should have 4 values (intercept + 3), got shape {beta.shape}"
+ref = np.linalg.lstsq(np.column_stack([np.ones(len(X)), X]), y, rcond=None)[0]
+assert np.allclose(beta, ref, atol=1e-6), "Coefficients don't match the least-squares solution"
+print("intercept ≈", round(beta[0], 3), "| slopes ≈", beta[1:].round(3))
+</script>
+</div>
+
+<div class="lab" data-id="lr-gd" data-title="Linear regression with batch gradient descent">
+<div class="lab-task"><p>Complete <code>fit_gd</code>: start from zeros and repeat <code>w -= lr * grad</code> where <code>grad = (2/n) * Xb.T @ (Xb @ w - y)</code>. It should return the weight vector (intercept first) and the list of losses (MSE per epoch). The loss list must be non-increasing.</p></div>
+<div data-part="hint">Loss each epoch: <code>np.mean((Xb @ w - y) ** 2)</code>. Record it before or after the update — just be consistent.</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+rng = np.random.default_rng(1)
+X = rng.normal(size=(300, 2))
+y = 1.5 + X @ np.array([3.0, -2.0]) + rng.normal(scale=0.5, size=300)
+Xb = np.column_stack([np.ones(len(X)), X])
+
+def fit_gd(Xb, y, lr=0.1, epochs=200):
+    n, d = Xb.shape
+    w = np.zeros(d)
+    losses = []
+    for _ in range(epochs):
+        # TODO: compute gradient, update w, append loss
+        pass
+    return w, losses
+
+w, losses = fit_gd(Xb, y)
+print(w, losses[-1] if losses else None)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+rng = np.random.default_rng(1)
+X = rng.normal(size=(300, 2))
+y = 1.5 + X @ np.array([3.0, -2.0]) + rng.normal(scale=0.5, size=300)
+Xb = np.column_stack([np.ones(len(X)), X])
+
+def fit_gd(Xb, y, lr=0.1, epochs=200):
+    n, d = Xb.shape
+    w = np.zeros(d)
+    losses = []
+    for _ in range(epochs):
+        err = Xb @ w - y
+        losses.append(np.mean(err ** 2))
+        grad = (2 / n) * Xb.T @ err
+        w -= lr * grad
+    return w, losses
+
+w, losses = fit_gd(Xb, y)
+print(w.round(3), round(losses[-1], 4))
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+w2, L = fit_gd(Xb, y, lr=0.1, epochs=300)
+ref = np.linalg.lstsq(Xb, y, rcond=None)[0]
+assert len(L) == 300, "losses should have one entry per epoch"
+assert np.allclose(w2, ref, atol=1e-3), f"GD weights {np.round(w2,3)} are not close to OLS {np.round(ref,3)}"
+assert all(a >= b - 1e-12 for a, b in zip(L, L[1:])), "loss should never increase with lr=0.1"
+print("Converged to OLS:", ref.round(3))
+</script>
+</div>
+
+<div class="lab" data-id="lr-r2" data-title="R² and adjusted R² by hand">
+<div class="lab-task"><p>Write <code>r2(y, yhat)</code> and <code>adj_r2(y, yhat, p)</code> (p = number of features, excluding intercept). Then observe: adding 20 pure-noise features raises R² on training data but adjusted R² penalises it.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.linear_model import LinearRegression
+
+def r2(y, yhat):
+    # TODO
+    return None
+
+def adj_r2(y, yhat, p):
+    # TODO
+    return None
+
+rng = np.random.default_rng(3)
+n = 60
+X = rng.normal(size=(n, 2)); y = X @ [1.0, 0.5] + rng.normal(size=n)
+noise = rng.normal(size=(n, 20)); X_big = np.hstack([X, noise])
+for name, M in [("2 real features", X), ("+20 noise features", X_big)]:
+    yhat = LinearRegression().fit(M, y).predict(M)
+    print(name, "R2:", r2(y, yhat), "adj R2:", adj_r2(y, yhat, M.shape[1]))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.linear_model import LinearRegression
+
+def r2(y, yhat):
+    y, yhat = np.asarray(y), np.asarray(yhat)
+    return 1 - np.sum((y - yhat) ** 2) / np.sum((y - y.mean()) ** 2)
+
+def adj_r2(y, yhat, p):
+    n = len(y)
+    return 1 - (1 - r2(y, yhat)) * (n - 1) / (n - p - 1)
+
+rng = np.random.default_rng(3)
+n = 60
+X = rng.normal(size=(n, 2)); y = X @ [1.0, 0.5] + rng.normal(size=n)
+noise = rng.normal(size=(n, 20)); X_big = np.hstack([X, noise])
+for name, M in [("2 real features", X), ("+20 noise features", X_big)]:
+    yhat = LinearRegression().fit(M, y).predict(M)
+    print(f"{name:20s} R2: {r2(y, yhat):.3f}  adj R2: {adj_r2(y, yhat, M.shape[1]):.3f}")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.metrics import r2_score
+yy = np.array([3.0, 5, 7, 9, 11]); pp = np.array([2.8, 5.3, 6.9, 9.4, 10.6])
+assert r2(yy, pp) is not None, "r2 returns None"
+assert abs(r2(yy, pp) - r2_score(yy, pp)) < 1e-9, "r2 doesn't match sklearn.metrics.r2_score"
+assert abs(adj_r2(yy, pp, 1) - (1 - (1 - r2_score(yy, pp)) * 4 / 3)) < 1e-9, "adj_r2 formula is off"
+print("Both metrics correct.")
+</script>
+</div>
+
+<div class="lab" data-id="lr-diagnostics" data-title="Diagnose multicollinearity & heteroscedasticity (statsmodels)">
+<div class="lab-task"><p>The data contain a feature <code>x3</code> that is almost <code>x1 + x2</code>, and noise whose spread grows with <code>x1</code>. Using statsmodels: (1) compute a dict <code>vif</code> mapping each feature name to its VIF, (2) run Breusch–Pagan on the OLS residuals and store the LM p-value in <code>bp_p</code>, (3) refit with robust standard errors (<code>cov_type="HC3"</code>) as <code>robust</code>.</p></div>
+<div data-part="hint"><code>variance_inflation_factor(exog_array, column_index)</code> — compute it on the design matrix <i>with</i> the constant, but skip the constant itself.</div>
+<div data-part="hint"><code>het_breuschpagan(resid, exog)</code> returns <code>(lm, lm_pvalue, fvalue, f_pvalue)</code>.</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.stats.diagnostic import het_breuschpagan
+
+rng = np.random.default_rng(7)
+n = 400
+df = pd.DataFrame({"x1": rng.uniform(1, 10, n), "x2": rng.normal(size=n)})
+df["x3"] = df.x1 + df.x2 + rng.normal(scale=0.05, size=n)
+y = 2 + 1.5 * df.x1 - 1.0 * df.x2 + rng.normal(scale=0.3 * df.x1)
+
+Xc = sm.add_constant(df)
+ols = sm.OLS(y, Xc).fit()
+
+vif = None       # TODO: {"x1": ..., "x2": ..., "x3": ...}
+bp_p = None      # TODO
+robust = None    # TODO
+print(vif, bp_p)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, pandas as pd
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.stats.diagnostic import het_breuschpagan
+
+rng = np.random.default_rng(7)
+n = 400
+df = pd.DataFrame({"x1": rng.uniform(1, 10, n), "x2": rng.normal(size=n)})
+df["x3"] = df.x1 + df.x2 + rng.normal(scale=0.05, size=n)
+y = 2 + 1.5 * df.x1 - 1.0 * df.x2 + rng.normal(scale=0.3 * df.x1)
+
+Xc = sm.add_constant(df)
+ols = sm.OLS(y, Xc).fit()
+
+vif = {c: variance_inflation_factor(Xc.values, i) for i, c in enumerate(Xc.columns) if c != "const"}
+bp_p = het_breuschpagan(ols.resid, Xc)[1]
+robust = sm.OLS(y, Xc).fit(cov_type="HC3")
+print({k: round(v, 1) for k, v in vif.items()})
+print("Breusch-Pagan p =", bp_p)
+print("SE (classic):", ols.bse.round(3).to_dict())
+print("SE (HC3)    :", robust.bse.round(3).to_dict())
+# Fix the collinearity: drop x3 and the VIFs fall to ~1
+</script>
+<script type="text/x-python" data-part="check">
+assert isinstance(vif, dict) and set(vif) == {"x1", "x2", "x3"}, "vif must be a dict with keys x1, x2, x3"
+assert vif["x3"] > 100 and vif["x1"] > 10, "x3 (and x1) should show huge VIFs"
+assert bp_p is not None and bp_p < 0.01, "Breusch-Pagan should strongly reject homoscedasticity"
+assert robust is not None and robust.cov_type == "HC3", "robust should be an OLS fit with cov_type='HC3'"
+print("Diagnosis: severe multicollinearity + heteroscedasticity ✔")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="linear-regression-5a4ed26" data-l="1"><summary>What are the assumptions of linear regression?</summary><div class="ans"><p>Linearity in parameters; independence of errors (no autocorrelation); homoscedasticity (constant error variance); normality of errors (for inference); no perfect multicollinearity; exogeneity (errors uncorrelated with features / no omitted confounders). Mention which ones affect <i>predictions</i> (linearity, exogeneity for causal reading) vs <i>inference</i> (independence, homoscedasticity, normality).</p></div></details>
+<details class="qa" data-id="linear-regression-a35a49d" data-l="1"><summary>What is homoscedasticity and how do you detect and fix heteroscedasticity?</summary><div class="ans"><p>Homoscedasticity = residual variance is the same at every level of the predictors. Heteroscedasticity shows up as a funnel in residuals-vs-fitted. Detect with that plot, the scale-location plot, or Breusch–Pagan / White tests. Consequences: coefficients remain unbiased, but OLS is no longer efficient and standard errors, t-stats, p-values and CIs are wrong. Fixes: transform y (log, Box-Cox, sqrt), Weighted Least Squares with weights ∝ 1/variance, or heteroscedasticity-consistent (HC3 / White) standard errors.</p></div></details>
+<details class="qa" data-id="linear-regression-f1b69ed" data-l="1"><summary>What is multicollinearity? How do you detect and handle it?</summary><div class="ans"><p>High correlation among predictors. It inflates the variance of coefficient estimates (unstable, sign flips, large SEs, insignificant individually but jointly significant) but does <b>not</b> hurt predictive accuracy much. Detect: correlation matrix, VIF (&gt;5–10), condition number of X. Handle: drop one of the correlated features, combine them (ratio, average, PCA), collect more data, or use Ridge which stabilises coefficients.</p></div></details>
+<details class="qa" data-id="linear-regression-13f9050" data-l="2"><summary>What is VIF and how is it computed?</summary><div class="ans"><p>Variance Inflation Factor for feature j: regress \(x_j\) on all other features, take that \(R_j^2\), then \(\text{VIF}_j = 1/(1-R_j^2)\). It is the factor by which the variance of \(\hat\beta_j\) is inflated relative to uncorrelated features. VIF = 1 none, 5 → \(R^2_j\)=0.8, 10 → 0.9.</p></div></details>
+<details class="qa" data-id="linear-regression-2350764" data-l="1"><summary>Derive the OLS closed-form solution.</summary><div class="ans"><p>Minimise \(\lVert y-X\beta\rVert^2 = y^Ty - 2\beta^TX^Ty + \beta^TX^TX\beta\). Gradient: \(-2X^Ty + 2X^TX\beta = 0\) ⇒ \(X^TX\beta=X^Ty\) ⇒ \(\hat\beta=(X^TX)^{-1}X^Ty\), valid when \(X^TX\) is invertible (full column rank). The Hessian \(2X^TX\) is positive semi-definite, so it is a global minimum.</p></div></details>
+<details class="qa" data-id="linear-regression-1e65f4a" data-l="2"><summary>When would you use gradient descent instead of the normal equation?</summary><div class="ans"><p>When p is large (inverting a p×p matrix is O(p³)), when n is huge or data doesn't fit in memory (mini-batch/SGD streams), for online learning, or when adding non-closed-form penalties (Lasso uses coordinate descent). Normal equation: no learning rate, no scaling needed, exact — fine for small/medium p.</p></div></details>
+<details class="qa" data-id="linear-regression-f256fd6" data-l="2"><summary>Why do we minimise squared error rather than absolute error?</summary><div class="ans"><p>Squared error is differentiable everywhere and convex with a closed-form solution; it equals the MLE under Gaussian noise; it estimates the conditional mean; and it penalises large errors more. Absolute error (MAE/LAD) estimates the conditional median, is robust to outliers, corresponds to Laplace noise, but has no closed form (solved via linear programming) and a non-smooth gradient at 0.</p></div></details>
+<details class="qa" data-id="linear-regression-3e067e6" data-l="1"><summary>Difference between R² and adjusted R²?</summary><div class="ans"><p>R² = 1 − RSS/TSS, the share of variance explained; it never decreases when features are added (on training data). Adjusted R² = 1 − (1 − R²)(n − 1)/(n − p − 1) penalises the number of predictors, increasing only if a new feature improves the fit more than expected by chance. Use adjusted R² (or better, CV error / AIC / BIC) to compare models with different numbers of features.</p></div></details>
+<details class="qa" data-id="linear-regression-4caba6b" data-l="2"><summary>Can R² be negative?</summary><div class="ans"><p>On training data with an intercept, no (OLS is at least as good as the mean). On test data, or without an intercept, yes: it means the model predicts worse than a constant equal to the mean of y.</p></div></details>
+<details class="qa" data-id="linear-regression-aa5a7ec" data-l="2"><summary>How do you interpret coefficients when y is log-transformed?</summary><div class="ans"><p>log(y) = β₀ + β₁x: a one-unit increase in x multiplies y by \(e^{\beta_1}\), ≈ a 100·β₁ % change for small β₁. log(y) ~ log(x): β₁ is an elasticity (1 % change in x → β₁ % change in y). y ~ log(x): a 1 % increase in x changes y by β₁/100 units.</p></div></details>
+<details class="qa" data-id="linear-regression-1f8faea" data-l="2"><summary>What happens if you duplicate a feature (or duplicate all rows)?</summary><div class="ans"><p>Duplicate feature: perfect collinearity, \(X^TX\) singular; OLS has infinitely many solutions (the pseudo-inverse / sklearn splits the weight). Ridge splits it evenly. Duplicating all rows: coefficients unchanged, but standard errors shrink by √2 — falsely inflated confidence, a classic data-leakage-in-inference trap.</p></div></details>
+<details class="qa" data-id="linear-regression-06deb78" data-l="2"><summary>What are outliers, leverage points and influential points?</summary><div class="ans"><p>Outlier: unusual y given x (large residual). High leverage: unusual x (far from the feature mean; diagonal of the hat matrix \(H=X(X^TX)^{-1}X^T\)). Influential: removing it materially changes the fit — usually high leverage <i>and</i> large residual; measured by Cook's distance. OLS is sensitive because errors are squared.</p></div></details>
+<details class="qa" data-id="linear-regression-7219bbe" data-l="2"><summary>What does the p-value of a coefficient mean?</summary><div class="ans"><p>The probability of observing a t-statistic at least as extreme as ours if the true coefficient were 0 (and assumptions hold). Small p → evidence that the feature has a non-zero association with y given the other features. It is not the probability that the coefficient is zero, and not a measure of effect size or causality.</p></div></details>
+<details class="qa" data-id="linear-regression-2a8ba75" data-l="3"><summary>What is omitted-variable bias?</summary><div class="ans"><p>If a variable z affects y and is correlated with an included x, leaving z out makes x's coefficient absorb z's effect: \(E[\hat\beta_x] = \beta_x + \beta_z\cdot\delta\), where δ is the slope from regressing z on x. It violates exogeneity, so coefficients are biased — no amount of data fixes it. Example: ice-cream sales vs drowning, omitted temperature.</p></div></details>
+<details class="qa" data-id="linear-regression-ae13137" data-l="2"><summary>How does linear regression handle categorical variables?</summary><div class="ans"><p>One-hot/dummy encode with k − 1 columns (drop a baseline) to avoid the dummy-variable trap when an intercept exists; each coefficient is the difference vs the baseline. For high cardinality consider target encoding (with CV to avoid leakage) or regularisation.</p></div></details>
+<details class="qa" data-id="linear-regression-b4b5212" data-l="2"><summary>Do you need to scale features for linear regression?</summary><div class="ans"><p>Not for OLS predictions — the closed-form solution is scale-equivariant (coefficients just rescale). You <b>do</b> need scaling for gradient descent (faster, stable convergence), for regularised models (penalty treats all coefficients equally), and to compare coefficient magnitudes.</p></div></details>
+<details class="qa" data-id="linear-regression-bdc2829" data-l="3"><summary>What if p &gt; n?</summary><div class="ans"><p>\(X^TX\) is rank-deficient: infinitely many zero-training-error solutions, perfect overfit. Use regularisation (Ridge always has a unique solution, Lasso selects at most n features), dimensionality reduction (PCA regression, PLS), or feature selection.</p></div></details>
+<details class="qa" data-id="linear-regression-1dbca18" data-l="3"><summary>Explain the bias–variance of OLS and why Ridge can beat it.</summary><div class="ans"><p>OLS is unbiased (under assumptions) but may have high variance with many / correlated features. Ridge introduces a small bias by shrinking coefficients, which can reduce variance by more, lowering expected test MSE. Gauss–Markov only says OLS is best among <i>unbiased</i> linear estimators.</p></div></details>
+<details class="qa" data-id="linear-regression-929ec04" data-l="2"><summary>How would you check if a linear model is appropriate for your data?</summary><div class="ans"><p>Scatter / pair plots, residuals vs fitted and vs each feature (no pattern), Q-Q plot, compare CV error with a flexible model (e.g., gradient boosting): if the flexible model is much better, important non-linearity/interactions are missing.</p></div></details>
+<details class="qa" data-id="linear-regression-7ed04f7" data-l="3"><summary>What is the hat matrix and what are its properties?</summary><div class="ans"><p>\(H = X(X^TX)^{-1}X^T\), it “puts the hat on y”: \(\hat y = Hy\). It is symmetric and idempotent (a projection), with trace = p + 1 (number of parameters). Diagonal elements \(h_{ii}\) are leverages; average leverage is (p+1)/n and points with \(h_{ii} &gt; 2(p+1)/n\) are high-leverage.</p></div></details>
+<details class="qa" data-id="linear-regression-d18ce42" data-l="2"><summary>Correlation vs regression coefficient?</summary><div class="ans"><p>Simple regression slope = \(r\cdot s_y/s_x\). Correlation is symmetric, unit-free, in [−1, 1]; the slope is directional (y on x ≠ x on y) and in units of y per unit of x. In simple regression, R² = r².</p></div></details>
+<details class="qa" data-id="linear-regression-0155188" data-l="3"><summary>What is the difference between a confidence interval and a prediction interval?</summary><div class="ans"><p>A confidence interval covers the <i>mean</i> response \(E[y\mid x]\) — uncertainty only in the estimated line. A prediction interval covers a <i>new individual</i> observation — adds the irreducible noise σ², so it is always wider and does not shrink to zero with more data.</p></div></details>
+</div>
+</main>
+</body>
+</html>

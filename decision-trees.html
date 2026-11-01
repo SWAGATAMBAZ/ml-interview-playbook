@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Decision trees · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="decision-trees">
+<main>
+<div class="eyebrow">Supervised · Tree-based · Foundation of RF & boosting</div>
+<h1>Decision trees</h1>
+<p class="lede">A flowchart of if/else questions learned greedily from data. On their own they overfit easily, but they are the building block of Random Forests and Gradient Boosting — so interviewers dig into splitting criteria (Gini vs entropy), how regression trees split, pruning and the hyperparameters that control depth.</p>
+<div class="toc"><a href="#pitch">30-sec answer</a><a href="#how">How a tree grows</a><a href="#criteria">Split criteria</a><a href="#calc">Gini calculator</a><a href="#regression">Regression trees</a><a href="#overfit">Overfitting & pruning</a><a href="#hp">Hyperparameters</a><a href="#props">Properties</a><a href="#procon">Pros/cons</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“A decision tree recursively partitions the feature space with axis-aligned splits. CART chooses, at each node, the feature and threshold that maximise impurity decrease — Gini or entropy for classification, variance (MSE) reduction for regression — greedily, top-down. Leaves predict the majority class or mean. Fully grown trees have low bias and very high variance, so we limit growth with max_depth, min_samples_leaf etc., or prune with cost-complexity pruning (ccp_alpha). Trees need no scaling, capture interactions and non-linearity, and are interpretable, but they're unstable and produce step-shaped predictions — which is why we ensemble them.”</p></div>
+
+<h2 id="how">How a tree grows (CART)</h2>
+<ol>
+<li>Start with all training rows at the root.</li>
+<li>For every feature and every candidate threshold (midpoints between sorted unique values), compute the impurity of the two children.</li>
+<li>Pick the split with the largest weighted impurity decrease.</li>
+<li>Recurse on each child until a stopping rule: node pure, max_depth reached, too few samples, or no split improves impurity enough.</li>
+<li>Leaf prediction: majority class (with class proportions as probabilities) or mean target.</li>
+</ol>
+<p>Greedy = locally optimal; finding the globally optimal tree is NP-complete. Cost of building: about \(O(d\cdot n\log n)\) per level with pre-sorting.</p>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Like the game “20 questions”: each question (“Is income &gt; 50k?”) is chosen to split the remaining people into groups that are as “pure” (same answer) as possible, so you reach a confident guess in as few questions as possible.</p></div>
+
+<h2 id="criteria">Split criteria</h2>
+<div class="callout math"><div class="tag">∑ Impurity measures (p_k = class share in the node)</div>
+$$\text{Gini}=1-\sum_k p_k^2\qquad\text{Entropy}=-\sum_k p_k\log_2 p_k\qquad\text{Misclassification}=1-\max_k p_k$$
+$$\text{Gain}=I(\text{parent})-\frac{n_L}{n}I(L)-\frac{n_R}{n}I(R)$$</div>
+<ul>
+<li>Binary node: Gini max 0.5, entropy max 1.0 (both at 50/50); both 0 when pure.</li>
+<li>Gini is slightly faster (no log) and tends to isolate the most frequent class; entropy gives slightly more balanced trees. In practice they agree on &gt;95% of splits — choose by CV or default to Gini.</li>
+<li>Misclassification error isn't used for growing because it's not strictly concave — it often shows zero gain for useful splits.</li>
+<li><b>Information gain ratio</b> (C4.5) divides by split information to counter ID3's bias toward high-cardinality features.</li>
+</ul>
+<div class="table-wrap"><table><tr><th>Algorithm</th><th>Criterion</th><th>Splits</th><th>Notes</th></tr>
+<tr><td>ID3</td><td>Information gain</td><td>Multi-way, categorical only</td><td>No pruning, biased to many-valued features</td></tr>
+<tr><td>C4.5 / C5.0</td><td>Gain ratio</td><td>Multi-way; handles continuous & missing</td><td>Error-based pruning</td></tr>
+<tr><td>CART (sklearn)</td><td>Gini / entropy; MSE for regression</td><td>Binary</td><td>Cost-complexity pruning; surrogate splits for missing (original)</td></tr>
+</table></div>
+
+<h2 id="calc">Split calculator</h2>
+<div class="widget" data-demo="gini"><div class="widget-title">Gini & entropy for one candidate split</div><div class="widget-sub">Change class counts in the two children. A good split makes both children pure.</div></div>
+
+<h2 id="regression">Regression trees</h2>
+<p>Splits minimise the weighted variance (MSE) of the children: \(\text{MSE}(S)=\frac1{|S|}\sum_{i\in S}(y_i-\bar y_S)^2\). Leaves predict the mean (MAE criterion → median, "poisson" for counts). Predictions are piecewise constant: a tree cannot extrapolate outside the range of training targets.</p>
+
+<h2 id="overfit">Overfitting & pruning</h2>
+<ul>
+<li>An unrestricted tree keeps splitting until every leaf is pure → memorises noise (training accuracy 100%).</li>
+<li><b>Pre-pruning</b> (early stopping): max_depth, min_samples_split, min_samples_leaf, max_leaf_nodes, min_impurity_decrease.</li>
+<li><b>Post-pruning</b>: grow fully, then remove branches that don't pay for their complexity. Cost-complexity pruning minimises \(R_\alpha(T)=R(T)+\alpha|T|\) (R = training error, |T| = number of leaves). sklearn: <code>cost_complexity_pruning_path</code> gives candidate α's; choose ccp_alpha by CV.</li>
+<li>Post-pruning is often better because a split that looks useless can enable useful splits below it (e.g., XOR).</li>
+</ul>
+
+<h2 id="hp">Hyperparameters</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Parameter</th><th>Effect of increasing</th><th>Typical values</th></tr>
+<tr><td>max_depth</td><td>More complex, lower bias, higher variance</td><td>3–10 alone; None for RF trees</td></tr>
+<tr><td>min_samples_split</td><td>Simpler tree (needs more rows to split)</td><td>2–50 or fraction</td></tr>
+<tr><td>min_samples_leaf</td><td>Smoother predictions, less overfitting; very effective</td><td>1–50, or 0.5–5% of n</td></tr>
+<tr><td>max_leaf_nodes</td><td>More complex (best-first growth)</td><td>8–256</td></tr>
+<tr><td>min_impurity_decrease</td><td>Simpler (requires minimum gain)</td><td>0–0.01</td></tr>
+<tr><td>ccp_alpha</td><td>More pruning</td><td>From pruning path, chosen by CV</td></tr>
+<tr><td>criterion</td><td>gini / entropy / log_loss; squared_error / absolute_error / poisson</td><td>Default fine</td></tr>
+<tr><td>max_features</td><td>Features considered per split (adds randomness)</td><td>None alone; sqrt in RF</td></tr>
+<tr><td>class_weight</td><td>Upweights minority classes in impurity</td><td>"balanced"</td></tr>
+</table></div>
+
+<h2 id="props">Important properties</h2>
+<ul>
+<li><b>No scaling needed</b>: splits depend only on the order of values (monotonic transforms don't change the tree).</li>
+<li><b>Interactions for free</b>: a path of splits is an AND of conditions.</li>
+<li><b>Axis-aligned boundaries</b>: a diagonal boundary needs a staircase of many splits.</li>
+<li><b>High variance / instability</b>: small data changes can produce a completely different tree.</li>
+<li><b>Feature importance</b> (MDI) = total weighted impurity decrease per feature — biased toward high-cardinality/continuous features; prefer permutation importance or SHAP.</li>
+<li><b>Missing values</b>: sklearn ≥ 1.3 trees support NaN natively (learns which side missing values go); CART historically used surrogate splits.</li>
+<li><b>Categoricals</b>: sklearn needs encoding (one-hot or ordinal); LightGBM/CatBoost handle them natively.</li>
+</ul>
+
+<h2 id="procon">Pros, cons & when to use</h2>
+<div class="procon"><div class="pro"><h4>✅ Strengths</h4><ul><li>Interpretable rules; easy to visualise & explain to business</li><li>No scaling, handles mixed types, non-linearity, interactions</li><li>Fast prediction O(depth)</li><li>Robust to outliers in features</li></ul></div>
+<div class="con"><h4>❌ Weaknesses</h4><ul><li>Overfits; high variance, unstable</li><li>Greedy, axis-aligned, step-function predictions</li><li>Can't extrapolate</li><li>Biased toward dominant classes & many-valued features</li></ul></div></div>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="dt-best-split" data-title="Find the best split by hand (Gini)">
+<div class="lab-task"><p>Implement <code>gini(y)</code> and <code>best_split(x, y)</code> for a single numeric feature: try every midpoint between sorted unique values and return <code>(threshold, weighted_child_gini)</code> with the lowest weighted Gini. Rows with <code>x &lt;= threshold</code> go left.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+
+def gini(y):
+    # TODO: 1 - sum(p_k^2)
+    return None
+
+def best_split(x, y):
+    best_t, best_g = None, np.inf
+    # TODO: loop over candidate thresholds (midpoints)
+    return best_t, best_g
+
+x = np.array([2.0, 3.5, 1.0, 6.0, 7.5, 8.0, 4.0, 9.0])
+y = np.array([0,   0,   0,   1,   1,   1,   0,   1])
+print(best_split(x, y))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+
+def gini(y):
+    if len(y) == 0:
+        return 0.0
+    _, counts = np.unique(y, return_counts=True)
+    p = counts / counts.sum()
+    return 1 - np.sum(p ** 2)
+
+def best_split(x, y):
+    best_t, best_g = None, np.inf
+    vals = np.unique(x)
+    for t in (vals[:-1] + vals[1:]) / 2:
+        L, R = y[x <= t], y[x > t]
+        g = (len(L) * gini(L) + len(R) * gini(R)) / len(y)
+        if g < best_g:
+            best_t, best_g = t, g
+    return best_t, best_g
+
+x = np.array([2.0, 3.5, 1.0, 6.0, 7.5, 8.0, 4.0, 9.0])
+y = np.array([0,   0,   0,   1,   1,   1,   0,   1])
+print(best_split(x, y))   # (5.0, 0.0): a perfect split
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.tree import DecisionTreeClassifier
+assert abs(gini(np.array([0, 0, 1, 1])) - 0.5) < 1e-12 and gini(np.array([1, 1, 1])) == 0, "gini is wrong"
+rng = np.random.default_rng(0)
+for _ in range(5):
+    xx = rng.normal(size=60); yy = (xx + rng.normal(scale=0.8, size=60) > 0.3).astype(int)
+    t, g = best_split(xx, yy)
+    ref = DecisionTreeClassifier(max_depth=1).fit(xx.reshape(-1, 1), yy).tree_.threshold[0]
+    assert t is not None and abs(t - ref) < 1e-6, f"threshold {t} differs from sklearn's {ref}"
+print("Your split search matches sklearn's root split.")
+</script>
+</div>
+
+<div class="lab" data-id="dt-prune" data-title="Overfitting & cost-complexity pruning">
+<div class="lab-task"><p>(1) Fit an unrestricted tree and note the train/test gap. (2) Get candidate α's from <code>cost_complexity_pruning_path</code>, evaluate each with 5-fold CV on the training set, and store the best in <code>best_alpha</code>. (3) Fit <code>pruned</code> with that α and compare leaves and test accuracy.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.tree import DecisionTreeClassifier
+
+X, y = load_breast_cancer(return_X_y=True)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, stratify=y, random_state=0)
+
+full = DecisionTreeClassifier(random_state=0).fit(X_tr, y_tr)
+print("full tree: leaves", full.get_n_leaves(), "train", full.score(X_tr, y_tr), "test", round(full.score(X_te, y_te), 3))
+
+path = full.cost_complexity_pruning_path(X_tr, y_tr)
+alphas = path.ccp_alphas[:-1]   # last alpha prunes to a single node
+best_alpha = None   # TODO
+pruned = None       # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.tree import DecisionTreeClassifier
+
+X, y = load_breast_cancer(return_X_y=True)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, stratify=y, random_state=0)
+
+full = DecisionTreeClassifier(random_state=0).fit(X_tr, y_tr)
+print("full tree: leaves", full.get_n_leaves(), "train", full.score(X_tr, y_tr), "test", round(full.score(X_te, y_te), 3))
+
+path = full.cost_complexity_pruning_path(X_tr, y_tr)
+alphas = path.ccp_alphas[:-1]
+scores = [cross_val_score(DecisionTreeClassifier(random_state=0, ccp_alpha=a), X_tr, y_tr, cv=5).mean() for a in alphas]
+best_alpha = float(alphas[int(np.argmax(scores))])
+pruned = DecisionTreeClassifier(random_state=0, ccp_alpha=best_alpha).fit(X_tr, y_tr)
+print(f"best ccp_alpha={best_alpha:.4f}: leaves {pruned.get_n_leaves()}, train {pruned.score(X_tr, y_tr):.3f}, test {pruned.score(X_te, y_te):.3f}")
+</script>
+<script type="text/x-python" data-part="check">
+assert best_alpha is not None and best_alpha > 0, "best_alpha should be a positive alpha from the path"
+assert pruned is not None and pruned.ccp_alpha == best_alpha, "fit pruned with ccp_alpha=best_alpha"
+assert pruned.get_n_leaves() < full.get_n_leaves(), "pruned tree should have fewer leaves"
+print(f"Pruned from {full.get_n_leaves()} to {pruned.get_n_leaves()} leaves.")
+</script>
+</div>
+
+<div class="lab" data-id="dt-rules" data-title="Read the tree like an interviewer">
+<div class="lab-task"><p>Fit a depth-2 tree on iris and print its rules with <code>export_text</code>. Store the text in <code>rules</code> and the name of the root split feature in <code>root_feature</code>.</p></div>
+<div data-part="hint"><code>tree.tree_.feature[0]</code> is the index of the root split feature.</div>
+<script type="text/x-python" data-part="starter">
+from sklearn.datasets import load_iris
+from sklearn.tree import DecisionTreeClassifier, export_text
+
+iris = load_iris()
+tree = DecisionTreeClassifier(max_depth=2, random_state=0).fit(iris.data, iris.target)
+rules = None         # TODO
+root_feature = None  # TODO
+print(rules)
+</script>
+<script type="text/x-python" data-part="solution">
+from sklearn.datasets import load_iris
+from sklearn.tree import DecisionTreeClassifier, export_text
+
+iris = load_iris()
+tree = DecisionTreeClassifier(max_depth=2, random_state=0).fit(iris.data, iris.target)
+rules = export_text(tree, feature_names=list(iris.feature_names))
+root_feature = iris.feature_names[tree.tree_.feature[0]]
+print(rules)
+print("root split on:", root_feature)
+</script>
+<script type="text/x-python" data-part="check">
+assert isinstance(rules, str) and "class:" in rules, "rules should be the export_text output"
+assert root_feature in ("petal length (cm)", "petal width (cm)"), f"unexpected root feature {root_feature}"
+print("Root feature:", root_feature)
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="decision-trees-77c7eaf" data-l="1"><summary>How does a decision tree decide where to split?</summary><div class="ans"><p>It evaluates every feature and candidate threshold and chooses the split that maximises the impurity decrease (Gini/entropy for classification, variance/MSE reduction for regression), weighted by child sizes. It does this greedily at each node.</p></div></details>
+<details class="qa" data-id="decision-trees-32271a5" data-l="1"><summary>Gini impurity vs entropy — which and why?</summary><div class="ans"><p>Both measure node impurity and are maximal at a uniform class mix. Gini = 1 − Σp² (no logarithm, slightly faster); entropy = −Σp log p (information-theoretic, slightly more balanced splits). They produce nearly identical trees; Gini is sklearn's default.</p></div></details>
+<details class="qa" data-id="decision-trees-5b79003" data-l="2"><summary>Compute the Gini of a node with 30 positives and 10 negatives.</summary><div class="ans"><p>p = 0.75, 0.25 → 1 − (0.5625 + 0.0625) = 0.375. Entropy = −0.75 log₂0.75 − 0.25 log₂0.25 ≈ 0.811.</p></div></details>
+<details class="qa" data-id="decision-trees-4739605" data-l="1"><summary>Why do decision trees overfit and how do you prevent it?</summary><div class="ans"><p>They can keep splitting until every leaf is pure, fitting noise. Prevent with pre-pruning (max_depth, min_samples_leaf, min_samples_split, max_leaf_nodes, min_impurity_decrease), post-pruning (cost-complexity ccp_alpha), or by ensembling (bagging/RF, boosting).</p></div></details>
+<details class="qa" data-id="decision-trees-1aad782" data-l="2"><summary>How do regression trees work?</summary><div class="ans"><p>Same recursive partitioning, but splits minimise the weighted MSE (variance) of children, and leaves predict the mean of their targets (median with MAE). The result is a piecewise-constant function that can't extrapolate.</p></div></details>
+<details class="qa" data-id="decision-trees-b0c7b46" data-l="2"><summary>Do decision trees need feature scaling? Why?</summary><div class="ans"><p>No. A split only depends on the ordering of a feature's values, which monotonic transformations (scaling, log) preserve. The same goes for tree ensembles.</p></div></details>
+<details class="qa" data-id="decision-trees-58e2832" data-l="2"><summary>What's the difference between pre-pruning and post-pruning?</summary><div class="ans"><p>Pre-pruning stops growth early with constraints (cheap, but may stop before a useful deeper split — horizon effect). Post-pruning grows the full tree and then removes subtrees whose complexity isn't justified by error reduction, e.g. minimal cost-complexity pruning R(T) + α|T| with α chosen by CV.</p></div></details>
+<details class="qa" data-id="decision-trees-0cea029" data-l="2"><summary>Why are decision trees unstable / high variance?</summary><div class="ans"><p>Greedy hierarchical splits: a small change in data can change the root split, which changes everything below. This is why averaging many trees (bagging, random forests) dramatically reduces variance.</p></div></details>
+<details class="qa" data-id="decision-trees-105275a" data-l="3"><summary>Why is impurity-based (MDI) feature importance biased?</summary><div class="ans"><p>It's computed on training data and favours features with many possible split points (continuous or high-cardinality), which can reduce impurity by chance — even random IDs get importance. Prefer permutation importance on held-out data or SHAP values.</p></div></details>
+<details class="qa" data-id="decision-trees-63644b7" data-l="2"><summary>How do trees handle categorical variables and missing values?</summary><div class="ans"><p>In theory a tree can split a categorical feature into subsets; sklearn needs encoding (ordinal is often fine for trees; one-hot can fragment). LightGBM/CatBoost handle categories natively. Missing values: C4.5 distributes fractionally, CART uses surrogate splits, sklearn ≥ 1.3 / XGBoost / LightGBM learn a default direction for NaNs.</p></div></details>
+<details class="qa" data-id="decision-trees-8224256" data-l="3"><summary>What is the time complexity of training a decision tree?</summary><div class="ans"><p>Roughly O(d · n log n) per level with presorting (sort each feature once, then sweep thresholds), giving O(d · n log n · depth) overall; balanced trees have depth ≈ log n. Prediction is O(depth).</p></div></details>
+<details class="qa" data-id="decision-trees-ec869da" data-l="2"><summary>Why can't a tree extrapolate and why does that matter?</summary><div class="ans"><p>Leaves output constants learned from training targets, so beyond the training range the prediction is flat. For trending data (time series with growth, prices rising) trees underpredict — detrend, model differences, or use linear components.</p></div></details>
+<details class="qa" data-id="decision-trees-1d563f9" data-l="3"><summary>Why isn't misclassification error used to grow trees?</summary><div class="ans"><p>It's piecewise linear (not strictly concave) in class proportions, so many splits that improve purity produce zero change in error and the greedy search gets stuck. Gini and entropy are strictly concave, rewarding any increase in purity.</p></div></details>
+<details class="qa" data-id="decision-trees-50d1e7f" data-l="2"><summary>How would you explain a decision tree to a business stakeholder?</summary><div class="ans"><p>Walk a path as a rule: “If tenure &lt; 6 months AND monthly charges &gt; ₹1,500 AND no contract → 72% churn probability (based on 840 customers).” Show the top few levels, leaf sizes and probabilities.</p></div></details>
+</div>
+</main>
+</body>
+</html>

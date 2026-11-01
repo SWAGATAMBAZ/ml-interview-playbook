@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cross-validation & tuning · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="validation">
+<main>
+<div class="eyebrow">Foundations · Honest performance estimates</div>
+<h1>Cross-validation & hyperparameter tuning</h1>
+<p class="lede">How you estimate performance and choose hyperparameters decides whether your offline numbers mean anything. Know every CV scheme and when to use it, nested CV, and the tuning methods from grid search to Bayesian optimisation and successive halving.</p>
+<div class="toc"><a href="#splits">Train/val/test</a><a href="#cv">CV schemes</a><a href="#demo">Visual</a><a href="#nested">Nested CV</a><a href="#params">Params vs hyperparams</a><a href="#tuning">Tuning methods</a><a href="#curves">Validation & learning curves</a><a href="#tips">Best practices</a><a href="#code">Code</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<h2 id="splits">Train / validation / test</h2>
+<ul><li><b>Train:</b> fit parameters. <b>Validation</b> (or CV): select models and hyperparameters. <b>Test:</b> touched once, for the final unbiased estimate.</li><li>Typical splits: 60/20/20 or 80/20 with CV on the 80%. With millions of rows, 98/1/1 is fine.</li><li>The split must mirror production: random for i.i.d. data, <b>by time</b> for temporal data, <b>by group</b> when entities repeat, stratified for imbalance.</li></ul>
+
+<h2 id="cv">Cross-validation schemes</h2>
+<div class="table-wrap"><table>
+<tr><th>Scheme</th><th>How</th><th>Use when</th></tr>
+<tr><td>Hold-out</td><td>Single train/validation split</td><td>Huge data, quick iteration; high variance estimate</td></tr>
+<tr><td>K-Fold</td><td>K folds, each used once as validation; average K scores</td><td>Default for i.i.d. data (K = 5 or 10)</td></tr>
+<tr><td>Stratified K-Fold</td><td>Each fold preserves class proportions</td><td>Classification, especially imbalanced</td></tr>
+<tr><td>Repeated (Stratified) K-Fold</td><td>K-Fold repeated with different shuffles</td><td>Small data — lower variance of the estimate</td></tr>
+<tr><td>Leave-One-Out (LOOCV)</td><td>K = n</td><td>Tiny datasets; nearly unbiased, high variance, expensive</td></tr>
+<tr><td>Leave-P-Out</td><td>All subsets of size p as validation</td><td>Rarely (combinatorial)</td></tr>
+<tr><td>Group K-Fold / Leave-One-Group-Out</td><td>Groups never split across train/validation</td><td>Patients, users, stores, sessions</td></tr>
+<tr><td>Stratified Group K-Fold</td><td>Groups kept together + class balance</td><td>Grouped and imbalanced</td></tr>
+<tr><td>TimeSeriesSplit / rolling origin</td><td>Train on past, validate on the next block (expanding or sliding window, optional gap)</td><td>Any temporal data</td></tr>
+<tr><td>Purged / embargoed CV</td><td>Remove samples near the boundary whose labels overlap in time</td><td>Finance, overlapping label windows</td></tr>
+<tr><td>Monte-Carlo (ShuffleSplit)</td><td>Repeated random splits</td><td>Flexible train/val sizes</td></tr>
+<tr><td>Bootstrap / .632</td><td>Train on bootstrap samples, evaluate out-of-bag</td><td>Small samples, confidence intervals</td></tr>
+</table></div>
+<div class="callout interview"><div class="tag">💬 Choosing K</div><p>Larger K → each training set closer to full size (less pessimistic bias) but more compute and more correlated folds (estimate variance can rise). K = 5 or 10 is the standard compromise. Report mean ± std across folds.</p></div>
+
+<h2 id="demo">See the split patterns</h2>
+<div class="widget" data-demo="cvsplit"><div class="widget-title">How each scheme splits 20 rows</div><div class="widget-sub">Switch schemes to see what goes into training vs validation.</div></div>
+
+<h2 id="nested">Nested cross-validation</h2>
+<p>If you tune hyperparameters with CV and report the best CV score, that score is optimistically biased — you picked the max of noisy estimates. <b>Nested CV</b>: an inner CV loop tunes hyperparameters inside each outer training fold; the outer loop scores the whole tuning procedure on untouched folds. Use it to report an unbiased estimate (esp. small data or comparing algorithms); the final model is then tuned with ordinary CV on all data.</p>
+
+<h2 id="params">Parameters vs hyperparameters</h2>
+<p><b>Parameters</b> are learned from data during training (regression coefficients, tree splits, neural weights). <b>Hyperparameters</b> are set before training and control the learning process or model capacity (learning rate, max_depth, C, k, regularisation α, number of trees). Hyperparameters are tuned on validation data, never on the test set.</p>
+
+<h2 id="tuning">Hyperparameter tuning methods</h2>
+<div class="table-wrap"><table>
+<tr><th>Method</th><th>Idea</th><th>Pros</th><th>Cons</th></tr>
+<tr><td>Manual / heuristic</td><td>Expert intuition, defaults</td><td>Cheap</td><td>Not systematic</td></tr>
+<tr><td>Grid search</td><td>Try every combination</td><td>Exhaustive, parallel, simple</td><td>Exponential cost; wastes budget on unimportant params</td></tr>
+<tr><td>Random search</td><td>Sample combinations from distributions</td><td>Much more efficient when few params matter (Bergstra & Bengio); any budget</td><td>No learning from past trials</td></tr>
+<tr><td>Bayesian optimisation</td><td>Surrogate model (Gaussian process, TPE) + acquisition function (expected improvement) picks promising configs</td><td>Sample-efficient for expensive models</td><td>Sequential, more complex (Optuna, Hyperopt, scikit-optimize)</td></tr>
+<tr><td>Successive halving / Hyperband</td><td>Start many configs on a small budget, keep the best fraction, increase budget</td><td>Kills bad configs early</td><td>Low-budget ranking must reflect full-budget ranking</td></tr>
+<tr><td>Early stopping-based</td><td>For iterative models, n_estimators/epochs chosen by validation curve</td><td>Free, standard for boosting/NNs</td><td>Needs validation data</td></tr>
+<tr><td>Evolutionary / population-based</td><td>Mutate and select configs</td><td>Good for large search spaces, NNs</td><td>Compute-heavy</td></tr>
+</table></div>
+<p><b>Search spaces:</b> sample scale-type parameters (learning rate, C, α, γ) <b>log-uniformly</b>; integer ranges for depth/leaves; conditional spaces (kernel → gamma) in Optuna.</p>
+
+<h2 id="curves">Validation curves & learning curves</h2>
+<ul><li><b>Validation curve:</b> train & validation score vs one hyperparameter → shows under/overfitting regions and the optimum.</li><li><b>Learning curve:</b> score vs training-set size → tells you whether more data will help (gap closing) or you need a more expressive model (both plateau low).</li></ul>
+
+<h2 id="tips">Best practices & traps</h2>
+<ul>
+<li>Put <b>all</b> preprocessing (scaling, imputation, encoding, selection, resampling) in a Pipeline so CV refits it per fold. For SMOTE use <code>imblearn.pipeline.Pipeline</code>.</li>
+<li>Use the same CV splits (fixed random_state) when comparing models; consider paired tests on fold scores.</li>
+<li>Tune on the metric you'll be judged on (<code>scoring="average_precision"</code>, custom scorers).</li>
+<li>Don't over-tune to the validation set; prefer simpler models within 1 SE (one-standard-error rule).</li>
+<li>Final model: refit on all training data with the chosen hyperparameters (<code>refit=True</code>), then evaluate once on test.</li>
+<li>Check fold-score variance — big variance means unstable models or heterogeneous data.</li>
+</ul>
+
+<h2 id="code">Code</h2>
+<script type="text/plain" class="snippet" data-title="RandomizedSearchCV with log-uniform distributions">
+from scipy.stats import loguniform, randint
+from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
+from sklearn.ensemble import HistGradientBoostingClassifier
+
+space = {
+    "learning_rate": loguniform(1e-3, 3e-1),
+    "max_leaf_nodes": randint(8, 128),
+    "min_samples_leaf": randint(5, 100),
+    "l2_regularization": loguniform(1e-6, 10),
+}
+search = RandomizedSearchCV(HistGradientBoostingClassifier(early_stopping=True, random_state=0),
+                            space, n_iter=40, scoring="roc_auc",
+                            cv=StratifiedKFold(5, shuffle=True, random_state=0), n_jobs=-1, random_state=0)
+search.fit(X_train, y_train)
+print(search.best_params_, search.best_score_)
+</script>
+<script type="text/plain" class="snippet" data-title="Optuna (Bayesian / TPE) — run locally">
+import optuna
+from sklearn.model_selection import cross_val_score
+
+def objective(trial):
+    params = dict(
+        learning_rate=trial.suggest_float("learning_rate", 1e-3, 0.3, log=True),
+        max_depth=trial.suggest_int("max_depth", 2, 10),
+        subsample=trial.suggest_float("subsample", 0.5, 1.0),
+        colsample_bytree=trial.suggest_float("colsample_bytree", 0.5, 1.0),
+        reg_lambda=trial.suggest_float("reg_lambda", 1e-3, 10, log=True),
+        n_estimators=400)
+    return cross_val_score(xgb.XGBClassifier(**params), X, y, cv=5, scoring="roc_auc").mean()
+
+study = optuna.create_study(direction="maximize", pruner=optuna.pruners.MedianPruner())
+study.optimize(objective, n_trials=100)
+print(study.best_params)
+</script>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="val-group" data-title="Group leakage: KFold vs GroupKFold">
+<div class="lab-task"><p>Each patient contributes 10 rows, and a patient-specific signature makes rows of the same patient similar. Compare 5-fold CV accuracy with plain <code>KFold(5, shuffle=True, random_state=0)</code> → <code>acc_kfold</code> and <code>GroupKFold(5)</code> with <code>groups=patient</code> → <code>acc_group</code>, using <code>RandomForestClassifier(n_estimators=200, random_state=0)</code>. Which one estimates performance on <i>new</i> patients?</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import cross_val_score, KFold, GroupKFold
+
+rng = np.random.default_rng(0)
+n_pat, per = 60, 10
+patient = np.repeat(np.arange(n_pat), per)
+signature = rng.normal(size=(n_pat, 8))[patient]          # patient-specific features
+label = rng.integers(0, 2, n_pat)[patient]                 # diagnosis per patient (unrelated to signature!)
+X = signature + rng.normal(scale=0.1, size=signature.shape)
+y = label
+
+acc_kfold = None  # TODO
+acc_group = None  # TODO
+print(acc_kfold, acc_group)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import cross_val_score, KFold, GroupKFold
+
+rng = np.random.default_rng(0)
+n_pat, per = 60, 10
+patient = np.repeat(np.arange(n_pat), per)
+signature = rng.normal(size=(n_pat, 8))[patient]
+label = rng.integers(0, 2, n_pat)[patient]
+X = signature + rng.normal(scale=0.1, size=signature.shape)
+y = label
+
+rf = RandomForestClassifier(n_estimators=200, random_state=0)
+acc_kfold = cross_val_score(rf, X, y, cv=KFold(5, shuffle=True, random_state=0)).mean()
+acc_group = cross_val_score(rf, X, y, cv=GroupKFold(5), groups=patient).mean()
+print(f"KFold: {acc_kfold:.2f} (memorises patients)  |  GroupKFold: {acc_group:.2f} (truth: ~chance)")
+</script>
+<script type="text/x-python" data-part="check">
+assert acc_kfold is not None and acc_group is not None, "compute both"
+assert acc_kfold > 0.9, "plain KFold should look (falsely) excellent"
+assert acc_group < 0.7, "GroupKFold should reveal no real signal"
+print("Group leakage exposed.")
+</script>
+</div>
+
+<div class="lab" data-id="val-random-vs-grid" data-title="Grid search vs randomized search on the same budget">
+<div class="lab-task"><p>Tune an SVC on the breast cancer data (inside a scaling pipeline) with a 4×4 grid over C and gamma (16 fits per fold) → <code>grid</code>, and with <code>RandomizedSearchCV(n_iter=16)</code> sampling C and gamma from <code>loguniform(1e-2, 1e3)</code> and <code>loguniform(1e-4, 1e0)</code> → <code>rand</code>. Both with 5-fold stratified CV and scoring="roc_auc".</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from scipy.stats import loguniform
+from sklearn.datasets import load_breast_cancer
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedKFold
+
+X, y = load_breast_cancer(return_X_y=True)
+pipe = make_pipeline(StandardScaler(), SVC())
+cv = StratifiedKFold(5, shuffle=True, random_state=0)
+grid = None  # TODO
+rand = None  # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from scipy.stats import loguniform
+from sklearn.datasets import load_breast_cancer
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedKFold
+
+X, y = load_breast_cancer(return_X_y=True)
+pipe = make_pipeline(StandardScaler(), SVC())
+cv = StratifiedKFold(5, shuffle=True, random_state=0)
+grid = GridSearchCV(pipe, {"svc__C": [0.1, 1, 10, 100], "svc__gamma": [1e-4, 1e-3, 1e-2, 1e-1]}, cv=cv, scoring="roc_auc").fit(X, y)
+rand = RandomizedSearchCV(pipe, {"svc__C": loguniform(1e-2, 1e3), "svc__gamma": loguniform(1e-4, 1e0)},
+                          n_iter=16, cv=cv, scoring="roc_auc", random_state=0).fit(X, y)
+print(f"grid  : {grid.best_score_:.4f} {grid.best_params_}")
+print(f"random: {rand.best_score_:.4f} { {k: round(v, 5) for k, v in rand.best_params_.items()} }")
+</script>
+<script type="text/x-python" data-part="check">
+assert grid is not None and rand is not None, "fit both searches"
+assert len(grid.cv_results_["params"]) == 16 and len(rand.cv_results_["params"]) == 16, "both should use 16 candidates"
+assert grid.best_score_ > 0.98 and rand.best_score_ > 0.98, "both should find a strong model"
+print("Same budget, comparable results — random search scales far better as dimensions grow.")
+</script>
+</div>
+
+<div class="lab" data-id="val-nested" data-title="Nested CV vs optimistic tuned score">
+<div class="lab-task"><p>Wrap a <code>GridSearchCV</code> (inner 3-fold) over <code>C</code> for a scaled LogisticRegression, and evaluate it with an outer <code>cross_val_score</code> (5-fold) → <code>nested</code>. Compare with the (optimistic) <code>best_score_</code> of the same grid search fit on all data → <code>non_nested</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV, cross_val_score, StratifiedKFold
+
+X, y = make_classification(n_samples=150, n_features=60, n_informative=5, flip_y=0.1, random_state=3)
+inner = StratifiedKFold(3, shuffle=True, random_state=0)
+outer = StratifiedKFold(5, shuffle=True, random_state=1)
+search = GridSearchCV(make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000)),
+                      {"logisticregression__C": np.logspace(-3, 3, 13)}, cv=inner)
+non_nested = None  # TODO
+nested = None      # TODO
+print(non_nested, nested)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV, cross_val_score, StratifiedKFold
+
+X, y = make_classification(n_samples=150, n_features=60, n_informative=5, flip_y=0.1, random_state=3)
+inner = StratifiedKFold(3, shuffle=True, random_state=0)
+outer = StratifiedKFold(5, shuffle=True, random_state=1)
+search = GridSearchCV(make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000)),
+                      {"logisticregression__C": np.logspace(-3, 3, 13)}, cv=inner)
+non_nested = search.fit(X, y).best_score_
+nested = cross_val_score(search, X, y, cv=outer).mean()
+print(f"best inner CV score (optimistic): {non_nested:.3f}")
+print(f"nested CV estimate (honest)     : {nested:.3f}")
+</script>
+<script type="text/x-python" data-part="check">
+assert non_nested is not None and nested is not None, "compute both"
+assert nested < non_nested, "nested estimate should be lower (less optimistic)"
+print(f"Optimism removed: {non_nested - nested:.3f}")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="validation-b2e8f55" data-l="1"><summary>What is cross-validation and why use it?</summary><div class="ans"><p>A resampling method that splits data into K folds, trains on K−1 and validates on the remaining one, rotating so every fold is validated once. It gives a lower-variance, more data-efficient estimate of generalisation than a single split, plus a spread (std) of performance, and is used for model selection and tuning.</p></div></details>
+<details class="qa" data-id="validation-b4802b1" data-l="2"><summary>What CV would you use for time-series data, and why?</summary><div class="ans"><p>Time-ordered splits — expanding or sliding window (TimeSeriesSplit / rolling-origin backtests), optionally with a gap to prevent leakage via lag features and a horizon matching production. Random K-Fold would train on the future and validate on the past.</p></div></details>
+<details class="qa" data-id="validation-4c42b95" data-l="2"><summary>When should you use GroupKFold?</summary><div class="ans"><p>When multiple rows belong to the same entity (patient, user, device, store) and the model will be applied to new entities. Otherwise rows from the same entity appear in both train and validation, and the model gets credit for memorising entity-specific patterns.</p></div></details>
+<details class="qa" data-id="validation-4a23df8" data-l="2"><summary>What is nested cross-validation?</summary><div class="ans"><p>Two loops: inner CV selects hyperparameters on each outer training fold; the outer CV evaluates the tuned model on held-out outer folds. It gives an unbiased estimate of the performance of the whole model-building procedure, avoiding the optimism of reporting the best inner CV score.</p></div></details>
+<details class="qa" data-id="validation-09fdaf1" data-l="1"><summary>Grid search vs random search?</summary><div class="ans"><p>Grid search evaluates every combination of predefined values — exhaustive but exponential in the number of hyperparameters and wasteful when only a few matter. Random search samples configurations from distributions; for the same budget it explores more distinct values of each important hyperparameter and usually finds equal or better results.</p></div></details>
+<details class="qa" data-id="validation-5453161" data-l="2"><summary>How does Bayesian optimisation work for hyperparameter tuning?</summary><div class="ans"><p>It builds a probabilistic surrogate model of the objective (Gaussian process or TPE) from past trials and uses an acquisition function (expected improvement, UCB) to pick the next configuration balancing exploration and exploitation. It needs fewer evaluations than random search for expensive models; tools: Optuna, Hyperopt, scikit-optimize.</p></div></details>
+<details class="qa" data-id="validation-933e7a0" data-l="2"><summary>Why is stratified K-Fold important for classification?</summary><div class="ans"><p>It keeps class proportions consistent across folds, reducing variance of the estimate and preventing folds with very few (or zero) minority examples, which would make metrics like recall or AUC unstable or undefined.</p></div></details>
+<details class="qa" data-id="validation-f0ab170" data-l="2"><summary>What is the bias–variance trade-off in choosing K for K-Fold?</summary><div class="ans"><p>Small K trains on less data, so estimates are pessimistically biased; large K (LOOCV) trains on nearly all data (low bias) but the training sets overlap heavily, so fold scores are highly correlated and the estimate can have high variance, plus more compute. K = 5–10 balances these.</p></div></details>
+<details class="qa" data-id="validation-2b6deeb" data-l="2"><summary>How do you avoid data leakage during cross-validation?</summary><div class="ans"><p>Fit every data-dependent step (imputation, scaling, encoding, feature selection, resampling, target encoding) inside the CV loop via pipelines; respect group and time structure in splits; deduplicate before splitting; never look at test data while developing.</p></div></details>
+<details class="qa" data-id="validation-ddd88ff" data-l="3"><summary>What is successive halving / Hyperband?</summary><div class="ans"><p>Multi-fidelity tuning: evaluate many configurations with a small budget (few samples, epochs or trees), keep the top 1/η, multiply the budget by η, and repeat. Hyperband runs several such brackets with different trade-offs between number of configs and starting budget. sklearn: HalvingGridSearchCV / HalvingRandomSearchCV.</p></div></details>
+<details class="qa" data-id="validation-db8d15a" data-l="2"><summary>Difference between a validation curve and a learning curve?</summary><div class="ans"><p>Validation curve: training and validation scores vs a hyperparameter value — find the complexity sweet spot. Learning curve: scores vs training-set size — diagnose whether more data (high variance) or more capacity (high bias) will help.</p></div></details>
+<details class="qa" data-id="validation-fedf550" data-l="2"><summary>After cross-validation, which model do you deploy?</summary><div class="ans"><p>Usually refit the chosen pipeline with the selected hyperparameters on all available training data (more data → better model); the CV score estimates its performance. Alternatives: an ensemble of the K fold models (common in competitions), or for time series, the model trained on the most recent window.</p></div></details>
+</div>
+</main>
+</body>
+</html>

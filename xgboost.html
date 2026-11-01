@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XGBoost, LightGBM & CatBoost · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="xgboost">
+<main>
+<div class="eyebrow">Supervised · Ensemble · The tabular-data champions</div>
+<h1>XGBoost, LightGBM & CatBoost</h1>
+<p class="lede">The three production gradient-boosting libraries. Interviews ask what makes each one fast and accurate: XGBoost's second-order objective and regularised gain, LightGBM's histograms, leaf-wise growth, GOSS and EFB, CatBoost's ordered boosting and target statistics for categoricals — and, very practically, which hyperparameters you tune and how.</p>
+<div class="toc"><a href="#pitch">30-sec answer</a><a href="#xgb">XGBoost maths</a><a href="#xgb-eng">XGBoost engineering</a><a href="#lgbm">LightGBM</a><a href="#cat">CatBoost</a><a href="#compare">Comparison</a><a href="#hp">Hyperparameter map</a><a href="#tune">Tuning playbook</a><a href="#code">Code</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“All three are gradient-boosted decision trees. XGBoost adds a regularised objective — penalties on the number of leaves (γ) and leaf weights (λ, α) — and uses a second-order Taylor expansion, so each leaf's optimal weight is \(-G/(H+\lambda)\) and split gain has a closed form; plus sparsity-aware splits for missing values, histogram methods, column subsampling and parallelism. LightGBM is built for speed: histogram binning, leaf-wise (best-first) growth, GOSS to subsample low-gradient rows and EFB to bundle sparse features, with native categorical support. CatBoost uses symmetric (oblivious) trees and ordered boosting with ordered target statistics, which handles categorical features without target leakage and works well with defaults. I tune learning rate with early stopping, then tree complexity (max_depth / num_leaves, min_child_weight), sampling, and regularisation.”</p></div>
+
+<h2 id="xgb">XGBoost: the maths you're expected to know</h2>
+<div class="callout math"><div class="tag">∑ Regularised objective at round t</div>
+$$\mathcal L^{(t)}=\sum_i l\big(y_i,\hat y_i^{(t-1)}+f_t(x_i)\big)+\Omega(f_t),\qquad \Omega(f)=\gamma T+\tfrac12\lambda\sum_{j=1}^T w_j^2+\alpha\sum_j|w_j|$$
+<p>Second-order Taylor expansion with \(g_i=\partial_{\hat y}l\), \(h_i=\partial^2_{\hat y}l\):</p>
+$$\mathcal L^{(t)}\approx\sum_i\Big[g_if_t(x_i)+\tfrac12h_if_t(x_i)^2\Big]+\Omega(f_t)$$
+<p>Grouping by leaf j with \(G_j=\sum_{i\in I_j}g_i,\ H_j=\sum_{i\in I_j}h_i\) (taking α = 0):</p>
+$$w_j^*=-\frac{G_j}{H_j+\lambda}\qquad \text{score}=-\frac12\sum_j\frac{G_j^2}{H_j+\lambda}+\gamma T$$
+$$\text{Gain}=\frac12\Big[\frac{G_L^2}{H_L+\lambda}+\frac{G_R^2}{H_R+\lambda}-\frac{(G_L+G_R)^2}{H_L+H_R+\lambda}\Big]-\gamma$$</div>
+<ul>
+<li>A split is only kept if Gain &gt; 0, i.e. it must beat γ → built-in pruning (trees grow to max_depth, then prune back negative-gain splits).</li>
+<li>For squared error, g = ŷ − y and h = 1, so \(H_j\) is just the leaf's row count; <b>min_child_weight</b> is the minimum sum of hessians in a leaf (for log-loss \(h=p(1-p)\), so it also blocks leaves of very confident points).</li>
+<li>Using the Hessian (Newton boosting) gives better step sizes and lets any twice-differentiable loss plug in.</li>
+</ul>
+
+<h2 id="xgb-eng">XGBoost engineering features</h2>
+<ul>
+<li><b>Sparsity-aware split finding:</b> learns a default direction for missing values at each split.</li>
+<li><b>Split finding:</b> exact greedy, approximate (weighted quantile sketch), and <code>tree_method="hist"</code> (default in 2.x) with binned features.</li>
+<li><b>Column block structure</b> + cache-aware access, parallel split search across features, out-of-core, GPU (<code>device="cuda"</code>).</li>
+<li>Shrinkage (eta), row subsampling, column subsampling by tree/level/node.</li>
+<li>Monotonic and interaction constraints, custom objectives, native categorical support (<code>enable_categorical=True</code> with pandas category dtype).</li>
+</ul>
+
+<h2 id="lgbm">LightGBM: what makes it fast</h2>
+<div class="grid">
+<div class="card"><div class="kicker">histograms</div><h4>Binned features</h4><p>Continuous values bucketed into ≤ max_bin (255) bins; split search is O(bins) instead of O(n). Histogram subtraction: a child's histogram = parent − sibling.</p></div>
+<div class="card"><div class="kicker">growth</div><h4>Leaf-wise (best-first)</h4><p>Always split the leaf with the largest loss reduction (vs XGBoost's default level-wise). Lower loss for the same number of leaves, but can overfit small data — control with num_leaves, min_data_in_leaf, max_depth.</p></div>
+<div class="card"><div class="kicker">GOSS</div><h4>Gradient-based One-Side Sampling</h4><p>Keep all rows with large gradients (poorly fit), randomly sample those with small gradients and upweight them to keep the distribution unbiased.</p></div>
+<div class="card"><div class="kicker">EFB</div><h4>Exclusive Feature Bundling</h4><p>Merge mutually exclusive sparse features (rarely non-zero together, e.g. one-hot columns) into a single feature → fewer features to scan.</p></div>
+<div class="card"><div class="kicker">categoricals</div><h4>Native categorical splits</h4><p>Sorts categories by gradient statistics to find good many-vs-many partitions, no one-hot needed.</p></div>
+</div>
+<div class="callout trap"><div class="tag">⚠️ num_leaves vs max_depth</div><p>A depth-d level-wise tree has up to 2^d leaves. In LightGBM keep <code>num_leaves &lt; 2^max_depth</code> (e.g. depth 7 → num_leaves ≤ 127, often 31–63) or leaf-wise growth will build very deep, overfit trees.</p></div>
+
+<h2 id="cat">CatBoost: categorical-first boosting</h2>
+<ul>
+<li><b>Ordered target statistics:</b> encodes a category for row i using the target mean of <i>preceding</i> rows in a random permutation (plus a prior), so a row's own label never leaks into its encoding.</li>
+<li><b>Ordered boosting:</b> residuals for a row are computed by a model that didn't see that row, fighting the prediction shift / target leakage of standard boosting.</li>
+<li><b>Oblivious (symmetric) trees:</b> the same split condition across a whole level → very fast inference, strong regularisation, less overfitting.</li>
+<li>Automatic categorical feature combinations; strong defaults (less tuning); good with text features; GPU support.</li>
+</ul>
+
+<h2 id="compare">Comparison</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>XGBoost</th><th>LightGBM</th><th>CatBoost</th></tr>
+<tr><td>Tree growth</td><td>Level-wise (depth-wise); lossguide optional</td><td>Leaf-wise</td><td>Symmetric / oblivious</td></tr>
+<tr><td>Speed on large data</td><td>Fast (hist)</td><td>Usually fastest</td><td>Slower training, very fast inference</td></tr>
+<tr><td>Categoricals</td><td>Supported (enable_categorical)</td><td>Native</td><td>Best-in-class (ordered TS)</td></tr>
+<tr><td>Missing values</td><td>Learned default direction</td><td>Learned</td><td>Handled ("Min"/"Max")</td></tr>
+<tr><td>Overfitting risk</td><td>Moderate</td><td>Higher on small data</td><td>Lower, good defaults</td></tr>
+<tr><td>Key regularisation</td><td>eta, max_depth, min_child_weight, gamma, lambda, alpha, subsample, colsample</td><td>learning_rate, num_leaves, min_data_in_leaf, feature_fraction, bagging_fraction, lambda_l1/l2</td><td>learning_rate, depth, l2_leaf_reg, bagging_temperature, random_strength</td></tr>
+</table></div>
+
+<h2 id="hp">Hyperparameter map (same idea, different names)</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Concept</th><th>XGBoost</th><th>LightGBM</th><th>CatBoost</th><th>Effect</th></tr>
+<tr><td>Step size</td><td>learning_rate (eta)</td><td>learning_rate</td><td>learning_rate</td><td>↓ = more trees, better generalisation</td></tr>
+<tr><td>Rounds</td><td>n_estimators + early_stopping_rounds</td><td>n_estimators + early_stopping callback</td><td>iterations + early_stopping_rounds</td><td>Find with early stopping</td></tr>
+<tr><td>Tree size</td><td>max_depth (6), max_leaves</td><td>num_leaves (31), max_depth (−1)</td><td>depth (6)</td><td>↑ = more interactions, more overfit</td></tr>
+<tr><td>Min leaf size</td><td>min_child_weight (1)</td><td>min_child_samples (20), min_sum_hessian_in_leaf</td><td>min_data_in_leaf</td><td>↑ = more conservative</td></tr>
+<tr><td>Split penalty</td><td>gamma / min_split_loss</td><td>min_split_gain</td><td>—</td><td>↑ = fewer splits</td></tr>
+<tr><td>L2 on leaves</td><td>reg_lambda (1)</td><td>reg_lambda</td><td>l2_leaf_reg (3)</td><td>↑ = shrinks leaf values</td></tr>
+<tr><td>L1 on leaves</td><td>reg_alpha (0)</td><td>reg_alpha</td><td>—</td><td>Sparse leaf values</td></tr>
+<tr><td>Row sampling</td><td>subsample</td><td>subsample (bagging_fraction) + subsample_freq</td><td>subsample / bagging_temperature</td><td>0.6–0.9 reduces variance</td></tr>
+<tr><td>Column sampling</td><td>colsample_bytree / bylevel / bynode</td><td>colsample_bytree (feature_fraction)</td><td>rsm</td><td>0.5–0.9 decorrelates trees</td></tr>
+<tr><td>Imbalance</td><td>scale_pos_weight (≈ neg/pos)</td><td>scale_pos_weight / is_unbalance</td><td>auto_class_weights</td><td>Upweights positives</td></tr>
+<tr><td>Bins</td><td>max_bin (256)</td><td>max_bin (255)</td><td>border_count (254)</td><td>↑ = finer splits, slower</td></tr>
+</table></div>
+
+<h2 id="tune">Tuning playbook & practical tips</h2>
+<ol>
+<li>Start: learning_rate 0.05–0.1, n_estimators large (e.g. 5000) with early stopping (50–100 rounds) on a validation fold.</li>
+<li>Tune complexity: max_depth 3–10 / num_leaves 15–255, min_child_weight 1–20 / min_child_samples 5–100.</li>
+<li>Tune sampling: subsample & colsample 0.5–1.0.</li>
+<li>Tune regularisation: reg_lambda 0–20, reg_alpha 0–5, gamma 0–5.</li>
+<li>Lower learning rate (0.01–0.02), re-run early stopping, refit.</li>
+<li>Use Optuna/random search over these; evaluate with the business-relevant metric (eval_metric="auc", "aucpr", "logloss", "rmse"…).</li>
+</ol>
+<ul>
+<li><b>Imbalance:</b> scale_pos_weight ≈ #neg/#pos (ranking/AUC improves; probabilities become miscalibrated — recalibrate if needed).</li>
+<li><b>Monotone constraints</b> enforce business logic (risk must increase with debt-to-income) — great for regulated models.</li>
+<li><b>Explainability:</b> use SHAP (TreeSHAP) rather than gain importance; XGBoost's "weight" (split count), "gain" and "cover" importances disagree.</li>
+<li>Don't one-hot high-cardinality features for LightGBM/CatBoost — use native categorical handling.</li>
+</ul>
+
+<h2 id="code">Code</h2>
+<script type="text/plain" class="snippet" data-title="XGBoost & LightGBM with early stopping">
+import xgboost as xgb, lightgbm as lgb
+from sklearn.model_selection import train_test_split
+X_tr, X_val, y_tr, y_val = train_test_split(X, y, stratify=y, test_size=0.2, random_state=0)
+
+xgb_clf = xgb.XGBClassifier(
+    n_estimators=5000, learning_rate=0.05, max_depth=6, min_child_weight=1,
+    subsample=0.8, colsample_bytree=0.8, reg_lambda=1.0, gamma=0,
+    tree_method="hist", eval_metric="auc", early_stopping_rounds=100, random_state=0)
+xgb_clf.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
+print("best iteration:", xgb_clf.best_iteration)
+
+lgb_clf = lgb.LGBMClassifier(n_estimators=5000, learning_rate=0.05, num_leaves=31,
+    min_child_samples=20, subsample=0.8, subsample_freq=1, colsample_bytree=0.8, verbose=-1)
+lgb_clf.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], eval_metric="auc",
+            callbacks=[lgb.early_stopping(100, verbose=False)])
+print("best iteration:", lgb_clf.best_iteration_)
+</script>
+<script type="text/plain" class="snippet" data-title="CatBoost with categorical columns">
+from catboost import CatBoostClassifier
+cat = CatBoostClassifier(iterations=3000, learning_rate=0.05, depth=6, l2_leaf_reg=3,
+                         eval_metric="AUC", early_stopping_rounds=100, verbose=False)
+cat.fit(X_tr, y_tr, cat_features=["city", "device", "plan"], eval_set=(X_val, y_val))
+</script>
+
+<h2 id="labs">Labs</h2>
+<p class="small">XGBoost and LightGBM load in the browser on demand (a few MB more on first use). CatBoost isn't available in-browser — practise it locally.</p>
+<div class="lab" data-id="xgb-gain" data-title="Compute XGBoost leaf weights and split gain">
+<div class="lab-task"><p>For squared-error loss with current prediction 0.5 for every row, gradients are \(g=\hat y-y\) and hessians \(h=1\). Implement <code>leaf_weight(g, h, lam)</code> = −G/(H+λ) and <code>gain(gL, hL, gR, hR, lam, gamma)</code> using the formula above. Then compute the gain of splitting rows by <code>x &lt; 3</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+
+def leaf_weight(g, h, lam):
+    return None  # TODO
+
+def gain(gL, hL, gR, hR, lam, gamma):
+    return None  # TODO
+
+x = np.array([1, 2, 2.5, 4, 5, 6.5])
+y = np.array([0.1, 0.3, 0.2, 1.2, 1.5, 1.4])
+g = 0.5 - y; h = np.ones_like(y)
+mask = x < 3
+print("left weight:", leaf_weight(g[mask], h[mask], 1.0), "right weight:", leaf_weight(g[~mask], h[~mask], 1.0))
+print("gain:", gain(g[mask], h[mask], g[~mask], h[~mask], lam=1.0, gamma=0.0))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+
+def leaf_weight(g, h, lam):
+    return -np.sum(g) / (np.sum(h) + lam)
+
+def gain(gL, hL, gR, hR, lam, gamma):
+    GL, HL, GR, HR = np.sum(gL), np.sum(hL), np.sum(gR), np.sum(hR)
+    score = lambda G, H: G * G / (H + lam)
+    return 0.5 * (score(GL, HL) + score(GR, HR) - score(GL + GR, HL + HR)) - gamma
+
+x = np.array([1, 2, 2.5, 4, 5, 6.5])
+y = np.array([0.1, 0.3, 0.2, 1.2, 1.5, 1.4])
+g = 0.5 - y; h = np.ones_like(y)
+mask = x < 3
+print("left weight:", round(leaf_weight(g[mask], h[mask], 1.0), 4), "right weight:", round(leaf_weight(g[~mask], h[~mask], 1.0), 4))
+print("gain:", round(gain(g[mask], h[mask], g[~mask], h[~mask], lam=1.0, gamma=0.0), 4))
+print("with gamma=2 the split would be pruned:", gain(g[mask], h[mask], g[~mask], h[~mask], 1.0, 2.0) < 0)
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+gg = np.array([-0.4, 0.2, -0.3]); hh = np.ones(3)
+assert leaf_weight(gg, hh, 1.0) is not None and abs(leaf_weight(gg, hh, 1.0) - 0.125) < 1e-12, "w* = -G/(H+λ) → 0.5/4 = 0.125"
+G = gain(g[mask], h[mask], g[~mask], h[~mask], 1.0, 0.0)
+GL, GR = g[mask].sum(), g[~mask].sum()
+exp = 0.5 * (GL**2/4 + GR**2/4 - (GL+GR)**2/7)
+assert abs(G - exp) < 1e-12, "gain formula is off"
+assert abs(gain(g[mask], h[mask], g[~mask], h[~mask], 1.0, 0.5) - (exp - 0.5)) < 1e-12, "subtract gamma"
+print("Leaf weights and gain correct. Gain =", round(G, 4))
+</script>
+</div>
+
+<div class="lab" data-id="xgb-early" data-title="XGBoost with early stopping & scale_pos_weight">
+<div class="lab-task"><p>Train an <code>xgb.XGBClassifier</code> named <code>model</code> on the imbalanced data with <code>n_estimators=2000, learning_rate=0.05, max_depth=4, subsample=0.8, colsample_bytree=0.8, eval_metric="aucpr", early_stopping_rounds=50, scale_pos_weight=&lt;neg/pos&gt;</code>, using the validation set for early stopping. Report test PR-AUC (<code>average_precision_score</code>) in <code>pr_auc</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+import xgboost as xgb
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import average_precision_score
+
+X, y = make_classification(n_samples=8000, n_features=20, n_informative=8, weights=[0.93], flip_y=0.01, random_state=2)
+X_tmp, X_te, y_tmp, y_te = train_test_split(X, y, stratify=y, test_size=0.2, random_state=0)
+X_tr, X_val, y_tr, y_val = train_test_split(X_tmp, y_tmp, stratify=y_tmp, test_size=0.2, random_state=0)
+
+spw = None    # TODO: negatives / positives in the training set
+model = None  # TODO
+pr_auc = None # TODO
+print(spw, pr_auc)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+import xgboost as xgb
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import average_precision_score
+
+X, y = make_classification(n_samples=8000, n_features=20, n_informative=8, weights=[0.93], flip_y=0.01, random_state=2)
+X_tmp, X_te, y_tmp, y_te = train_test_split(X, y, stratify=y, test_size=0.2, random_state=0)
+X_tr, X_val, y_tr, y_val = train_test_split(X_tmp, y_tmp, stratify=y_tmp, test_size=0.2, random_state=0)
+
+spw = (y_tr == 0).sum() / (y_tr == 1).sum()
+model = xgb.XGBClassifier(n_estimators=2000, learning_rate=0.05, max_depth=4, subsample=0.8,
+                          colsample_bytree=0.8, eval_metric="aucpr", early_stopping_rounds=50,
+                          scale_pos_weight=spw, tree_method="hist", random_state=0)
+model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
+pr_auc = average_precision_score(y_te, model.predict_proba(X_te)[:, 1])
+print(f"scale_pos_weight={spw:.1f}, best iteration={model.best_iteration}, test PR-AUC={pr_auc:.3f} (baseline {y_te.mean():.3f})")
+</script>
+<script type="text/x-python" data-part="check">
+assert spw is not None and abs(spw - (y_tr == 0).sum() / (y_tr == 1).sum()) < 1e-9, "spw = #neg / #pos"
+assert model is not None and model.best_iteration < 1999, "early stopping should stop before 2000 rounds"
+assert pr_auc is not None and pr_auc > 0.6, "PR-AUC should be well above the base rate"
+print("Early stopped at", model.best_iteration, "— PR-AUC", round(pr_auc, 3))
+</script>
+</div>
+
+<div class="lab" data-id="lgbm-cat" data-title="LightGBM with native categorical features">
+<div class="lab-task"><p>The DataFrame has a high-cardinality categorical column <code>city</code> whose effect on the target is strong. Convert it to pandas <code>category</code> dtype and fit <code>lgb.LGBMRegressor(n_estimators=300, learning_rate=0.05, num_leaves=31, verbose=-1)</code> as <code>model</code>. Store the test RMSE in <code>rmse_cat</code> and compare with treating city as an integer code.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+import lightgbm as lgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+
+rng = np.random.default_rng(0)
+n, k = 6000, 200
+city_effect = rng.normal(scale=3, size=k)
+df = pd.DataFrame({"city": rng.integers(0, k, n), "x1": rng.normal(size=n), "x2": rng.normal(size=n)})
+y = city_effect[df.city] + 2 * df.x1 - df.x2 ** 2 + rng.normal(scale=0.5, size=n)
+X_tr, X_te, y_tr, y_te = train_test_split(df, y, random_state=0)
+
+as_int = lgb.LGBMRegressor(n_estimators=300, learning_rate=0.05, num_leaves=31, verbose=-1).fit(X_tr, y_tr)
+rmse_int = mean_squared_error(y_te, as_int.predict(X_te)) ** 0.5
+
+model = None     # TODO: same model, but city as category dtype
+rmse_cat = None  # TODO
+print("int codes:", rmse_int, "| categorical:", rmse_cat)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, pandas as pd
+import lightgbm as lgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+
+rng = np.random.default_rng(0)
+n, k = 6000, 200
+city_effect = rng.normal(scale=3, size=k)
+df = pd.DataFrame({"city": rng.integers(0, k, n), "x1": rng.normal(size=n), "x2": rng.normal(size=n)})
+y = city_effect[df.city] + 2 * df.x1 - df.x2 ** 2 + rng.normal(scale=0.5, size=n)
+X_tr, X_te, y_tr, y_te = train_test_split(df, y, random_state=0)
+
+as_int = lgb.LGBMRegressor(n_estimators=300, learning_rate=0.05, num_leaves=31, verbose=-1).fit(X_tr, y_tr)
+rmse_int = mean_squared_error(y_te, as_int.predict(X_te)) ** 0.5
+
+Xc_tr, Xc_te = X_tr.copy(), X_te.copy()
+cats = pd.CategoricalDtype(categories=sorted(df.city.unique()))
+Xc_tr["city"] = Xc_tr.city.astype(cats); Xc_te["city"] = Xc_te.city.astype(cats)
+model = lgb.LGBMRegressor(n_estimators=300, learning_rate=0.05, num_leaves=31, verbose=-1).fit(Xc_tr, y_tr)
+rmse_cat = mean_squared_error(y_te, model.predict(Xc_te)) ** 0.5
+print(f"int codes RMSE: {rmse_int:.3f} | native categorical RMSE: {rmse_cat:.3f}")
+</script>
+<script type="text/x-python" data-part="check">
+assert model is not None and rmse_cat is not None, "fit the categorical model and compute rmse_cat"
+assert rmse_cat < rmse_int, "native categorical handling should beat arbitrary integer codes here"
+print("Categorical splits win:", round(rmse_cat, 3), "<", round(rmse_int, 3))
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="xgboost-671b499" data-l="2"><summary>What makes XGBoost different from classic gradient boosting?</summary><div class="ans"><p>A regularised objective (γ per leaf, L2/L1 on leaf weights), second-order (Newton) optimisation with gradients and hessians giving closed-form leaf weights and gains, sparsity-aware handling of missing values, weighted quantile sketch / histogram split finding, column subsampling, built-in pruning via γ, and systems work: parallel, cache-aware, out-of-core and GPU training.</p></div></details>
+<details class="qa" data-id="xgboost-afb99e2" data-l="3"><summary>Derive the optimal leaf weight in XGBoost.</summary><div class="ans"><p>For leaf j, the second-order objective is G_j w + ½(H_j + λ) w² (+ γ). Differentiating and setting to zero: G_j + (H_j + λ) w = 0 ⇒ w* = −G_j / (H_j + λ). Plugging back gives the leaf score −½ G_j²/(H_j + λ), from which the split gain formula follows.</p></div></details>
+<details class="qa" data-id="xgboost-3669d9c" data-l="2"><summary>What do gamma, lambda and min_child_weight do in XGBoost?</summary><div class="ans"><p>gamma (min_split_loss): minimum gain required to make a split — prunes weak splits. lambda (reg_lambda): L2 penalty on leaf weights, shrinking them toward 0 and appearing in the denominator H + λ. min_child_weight: minimum sum of hessians in a child; blocks tiny or ultra-confident leaves. All three make trees more conservative.</p></div></details>
+<details class="qa" data-id="xgboost-47a1c97" data-l="2"><summary>Level-wise vs leaf-wise tree growth?</summary><div class="ans"><p>Level-wise (XGBoost default) splits all nodes at a depth before going deeper — balanced trees, more robust. Leaf-wise (LightGBM) always splits the leaf with the highest gain — reaches lower loss with fewer leaves, faster, but can produce deep unbalanced trees that overfit small data; constrain with num_leaves, min_data_in_leaf and max_depth.</p></div></details>
+<details class="qa" data-id="xgboost-4e70f62" data-l="2"><summary>What are GOSS and EFB in LightGBM?</summary><div class="ans"><p>GOSS (Gradient-based One-Side Sampling) keeps all high-gradient (under-fit) rows and a random sample of low-gradient rows, reweighting the sampled ones to keep gain estimates unbiased. EFB (Exclusive Feature Bundling) merges sparse features that are rarely non-zero simultaneously into one, reducing the number of features scanned. Both cut training cost with little accuracy loss.</p></div></details>
+<details class="qa" data-id="xgboost-1e74f40" data-l="2"><summary>How does CatBoost handle categorical features?</summary><div class="ans"><p>With ordered target statistics: under a random permutation, each row's category is encoded with the (prior-smoothed) mean target of rows that come before it, so its own label doesn't leak. It also builds combinations of categorical features greedily. Ordered boosting applies the same idea to residual computation to avoid prediction shift.</p></div></details>
+<details class="qa" data-id="xgboost-91c73e5" data-l="2"><summary>How does XGBoost handle missing values?</summary><div class="ans"><p>During training each split tries sending all missing values left and then right and keeps the direction with higher gain — a learned default direction per node. At inference, missing values follow that direction. No imputation needed (though missingness that's informative is captured automatically).</p></div></details>
+<details class="qa" data-id="xgboost-89606d8" data-l="2"><summary>Which hyperparameters would you tune first for XGBoost/LightGBM?</summary><div class="ans"><p>Learning rate + number of trees (via early stopping), then tree complexity (max_depth / num_leaves, min_child_weight / min_child_samples), then sampling (subsample, colsample_bytree), then regularisation (lambda, alpha, gamma). Finish by lowering the learning rate and re-fitting with early stopping.</p></div></details>
+<details class="qa" data-id="xgboost-cc4041a" data-l="2"><summary>How do you handle class imbalance in XGBoost?</summary><div class="ans"><p>scale_pos_weight ≈ negatives/positives (or sample weights), an imbalance-aware eval metric (aucpr) for early stopping, threshold tuning on validation data, and possibly max_delta_step for extreme imbalance with log-loss. Recalibrate probabilities if you reweighted.</p></div></details>
+<details class="qa" data-id="xgboost-e8edf4e" data-l="3"><summary>Why does XGBoost use the second derivative?</summary><div class="ans"><p>A second-order approximation gives a Newton step: leaf values account for curvature (−G/H) rather than using a fixed line search, converging faster and more accurately, and it provides a unified closed-form gain for any twice-differentiable loss, making custom objectives easy (just supply g and h).</p></div></details>
+<details class="qa" data-id="xgboost-d9c2772" data-l="2"><summary>Which feature importance would you trust from XGBoost?</summary><div class="ans"><p>Built-in types disagree: weight (# splits) favours continuous features, gain (average loss reduction) is better but still biased, cover is sample-count based. For reliable global and local explanations use SHAP (TreeSHAP), or permutation importance on held-out data.</p></div></details>
+<details class="qa" data-id="xgboost-76218a0" data-l="2"><summary>When would you pick CatBoost over LightGBM?</summary><div class="ans"><p>Many (high-cardinality) categorical features, small-to-medium datasets where overfitting is a risk, limited tuning time (strong defaults), or when fast and stable inference matters (symmetric trees). LightGBM for very large datasets and fastest training.</p></div></details>
+<details class="qa" data-id="xgboost-998842f" data-l="3"><summary>What are monotonic constraints and why use them?</summary><div class="ans"><p>They force the model's prediction to be non-decreasing (or non-increasing) in a chosen feature, e.g. credit risk must not decrease as utilisation rises. They encode domain knowledge, improve generalisation/robustness, and satisfy regulators. Set via monotone_constraints in XGBoost/LightGBM.</p></div></details>
+<details class="qa" data-id="xgboost-a1f4076" data-l="2"><summary>Why do gradient-boosted trees usually beat deep learning on tabular data?</summary><div class="ans"><p>Tabular features are heterogeneous, often irregular with sharp thresholds and uninformative columns; trees handle mixed scales, missing values and categorical splits natively, are robust to irrelevant features, and need less data and tuning. Neural nets have smooth inductive biases better suited to images, text and audio.</p></div></details>
+</div>
+</main>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>K-Means clustering · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="kmeans">
+<main>
+<div class="eyebrow">Unsupervised · Clustering · Centroid-based</div>
+<h1>K-Means clustering</h1>
+<p class="lede">Partition data into K groups by alternately assigning points to the nearest centroid and moving centroids to the mean of their points. The most-asked unsupervised algorithm: know the objective, why it converges, k-means++, choosing K, and the assumptions that make it fail.</p>
+<div class="toc"><a href="#pitch">30-sec answer</a><a href="#algo">Algorithm</a><a href="#demo">Step-through</a><a href="#math">Objective & convergence</a><a href="#init">k-means++</a><a href="#choosek">Choosing K</a><a href="#assumptions">Assumptions & failures</a><a href="#hp">Hyperparameters</a><a href="#variants">Variants</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“K-means minimises the within-cluster sum of squares \(\sum_k\sum_{x\in C_k}\lVert x-\mu_k\rVert^2\). Lloyd's algorithm alternates an assignment step (nearest centroid) and an update step (centroid = cluster mean); each step can't increase the objective and there are finitely many partitions, so it converges — but to a local minimum, so we use k-means++ initialisation and several restarts (n_init). K is chosen with the elbow method, silhouette score, gap statistic or business needs. It assumes roughly spherical, similarly sized clusters under Euclidean distance, needs scaling, and is sensitive to outliers; alternatives are GMM, DBSCAN, hierarchical or k-medoids.”</p></div>
+
+<h2 id="algo">Lloyd's algorithm</h2>
+<ol><li>Choose K and initialise K centroids (k-means++).</li><li><b>Assign</b> each point to its nearest centroid.</li><li><b>Update</b> each centroid to the mean of its assigned points.</li><li>Repeat 2–3 until assignments stop changing (or centroid shift &lt; tol / max_iter).</li></ol>
+<p>Complexity: O(n · K · d · iterations). Linear in n — scales to millions of points; MiniBatchKMeans for even larger data.</p>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Drop K pins on a map of customers. Every customer walks to the nearest pin. Then move each pin to the middle of the crowd standing at it. Customers re-choose their nearest pin, pins move again — until nobody switches.</p></div>
+
+<h2 id="demo">Step through it</h2>
+<div class="widget" data-demo="kmeans"><div class="widget-title">Lloyd's algorithm, step by step</div><div class="widget-sub">Initialise → Assign → Move. Try random init several times with K = 5 to land in a bad local minimum.</div></div>
+
+<h2 id="math">Objective & why it converges</h2>
+<div class="callout math"><div class="tag">∑ Within-cluster sum of squares (inertia)</div>$$J=\sum_{k=1}^K\sum_{x_i\in C_k}\lVert x_i-\mu_k\rVert^2$$<ul><li>Assignment step: for fixed centroids, assigning each point to its nearest centroid minimises J over assignments.</li><li>Update step: for fixed assignments, the mean minimises the sum of squared distances (set derivative to zero: \(\mu_k=\frac{1}{|C_k|}\sum_{x\in C_k}x\)).</li><li>J never increases and there are finitely many partitions ⇒ convergence in finite steps, to a <b>local</b> optimum. Finding the global optimum is NP-hard.</li><li>K-means is a special case of EM for a Gaussian mixture with equal, spherical covariances and hard assignments.</li></ul></div>
+
+<h2 id="init">Initialisation: k-means++</h2>
+<p>Pick the first centroid uniformly at random; pick each next centroid with probability proportional to \(D(x)^2\), the squared distance to the nearest already-chosen centroid. Spreads centroids out, gives an expected O(log K) approximation of the optimum, and converges faster. Still run several initialisations (<code>n_init</code>) and keep the lowest inertia.</p>
+
+<h2 id="choosek">Choosing K</h2>
+<div class="table-wrap"><table>
+<tr><th>Method</th><th>How</th><th>Notes</th></tr>
+<tr><td>Elbow</td><td>Plot inertia vs K, look for the bend</td><td>Inertia always decreases with K; elbow often ambiguous</td></tr>
+<tr><td>Silhouette</td><td>\(s=\frac{b-a}{\max(a,b)}\): a = mean intra-cluster distance, b = mean distance to the nearest other cluster</td><td>−1…1, higher better; pick K with max average silhouette; O(n²)</td></tr>
+<tr><td>Davies–Bouldin</td><td>Average similarity of each cluster to its most similar one</td><td>Lower is better</td></tr>
+<tr><td>Calinski–Harabasz</td><td>Between- vs within-cluster dispersion ratio</td><td>Higher is better</td></tr>
+<tr><td>Gap statistic</td><td>Compare log inertia with that of uniform reference data</td><td>More principled, costlier</td></tr>
+<tr><td>Business constraint</td><td>Number of segments marketing can act on</td><td>Often the real answer</td></tr>
+</table></div>
+
+<h2 id="assumptions">Assumptions & when it fails</h2>
+<ul>
+<li><b>Spherical (isotropic), convex clusters</b> of similar size and density — fails on elongated, ring/moon shapes or very unequal sizes.</li>
+<li><b>Euclidean distance & scale</b> — standardise features; dominated otherwise by large-range features.</li>
+<li><b>Outliers</b> pull means — use k-medoids, trimming, or remove outliers first.</li>
+<li><b>Numeric features only</b> — use k-modes / k-prototypes for categorical/mixed data.</li>
+<li><b>K must be specified</b>; every point is forced into a cluster (no noise label).</li>
+<li><b>High dimensions</b>: distances concentrate — reduce with PCA first.</li>
+</ul>
+
+<h2 id="hp">Hyperparameters</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Parameter</th><th>Effect</th><th>Tip</th></tr>
+<tr><td>n_clusters</td><td>K</td><td>Elbow / silhouette / domain</td></tr>
+<tr><td>init</td><td>"k-means++" (default) or "random" or array</td><td>Keep k-means++</td></tr>
+<tr><td>n_init</td><td>Number of restarts; best inertia kept</td><td>10+ ("auto" = 1 with k-means++ in new sklearn)</td></tr>
+<tr><td>max_iter, tol</td><td>Convergence limits</td><td>Defaults fine</td></tr>
+<tr><td>algorithm</td><td>"lloyd" or "elkan" (triangle inequality speed-up)</td><td>elkan for well-separated, low-d data</td></tr>
+<tr><td>batch_size (MiniBatchKMeans)</td><td>Mini-batch size</td><td>1024+; big data/streaming</td></tr>
+</table></div>
+
+<h2 id="variants">Variants</h2>
+<ul><li><b>Mini-batch K-means:</b> updates centroids with small random batches — much faster, slightly worse inertia.</li><li><b>K-medoids (PAM):</b> centres are actual data points; any distance; robust to outliers; O(n²).</li><li><b>K-modes / K-prototypes:</b> categorical / mixed data.</li><li><b>Bisecting K-means:</b> repeatedly split the largest cluster — hierarchical flavour.</li><li><b>Kernel / spectral clustering:</b> non-convex shapes.</li></ul>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="km-scratch" data-title="K-means from scratch">
+<div class="lab-task"><p>Complete <code>kmeans(X, k, n_iter, seed)</code>: initialise centroids as <code>k</code> random rows (use <code>rng.choice(len(X), k, replace=False)</code>), then alternate assignment and update for <code>n_iter</code> iterations (or until labels stop changing). Return <code>(labels, centroids, inertia)</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import make_blobs
+
+def kmeans(X, k, n_iter=100, seed=0):
+    rng = np.random.default_rng(seed)
+    C = X[rng.choice(len(X), k, replace=False)]
+    labels = np.zeros(len(X), dtype=int)
+    for _ in range(n_iter):
+        pass  # TODO: assign (argmin of distances), update centroids (means), stop if unchanged
+    inertia = None  # TODO
+    return labels, C, inertia
+
+X, _ = make_blobs(n_samples=500, centers=4, cluster_std=0.8, random_state=1)
+labels, C, inertia = kmeans(X, 4)
+print(C, inertia)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import make_blobs
+
+def kmeans(X, k, n_iter=100, seed=0):
+    rng = np.random.default_rng(seed)
+    C = X[rng.choice(len(X), k, replace=False)]
+    labels = np.full(len(X), -1)
+    for _ in range(n_iter):
+        d = ((X[:, None, :] - C[None, :, :]) ** 2).sum(-1)
+        new = d.argmin(1)
+        if (new == labels).all():
+            break
+        labels = new
+        C = np.array([X[labels == j].mean(0) if (labels == j).any() else C[j] for j in range(k)])
+    inertia = ((X - C[labels]) ** 2).sum()
+    return labels, C, inertia
+
+X, _ = make_blobs(n_samples=500, centers=4, cluster_std=0.8, random_state=1)
+best = min((kmeans(X, 4, seed=s) for s in range(10)), key=lambda r: r[2])   # restarts!
+print("inertia:", round(best[2], 2))
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.cluster import KMeans
+res = [kmeans(X, 4, seed=s) for s in range(10)]
+best = min(res, key=lambda r: r[2])
+assert best[2] is not None, "compute inertia"
+ref = KMeans(4, n_init=10, random_state=0).fit(X).inertia_
+assert abs(best[2] - ref) / ref < 0.01, f"best inertia {best[2]:.1f} vs sklearn {ref:.1f}"
+assert abs(((X - best[1][best[0]]) ** 2).sum() - best[2]) < 1e-6, "inertia must equal the sum of squared distances to assigned centroids"
+print("Matches sklearn's KMeans inertia.")
+</script>
+</div>
+
+<div class="lab" data-id="km-choose-k" data-title="Choose K with elbow and silhouette">
+<div class="lab-task"><p>For K = 2…9, scale the data, fit <code>KMeans(n_clusters=K, n_init=10, random_state=0)</code>, and record inertia in <code>inertias</code> and silhouette in <code>sils</code> (dicts keyed by K). Set <code>best_k</code> to the K with the highest silhouette. Plot both curves.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import make_blobs
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+
+X, _ = make_blobs(n_samples=600, centers=5, cluster_std=[0.6, 0.8, 0.7, 0.9, 0.6], random_state=7)
+Xs = StandardScaler().fit_transform(X)
+inertias, sils = {}, {}
+# TODO
+best_k = None
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import make_blobs
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+
+X, _ = make_blobs(n_samples=600, centers=5, cluster_std=[0.6, 0.8, 0.7, 0.9, 0.6], random_state=7)
+Xs = StandardScaler().fit_transform(X)
+inertias, sils = {}, {}
+for k in range(2, 10):
+    km = KMeans(n_clusters=k, n_init=10, random_state=0).fit(Xs)
+    inertias[k], sils[k] = km.inertia_, silhouette_score(Xs, km.labels_)
+best_k = max(sils, key=sils.get)
+fig, ax = plt.subplots(1, 2, figsize=(9, 3.2))
+ax[0].plot(list(inertias), list(inertias.values()), "o-"); ax[0].set_title("Elbow: inertia"); ax[0].set_xlabel("K")
+ax[1].plot(list(sils), list(sils.values()), "o-", color="C3"); ax[1].set_title("Silhouette"); ax[1].set_xlabel("K")
+plt.tight_layout(); plt.show()
+print("best K by silhouette:", best_k)
+</script>
+<script type="text/x-python" data-part="check">
+assert set(sils) == set(range(2, 10)) and set(inertias) == set(range(2, 10)), "cover K = 2..9"
+assert all(inertias[k] >= inertias[k + 1] - 1e-9 for k in range(2, 9)), "inertia should decrease with K"
+assert best_k == 5, f"silhouette should pick K=5, got {best_k}"
+print("K = 5 recovered.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="kmeans-b3fa619" data-l="1"><summary>Explain the K-means algorithm.</summary><div class="ans"><p>Initialise K centroids; assign each point to the nearest centroid; recompute each centroid as the mean of its points; repeat until assignments stop changing. It minimises the within-cluster sum of squared distances (inertia).</p></div></details>
+<details class="qa" data-id="kmeans-eefacf4" data-l="2"><summary>Does K-means always converge? To the global optimum?</summary><div class="ans"><p>It always converges in a finite number of steps because both steps monotonically decrease (never increase) the objective and there are finitely many partitions. But only to a local minimum — results depend on initialisation, hence k-means++ and multiple restarts.</p></div></details>
+<details class="qa" data-id="kmeans-a7e414a" data-l="1"><summary>How do you choose K?</summary><div class="ans"><p>Elbow method on inertia, average silhouette score, Davies–Bouldin / Calinski–Harabasz indices, gap statistic, stability across bootstrap samples, and — often decisive — business interpretability/actionability of the segments.</p></div></details>
+<details class="qa" data-id="kmeans-6be6522" data-l="2"><summary>What is k-means++ and why is it better?</summary><div class="ans"><p>An initialisation that picks the first centroid randomly and each subsequent one with probability ∝ squared distance to the nearest chosen centroid. It spreads centroids out, avoids several centroids in one cluster, gives an O(log K) approximation guarantee in expectation, and speeds convergence.</p></div></details>
+<details class="qa" data-id="kmeans-f471207" data-l="2"><summary>What are the assumptions/limitations of K-means?</summary><div class="ans"><p>Clusters are spherical, convex, similar in size and density; Euclidean geometry; features on the same scale; K known; sensitive to outliers and initialisation; numeric data only; every point assigned (no noise). Fails on moons/rings, elongated clusters, varied densities.</p></div></details>
+<details class="qa" data-id="kmeans-fe352d6" data-l="1"><summary>Why scale features before K-means?</summary><div class="ans"><p>Euclidean distances are dominated by large-range features, so clusters would be formed almost entirely along those. Standardise (or use domain-meaningful weights) so each feature contributes appropriately.</p></div></details>
+<details class="qa" data-id="kmeans-e8594d5" data-l="2"><summary>What is the silhouette score?</summary><div class="ans"><p>For each point: s = (b − a)/max(a, b), where a is its mean distance to points in its own cluster and b its mean distance to points of the nearest other cluster. Ranges −1 to 1: near 1 well clustered, ~0 on a boundary, negative probably misassigned. Average over points to compare K.</p></div></details>
+<details class="qa" data-id="kmeans-cd87fa5" data-l="2"><summary>How is K-means related to Gaussian Mixture Models?</summary><div class="ans"><p>K-means is the limit of EM for a GMM with equal, spherical covariances (σ²I, σ → 0) and equal weights, with hard instead of soft assignments. GMMs generalise it: elliptical clusters, different sizes, soft probabilistic memberships.</p></div></details>
+<details class="qa" data-id="kmeans-3624b85" data-l="2"><summary>How would you cluster categorical data?</summary><div class="ans"><p>K-modes (matching dissimilarity, modes as centres), K-prototypes for mixed data, hierarchical clustering with Gower distance, or embed categories (e.g. entity embeddings / MCA) and then cluster.</p></div></details>
+<details class="qa" data-id="kmeans-e74673e" data-l="3"><summary>How do you evaluate clustering without labels — and with labels?</summary><div class="ans"><p>Without: internal metrics (silhouette, DB, CH), stability across resamples, and qualitative/business review of segment profiles. With ground truth: Adjusted Rand Index, Normalised/Adjusted Mutual Information, homogeneity/completeness/V-measure.</p></div></details>
+<details class="qa" data-id="kmeans-03178c4" data-l="2"><summary>What's the complexity of K-means and how do you scale it?</summary><div class="ans"><p>O(n·K·d·iterations) time, O((n + K)·d) memory. Scale with MiniBatchKMeans, Elkan's algorithm (triangle inequality), PCA to reduce d, sampling for initialisation, or distributed implementations (Spark MLlib).</p></div></details>
+<details class="qa" data-id="kmeans-2930d9b" data-l="2"><summary>Give a business use case and how you'd validate the result.</summary><div class="ans"><p>Customer segmentation on RFM (recency, frequency, monetary) features: log-transform and scale, choose K with silhouette + marketing input, profile clusters (means, sizes), name them (“lapsed high-value”), check stability over time, and validate by running targeted campaigns (A/B tests) per segment.</p></div></details>
+</div>
+</main>
+</body>
+</html>

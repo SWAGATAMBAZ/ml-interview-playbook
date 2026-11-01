@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Logistic regression · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="logistic-regression">
+<main>
+<div class="eyebrow">Supervised · Classification · The default baseline classifier</div>
+<h1>Logistic regression</h1>
+<p class="lede">Despite the name, it's a classifier: a linear model of the <b>log-odds</b>, squashed through a sigmoid into a probability and trained by maximising likelihood (minimising log-loss). Expect questions on why not MSE, how to interpret coefficients as odds ratios, its assumptions, multiclass extensions and imbalanced data.</p>
+<div class="toc"><a href="#pitch">30-sec answer</a><a href="#intuition">Intuition</a><a href="#math">Maths</a><a href="#demo">Sigmoid demo</a><a href="#interpret">Odds ratios</a><a href="#assumptions">Assumptions</a><a href="#multiclass">Multiclass</a><a href="#hp">Hyperparameters</a><a href="#improve">Improving it</a><a href="#procon">Pros/cons</a><a href="#code">Code</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“Logistic regression models \(P(y=1\mid x)=\sigma(w^Tx+b)\) where σ is the sigmoid; equivalently the log-odds are linear in x, so the decision boundary is a hyperplane. It's trained by maximum likelihood, which is the binary cross-entropy (log-loss) — convex, so gradient methods find the global optimum; there's no closed form. Coefficients are log-odds ratios: \(e^{w_j}\) is the multiplicative change in odds per unit of \(x_j\). It needs independent observations, little multicollinearity and linearity in the logit, outputs reasonably calibrated probabilities, and is regularised with L2 by default (C = 1/λ). For multiclass we use one-vs-rest or softmax.”</p></div>
+
+<h2 id="intuition">Intuition</h2>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Linear regression gives any number from −∞ to +∞, but a probability must sit between 0 and 1. Logistic regression computes the same weighted score, then passes it through an S-shaped curve: very negative scores → close to 0, very positive → close to 1, score 0 → exactly 0.5. Then you pick a threshold (often 0.5) to decide the class.</p></div>
+
+<h2 id="math">The maths</h2>
+<div class="callout math"><div class="tag">∑ Model</div>
+$$z = w^Tx+b,\qquad \hat p=\sigma(z)=\frac{1}{1+e^{-z}},\qquad \log\frac{\hat p}{1-\hat p}=w^Tx+b$$</div>
+<h3>Loss: negative log-likelihood = binary cross-entropy</h3>
+<div class="callout math"><div class="tag">∑ Log-loss and its gradient</div>
+$$L(w)=-\frac1n\sum_{i=1}^n\Big[y_i\log\hat p_i+(1-y_i)\log(1-\hat p_i)\Big]$$
+$$\nabla_w L=\frac1n X^T(\hat p-y)\qquad(\text{same form as linear regression!})$$
+<p>Uses \(\sigma'(z)=\sigma(z)(1-\sigma(z))\). The Hessian \(X^TSX\) with \(S=\operatorname{diag}(\hat p_i(1-\hat p_i))\) is positive semi-definite → convex. Solvers: lbfgs (default), newton-cg / IRLS (Newton's method), liblinear (coordinate descent), sag/saga (stochastic average gradient, large data, supports L1).</p></div>
+<h3>Why not mean squared error?</h3>
+<ul>
+<li>MSE composed with a sigmoid is <b>non-convex</b> in w → local minima.</li>
+<li>Gradient of MSE contains \(\sigma'(z)\), which vanishes when the model is confidently wrong → learning stalls. Log-loss's gradient is simply \((\hat p-y)\), large when wrong.</li>
+<li>Log-loss is the correct likelihood for Bernoulli outcomes, and it heavily penalises confident mistakes.</li>
+</ul>
+<h3>Perfect separation</h3>
+<p>If classes are perfectly separable, the MLE doesn't exist: pushing ‖w‖ → ∞ keeps decreasing the loss. Unregularised solvers diverge / warn. Regularisation (the default L2) fixes this.</p>
+<div class="widget" id="demo" data-demo="sigmoid"><div class="widget-title">Fit a sigmoid by hand</div><div class="widget-sub">Move w and b to minimise the mean log-loss. Notice the boundary is where w·x + b = 0.</div></div>
+
+<h2 id="interpret">Interpreting coefficients</h2>
+<ul>
+<li>\(w_j\) = change in <b>log-odds</b> per one-unit increase in \(x_j\), others fixed.</li>
+<li>\(e^{w_j}\) = <b>odds ratio</b>: e.g. \(w=0.7\) → odds multiply by 2.01 (≈ doubles). \(w=-0.7\) → odds halve.</li>
+<li>The effect on the <i>probability</i> is not constant — it depends on where you are on the sigmoid (largest near p = 0.5).</li>
+<li>Intercept b: log-odds when all features are 0 (or at their means if centred).</li>
+<li>Odds vs probability: p = 0.8 → odds = 4 (“4 to 1”).</li>
+</ul>
+
+<h2 id="assumptions">Assumptions</h2>
+<div class="table-wrap"><table>
+<tr><th>Assumption</th><th>Notes</th></tr>
+<tr><td>Binary (or categorical) outcome, Bernoulli distributed</td><td>Use multinomial / ordinal variants for more classes</td></tr>
+<tr><td>Independent observations</td><td>No repeated measures without adjustments (mixed models, GEE)</td></tr>
+<tr><td>Linearity of features with the <b>log-odds</b></td><td>Check with binned plots / Box–Tidwell test; fix with splines, bins, transforms</td></tr>
+<tr><td>Little multicollinearity</td><td>Inflates SEs, unstable coefficients — check VIF</td></tr>
+<tr><td>Large enough sample</td><td>Rule of thumb ≥ 10–20 events per feature for stable estimates</td></tr>
+<tr><td>No influential outliers</td><td>Check Cook's distance / deviance residuals</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Not assumptions</div><p>Logistic regression does <b>not</b> assume normally distributed errors, homoscedasticity, or a linear relationship between x and y itself (only with the logit).</p></div>
+
+<h2 id="multiclass">Multiclass</h2>
+<ul>
+<li><b>One-vs-Rest (OvR):</b> K binary classifiers, pick the highest score. Probabilities don't naturally sum to 1 (sklearn normalises).</li>
+<li><b>Multinomial / softmax:</b> \(P(y=k\mid x)=\frac{e^{w_k^Tx}}{\sum_j e^{w_j^Tx}}\), trained with categorical cross-entropy. Default in sklearn's LogisticRegression for multiclass (lbfgs).</li>
+<li><b>Ordinal logistic</b> for ordered classes (ratings), not in sklearn (statsmodels OrderedModel).</li>
+</ul>
+
+<h2 id="hp">Hyperparameters</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Parameter</th><th>Effect</th><th>Tuning tip</th></tr>
+<tr><td>C</td><td>Inverse regularisation strength. ↓C → stronger penalty, simpler model</td><td>Log grid 1e-3…1e3 (most important knob)</td></tr>
+<tr><td>penalty</td><td>"l2" (default), "l1" (sparse), "elasticnet", None</td><td>l1 for feature selection; elasticnet with l1_ratio</td></tr>
+<tr><td>solver</td><td>lbfgs, liblinear, newton-cg, newton-cholesky, sag, saga</td><td>saga: big data + l1/elasticnet; liblinear: small data, OvR; scale features for sag/saga</td></tr>
+<tr><td>class_weight</td><td>Reweights the loss per class; "balanced" = n/(k·n_c)</td><td>Use for imbalance; then also tune the threshold</td></tr>
+<tr><td>max_iter</td><td>Solver iterations</td><td>Raise if ConvergenceWarning (and scale!)</td></tr>
+<tr><td>l1_ratio</td><td>Mix for elasticnet</td><td>0…1</td></tr>
+<tr><td>decision threshold</td><td>Not a constructor arg, but a key choice</td><td>Tune on validation for F1 / cost (TunedThresholdClassifierCV)</td></tr>
+</table></div>
+
+<h2 id="improve">Improving performance</h2>
+<ol>
+<li>Scale features; encode categoricals (one-hot, drop one if unregularised).</li>
+<li>Capture non-linearity: splines / polynomial features, binning, interaction terms, log transforms of skewed inputs (it's still linear in the logit).</li>
+<li>Tune C and penalty with stratified CV; optimise the metric that matters (ROC-AUC, PR-AUC, log-loss).</li>
+<li><b>Imbalanced data:</b> class_weight="balanced" or resampling, then tune the decision threshold; evaluate with PR-AUC / recall at fixed precision.</li>
+<li>Check calibration (reliability curve); usually decent out of the box, but class weighting / resampling distorts probabilities.</li>
+<li>Remove leakage-prone and redundant features; check VIF.</li>
+</ol>
+
+<h2 id="procon">Pros, cons & when to use</h2>
+<div class="procon"><div class="pro"><h4>✅ Strengths</h4><ul><li>Fast, scalable, few hyperparameters</li><li>Probabilities, generally well calibrated</li><li>Interpretable (odds ratios), regulatory-friendly (credit scoring)</li><li>Strong baseline; works well with high-dimensional sparse data (text, TF-IDF)</li></ul></div>
+<div class="con"><h4>❌ Weaknesses</h4><ul><li>Linear decision boundary unless you engineer features</li><li>Struggles with complex interactions</li><li>Sensitive to outliers, multicollinearity, perfect separation</li><li>Needs scaling & encoding</li></ul></div></div>
+
+<h2 id="code">Code</h2>
+<script type="text/plain" class="snippet" data-title="Pipeline, CV and odds ratios">
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score, classification_report
+import numpy as np
+
+X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, stratify=y, test_size=0.2, random_state=0)
+
+pipe = Pipeline([("sc", StandardScaler()), ("lr", LogisticRegression(max_iter=1000))])
+grid = GridSearchCV(pipe, {"lr__C": np.logspace(-3, 2, 12)}, cv=StratifiedKFold(5, shuffle=True, random_state=0), scoring="roc_auc")
+grid.fit(X_tr, y_tr)
+proba = grid.predict_proba(X_te)[:, 1]
+print(grid.best_params_, "test AUC:", roc_auc_score(y_te, proba))
+print(classification_report(y_te, (proba >= 0.5).astype(int)))
+odds = np.exp(grid.best_estimator_["lr"].coef_[0])   # per 1 std increase (features were scaled)
+</script>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="logreg-scratch" data-title="Logistic regression from scratch">
+<div class="lab-task"><p>Implement <code>sigmoid</code>, <code>log_loss(y, p)</code> and gradient descent in <code>fit_logreg</code> (weights include the intercept as the first element of <code>w</code>, data matrix <code>Xb</code> already has a column of 1s). Use the gradient \(\frac1n X^T(\hat p - y)\). Clip p to [1e-12, 1−1e-12] inside log_loss.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import make_classification
+
+def sigmoid(z):
+    return None  # TODO
+
+def log_loss(y, p):
+    return None  # TODO
+
+def fit_logreg(Xb, y, lr=0.1, epochs=2000):
+    w = np.zeros(Xb.shape[1])
+    for _ in range(epochs):
+        pass  # TODO
+    return w
+
+X, y = make_classification(n_samples=500, n_features=4, n_informative=3, n_redundant=0, random_state=0)
+X = (X - X.mean(0)) / X.std(0)
+Xb = np.column_stack([np.ones(len(X)), X])
+w = fit_logreg(Xb, y)
+print("w:", w, "loss:", log_loss(y, sigmoid(Xb @ w)))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import make_classification
+
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
+
+def log_loss(y, p):
+    p = np.clip(p, 1e-12, 1 - 1e-12)
+    return -np.mean(y * np.log(p) + (1 - y) * np.log(1 - p))
+
+def fit_logreg(Xb, y, lr=0.1, epochs=2000):
+    w = np.zeros(Xb.shape[1])
+    for _ in range(epochs):
+        p = sigmoid(Xb @ w)
+        w -= lr * Xb.T @ (p - y) / len(y)
+    return w
+
+X, y = make_classification(n_samples=500, n_features=4, n_informative=3, n_redundant=0, random_state=0)
+X = (X - X.mean(0)) / X.std(0)
+Xb = np.column_stack([np.ones(len(X)), X])
+w = fit_logreg(Xb, y)
+acc = ((sigmoid(Xb @ w) >= 0.5) == y).mean()
+print("w:", w.round(3), "loss:", round(log_loss(y, sigmoid(Xb @ w)), 4), "acc:", acc)
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import log_loss as skl
+assert sigmoid(np.array([0.0]))[0] == 0.5, "sigmoid(0) should be 0.5"
+yy = np.array([1, 0, 1]); pp = np.array([0.9, 0.2, 0.6])
+assert abs(log_loss(yy, pp) - skl(yy, pp)) < 1e-9, "log_loss doesn't match sklearn"
+w2 = fit_logreg(Xb, y, lr=0.5, epochs=5000)
+ref = LogisticRegression(penalty=None, max_iter=5000).fit(X, y)
+refw = np.r_[ref.intercept_, ref.coef_[0]]
+assert np.allclose(w2, refw, atol=0.05), f"weights {w2.round(3)} should approach unregularised sklearn {refw.round(3)}"
+print("Matches sklearn's unpenalised logistic regression.")
+</script>
+</div>
+
+<div class="lab" data-id="logreg-odds" data-title="Odds ratios and probability change">
+<div class="lab-task"><p>Fit an <b>unregularised</b> <code>LogisticRegression(penalty=None)</code> on the (unscaled) feature <code>hours</code>. Store the odds ratio for one extra hour in <code>odds_ratio</code>, and the predicted probability of passing for someone who studies 5 hours in <code>p5</code>.</p></div>
+<div data-part="hint">Odds ratio = <code>np.exp(coef)</code>. Probability: <code>model.predict_proba([[5]])[0, 1]</code>.</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+rng = np.random.default_rng(4)
+hours = rng.uniform(0, 10, 300)
+passed = (rng.random(300) < 1 / (1 + np.exp(-(0.9 * hours - 4)))).astype(int)
+
+model = None       # TODO
+odds_ratio = None  # TODO
+p5 = None          # TODO
+print(odds_ratio, p5)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+rng = np.random.default_rng(4)
+hours = rng.uniform(0, 10, 300)
+passed = (rng.random(300) < 1 / (1 + np.exp(-(0.9 * hours - 4)))).astype(int)
+
+model = LogisticRegression(penalty=None).fit(hours.reshape(-1, 1), passed)
+odds_ratio = float(np.exp(model.coef_[0, 0]))
+p5 = float(model.predict_proba([[5]])[0, 1])
+print(f"Each extra hour multiplies the odds of passing by {odds_ratio:.2f}")
+print(f"P(pass | 5 hours) = {p5:.2f}")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert model is not None, "fit the model"
+assert abs(odds_ratio - np.exp(model.coef_[0, 0])) < 1e-9, "odds_ratio should be exp(coef)"
+assert 1.8 < odds_ratio < 3.5, f"odds ratio {odds_ratio:.2f} looks off — did you scale or regularise?"
+assert abs(p5 - model.predict_proba([[5]])[0, 1]) < 1e-9 and 0.4 < p5 < 0.75, "p5 is wrong"
+print("Interpretation nailed.")
+</script>
+</div>
+
+<div class="lab" data-id="logreg-imbalance" data-title="Imbalanced data: class weights + threshold tuning">
+<div class="lab-task"><p>With 5% positives, compare a plain model and one with <code>class_weight="balanced"</code> on <b>recall</b> and <b>precision</b>. Then, for the plain model, find the threshold on the validation probabilities that maximises F1 and store it in <code>best_t</code> (search <code>np.linspace(0.05, 0.95, 91)</code>).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import precision_score, recall_score, f1_score
+
+X, y = make_classification(n_samples=6000, n_features=10, weights=[0.95], flip_y=0.01, class_sep=0.8, random_state=1)
+X_tr, X_val, y_tr, y_val = train_test_split(X, y, stratify=y, test_size=0.3, random_state=1)
+
+plain = LogisticRegression(max_iter=1000).fit(X_tr, y_tr)
+balanced = None  # TODO
+for name, m in [("plain", plain), ("balanced", balanced)]:
+    if m is None: continue
+    pred = m.predict(X_val)
+    print(name, "precision", round(precision_score(y_val, pred), 3), "recall", round(recall_score(y_val, pred), 3))
+
+proba = plain.predict_proba(X_val)[:, 1]
+best_t = None  # TODO: threshold maximising F1
+print("best threshold:", best_t)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import precision_score, recall_score, f1_score
+
+X, y = make_classification(n_samples=6000, n_features=10, weights=[0.95], flip_y=0.01, class_sep=0.8, random_state=1)
+X_tr, X_val, y_tr, y_val = train_test_split(X, y, stratify=y, test_size=0.3, random_state=1)
+
+plain = LogisticRegression(max_iter=1000).fit(X_tr, y_tr)
+balanced = LogisticRegression(max_iter=1000, class_weight="balanced").fit(X_tr, y_tr)
+for name, m in [("plain", plain), ("balanced", balanced)]:
+    pred = m.predict(X_val)
+    print(name, "precision", round(precision_score(y_val, pred), 3), "recall", round(recall_score(y_val, pred), 3))
+
+proba = plain.predict_proba(X_val)[:, 1]
+ts = np.linspace(0.05, 0.95, 91)
+f1s = [f1_score(y_val, (proba >= t).astype(int), zero_division=0) for t in ts]
+best_t = float(ts[int(np.argmax(f1s))])
+print("best threshold:", round(best_t, 2), "F1:", round(max(f1s), 3), "vs F1@0.5:", round(f1_score(y_val, plain.predict(X_val)), 3))
+# NB: in real work pick the threshold on validation data, then report on a separate test set.
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.metrics import recall_score, f1_score
+assert balanced is not None and balanced.class_weight == "balanced", "balanced model missing"
+assert recall_score(y_val, balanced.predict(X_val)) > recall_score(y_val, plain.predict(X_val)), "balanced weights should raise recall"
+assert best_t is not None, "best_t missing"
+ts = np.linspace(0.05, 0.95, 91)
+f1s = [f1_score(y_val, (proba >= t).astype(int), zero_division=0) for t in ts]
+assert abs(best_t - ts[int(np.argmax(f1s))]) < 1e-9, "best_t isn't the F1-maximising threshold"
+print("Threshold tuned: F1 improved from", round(f1_score(y_val, plain.predict(X_val)), 3), "to", round(max(f1s), 3))
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="logistic-regression-b6220d3" data-l="1"><summary>Why is it called “regression” if it's used for classification?</summary><div class="ans"><p>It regresses the log-odds of the positive class on the features (a generalised linear model with a logit link). It outputs a continuous probability; classification comes from thresholding that probability.</p></div></details>
+<details class="qa" data-id="logistic-regression-d5cbbdb" data-l="1"><summary>Why do we use the sigmoid function?</summary><div class="ans"><p>It maps any real number to (0, 1), is monotonic and differentiable with a convenient derivative σ(1−σ), and is the inverse of the logit, so it follows naturally from modelling log-odds linearly (also the canonical link for the Bernoulli distribution).</p></div></details>
+<details class="qa" data-id="logistic-regression-6558444" data-l="2"><summary>Why not use MSE as the loss for logistic regression?</summary><div class="ans"><p>MSE through a sigmoid is non-convex (local minima) and its gradient is multiplied by σ'(z), which is tiny when the prediction is confidently wrong, so learning stalls. Log-loss is the negative Bernoulli log-likelihood, convex in w, and its gradient (p̂ − y)x is large exactly when the model is wrong.</p></div></details>
+<details class="qa" data-id="logistic-regression-c16b38c" data-l="1"><summary>How do you interpret a logistic regression coefficient?</summary><div class="ans"><p>A one-unit increase in x_j changes the log-odds by w_j, i.e., multiplies the odds by e^{w_j} (odds ratio), holding other features constant. E.g., w = 0.4 → odds × 1.49 (+49%). The change in probability depends on the baseline probability.</p></div></details>
+<details class="qa" data-id="logistic-regression-901404f" data-l="2"><summary>Is the decision boundary of logistic regression linear?</summary><div class="ans"><p>Yes: p̂ = 0.5 ⇔ wᵀx + b = 0, a hyperplane in feature space (any threshold t gives wᵀx + b = logit(t), still a hyperplane). It becomes non-linear in the original space only if you add non-linear features (polynomials, splines, interactions).</p></div></details>
+<details class="qa" data-id="logistic-regression-f8a706d" data-l="2"><summary>What are the assumptions of logistic regression?</summary><div class="ans"><p>Binary/categorical outcome; independent observations; linearity between continuous features and the log-odds; little multicollinearity; no extreme influential outliers; sufficiently large sample (≈10+ events per predictor). It does not assume normality, homoscedasticity or linear x–y relationships.</p></div></details>
+<details class="qa" data-id="logistic-regression-7f77828" data-l="2"><summary>Does logistic regression have a closed-form solution?</summary><div class="ans"><p>No — setting the gradient Xᵀ(σ(Xw) − y) = 0 gives non-linear equations. It is solved iteratively: Newton–Raphson / IRLS, L-BFGS, coordinate descent (liblinear), or SGD/SAGA. Convexity guarantees a global optimum (if it exists).</p></div></details>
+<details class="qa" data-id="logistic-regression-db9f5cf" data-l="3"><summary>What happens with perfectly separable data?</summary><div class="ans"><p>The likelihood keeps increasing as ‖w‖ → ∞ (probabilities pushed to exactly 0/1), so the MLE doesn't exist; coefficients and SEs blow up and solvers fail to converge. Fix: regularisation (default L2 in sklearn), Firth's penalised likelihood, or removing the perfectly predictive (often leaking!) feature.</p></div></details>
+<details class="qa" data-id="logistic-regression-c489fda" data-l="2"><summary>How do you handle class imbalance with logistic regression?</summary><div class="ans"><p>class_weight="balanced" (or custom weights), resampling (undersample majority, SMOTE oversampling inside CV), and — most importantly — moving the decision threshold based on business costs or F-score on a validation set. Evaluate with PR-AUC, recall/precision, not accuracy. Note weighting/resampling biases predicted probabilities; recalibrate if you need true probabilities.</p></div></details>
+<details class="qa" data-id="logistic-regression-4ea0f0c" data-l="2"><summary>One-vs-rest vs multinomial (softmax) logistic regression?</summary><div class="ans"><p>OvR trains K independent binary models; simple and parallel, but probabilities aren't jointly modelled. Multinomial fits one model with a softmax over K linear scores and cross-entropy loss — coherent probabilities summing to 1, usually better calibrated; it's sklearn's default with lbfgs.</p></div></details>
+<details class="qa" data-id="logistic-regression-2943110" data-l="2"><summary>Logistic regression vs linear SVM?</summary><div class="ans"><p>Both are linear classifiers with L2 regularisation. LR minimises log-loss (every point contributes, gives probabilities); SVM minimises hinge loss (only margin violators / support vectors matter, no probabilities without Platt scaling, maximises the margin). SVM can be more robust to points far from the boundary; LR is better when you need calibrated probabilities.</p></div></details>
+<details class="qa" data-id="logistic-regression-b38299f" data-l="2"><summary>Logistic regression vs Naive Bayes?</summary><div class="ans"><p>LR is discriminative (models P(y|x) directly); NB is generative (models P(x|y)P(y) with a feature-independence assumption). With little data NB converges faster and can win; with more data LR typically achieves lower asymptotic error (Ng & Jordan). In fact Gaussian NB with shared variances implies a linear (logistic-form) decision boundary.</p></div></details>
+<details class="qa" data-id="logistic-regression-60e0981" data-l="2"><summary>What is the log-loss of a model that always predicts 0.5? What's a good log-loss?</summary><div class="ans"><p>ln 2 ≈ 0.693 for any labels. A useful baseline is predicting the base rate π: loss = −[π ln π + (1−π) ln(1−π)] (e.g., 0.199 for π = 5%). A model is only useful if it beats that baseline.</p></div></details>
+<details class="qa" data-id="logistic-regression-d1d354a" data-l="3"><summary>What is the gradient of the log-loss and how does it compare with linear regression?</summary><div class="ans"><p>∇L = (1/n) Xᵀ(σ(Xw) − y). It has the same structure as linear regression's Xᵀ(Xw − y) — residual times input — because both are GLMs using their canonical link. The Hessian is XᵀSX with S = diag(p(1−p)), used by Newton/IRLS.</p></div></details>
+<details class="qa" data-id="logistic-regression-8dcdc37" data-l="2"><summary>Are logistic regression probabilities calibrated?</summary><div class="ans"><p>Generally yes when the model is well specified and unweighted, because maximising log-likelihood is a proper scoring rule. Strong regularisation, class weights, resampling or misspecification can miscalibrate it; check with a reliability diagram / Brier score and fix with Platt or isotonic calibration.</p></div></details>
+<details class="qa" data-id="logistic-regression-71e5261" data-l="3"><summary>How would you capture non-linear effects in logistic regression?</summary><div class="ans"><p>Add polynomial or spline basis functions (SplineTransformer), bin continuous variables (WoE binning in credit scoring), log/ratio transforms, interaction terms, or kernel approximations (Nystroem + LR). If many interactions matter, move to tree ensembles.</p></div></details>
+<details class="qa" data-id="logistic-regression-cab95ed" data-l="2"><summary>Which metric would you use to evaluate a logistic regression model?</summary><div class="ans"><p>Depends on the goal: ROC-AUC for ranking quality, PR-AUC/F1/recall@precision for rare positives, log-loss/Brier for probability quality, calibration plots when probabilities drive decisions, and a business cost metric at the chosen threshold. Accuracy only with balanced classes and symmetric costs.</p></div></details>
+</div>
+</main>
+</body>
+</html>

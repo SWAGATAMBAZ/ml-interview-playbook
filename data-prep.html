@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Data prep & feature engineering · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="data-prep">
+<main>
+<div class="eyebrow">Foundations · Where most of the real work (and interview probing) happens</div>
+<h1>Data prep & feature engineering</h1>
+<p class="lede">Missing values, outliers, scaling, encoding, feature creation and selection, imbalanced classes and — above all — data leakage. Interviewers use these to separate people who've shipped models from people who've only done tutorials.</p>
+<div class="toc"><a href="#eda">EDA checklist</a><a href="#missing">Missing values</a><a href="#outliers">Outliers</a><a href="#scaling">Scaling</a><a href="#encoding">Encoding</a><a href="#fe">Feature engineering</a><a href="#selection">Feature selection</a><a href="#imbalance">Imbalanced data</a><a href="#leakage">Data leakage</a><a href="#pipelines">Pipelines</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<h2 id="eda">EDA checklist</h2>
+<ul class="two-col">
+<li>Shape, dtypes, memory; what is one row?</li><li>Target distribution / class balance; how the label was created and when</li><li>Missingness per column and its pattern</li><li>Duplicates, constant / near-constant columns, ID-like columns</li><li>Univariate distributions, skew, impossible values</li><li>Outliers (box plots, z-scores, domain limits)</li><li>Cardinality of categoricals, rare levels</li><li>Correlations, multicollinearity (VIF), target relationships</li><li>Time coverage, seasonality, drift between periods</li><li>Leakage suspects: features too predictive, created after the outcome</li>
+</ul>
+
+<h2 id="missing">Missing values</h2>
+<div class="table-wrap"><table>
+<tr><th>Mechanism</th><th>Meaning</th><th>Example</th><th>Implication</th></tr>
+<tr><td>MCAR</td><td>Missing completely at random — unrelated to anything</td><td>Sensor glitch at random</td><td>Dropping rows is unbiased (but loses data)</td></tr>
+<tr><td>MAR</td><td>Depends on observed variables</td><td>Older users skip “income” more often</td><td>Model-based imputation using other columns works</td></tr>
+<tr><td>MNAR</td><td>Depends on the missing value itself</td><td>High earners hide income</td><td>Biased whatever you do; add missing indicators, model the mechanism</td></tr>
+</table></div>
+<div class="table-wrap"><table>
+<tr><th>Strategy</th><th>When</th><th>Watch out</th></tr>
+<tr><td>Drop rows / columns</td><td>Few rows missing (MCAR) / column mostly empty</td><td>Bias & data loss</td></tr>
+<tr><td>Mean / median / mode</td><td>Quick baseline; median for skewed</td><td>Shrinks variance, distorts correlations</td></tr>
+<tr><td>Constant + missing-indicator flag</td><td>Missingness is informative (very common!)</td><td>Adds columns</td></tr>
+<tr><td>KNN imputer</td><td>Local similarity</td><td>Needs scaling; slow</td></tr>
+<tr><td>Iterative / MICE</td><td>MAR, correlated features</td><td>Slower; multiple imputation for inference</td></tr>
+<tr><td>Forward-fill / interpolation</td><td>Time series</td><td>Never back-fill from the future</td></tr>
+<tr><td>Native handling</td><td>XGBoost/LightGBM/CatBoost, sklearn HistGB & trees</td><td>Still think about why it's missing</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Leakage alert</div><p>Compute imputation statistics on the <b>training fold only</b> (put the imputer in a Pipeline). Filling with the mean of the whole dataset leaks test information.</p></div>
+
+<h2 id="outliers">Outliers</h2>
+<ul><li><b>Detect:</b> z-score (|z| &gt; 3, assumes ~normal), IQR rule (below Q1 − 1.5·IQR or above Q3 + 1.5·IQR), modified z-score (median/MAD), Isolation Forest/LOF for multivariate, domain rules.</li><li><b>Decide:</b> error (fix/remove) vs genuine extreme (keep!) vs the actual target of interest (fraud).</li><li><b>Treat:</b> cap/winsorise (e.g. 1st/99th percentile), log/Box-Cox transforms, robust scalers, robust losses (Huber/MAE), tree models (robust to feature outliers).</li></ul>
+
+<h2 id="scaling">Feature scaling</h2>
+<div class="table-wrap"><table>
+<tr><th>Scaler</th><th>Formula</th><th>Use</th></tr>
+<tr><td>StandardScaler</td><td>\((x-\mu)/\sigma\)</td><td>Default for linear models, SVM, kNN, PCA, neural nets</td></tr>
+<tr><td>MinMaxScaler</td><td>\((x-\min)/(\max-\min)\)</td><td>Bounded inputs (images, NN); outlier-sensitive</td></tr>
+<tr><td>RobustScaler</td><td>\((x-\text{median})/\text{IQR}\)</td><td>With outliers</td></tr>
+<tr><td>MaxAbsScaler</td><td>\(x/\max|x|\)</td><td>Sparse data (keeps zeros)</td></tr>
+<tr><td>Power / Quantile transformers</td><td>Box-Cox, Yeo-Johnson, rank → normal/uniform</td><td>Heavy skew</td></tr>
+<tr><td>Normalizer</td><td>Row-wise unit norm</td><td>Text vectors / cosine similarity</td></tr>
+</table></div>
+<div class="callout interview"><div class="tag">💬 Which models need scaling?</div><p><b>Need it:</b> anything distance- or gradient-based or penalised — kNN, K-means, SVM, PCA, linear/logistic regression with regularisation or GD, neural networks. <b>Don't:</b> tree-based models (decision trees, RF, GBMs) and Naive Bayes.</p></div>
+
+<h2 id="encoding">Encoding categorical variables</h2>
+<div class="table-wrap"><table>
+<tr><th>Encoding</th><th>How</th><th>Good for</th><th>Pitfalls</th></tr>
+<tr><td>One-hot</td><td>Binary column per category</td><td>Low cardinality, linear models</td><td>Explodes with high cardinality; drop one column for unregularised linear models</td></tr>
+<tr><td>Ordinal / label</td><td>Integer per category</td><td>Truly ordered categories; trees</td><td>Implies false order for linear/distance models</td></tr>
+<tr><td>Target (mean) encoding</td><td>Replace category by smoothed mean target</td><td>High cardinality</td><td><b>Leakage</b> — must compute out-of-fold with smoothing (sklearn TargetEncoder does cross-fitting)</td></tr>
+<tr><td>Frequency / count</td><td>Category frequency</td><td>High cardinality, trees</td><td>Different categories can collide</td></tr>
+<tr><td>Hashing</td><td>Hash to fixed number of buckets</td><td>Huge / unbounded vocabularies, streaming</td><td>Collisions, not invertible</td></tr>
+<tr><td>Binary / base-N</td><td>Integer → binary digits</td><td>Medium cardinality</td><td>Less interpretable</td></tr>
+<tr><td>Embeddings</td><td>Learned dense vectors</td><td>Neural nets, very high cardinality</td><td>Needs a lot of data</td></tr>
+<tr><td>Native</td><td>LightGBM/CatBoost categorical support</td><td>Tree boosters</td><td>Unseen categories at inference</td></tr>
+</table></div>
+<p>Also handle <b>rare categories</b> (group into “Other”) and <b>unseen categories</b> at inference (<code>handle_unknown="ignore"</code> or "infrequent_if_exist").</p>
+
+<h2 id="fe">Feature engineering ideas</h2>
+<ul class="two-col">
+<li><b>Transformations:</b> log, sqrt, Box-Cox for skew; ratios (debt/income); differences</li>
+<li><b>Interactions:</b> products, crosses (city × device)</li>
+<li><b>Binning:</b> age bands, quantile bins (helps linear models capture non-linearity)</li>
+<li><b>Polynomial / splines</b> for linear models</li>
+<li><b>Dates:</b> day of week, month, holiday flags, time since event, cyclical sin/cos encoding of hour/month</li>
+<li><b>Aggregations:</b> per-customer mean/count/std over windows (RFM), group statistics</li>
+<li><b>Text:</b> TF-IDF, n-grams, embeddings, length/counts</li>
+<li><b>Geo:</b> distances, clusters, lat/long rotations</li>
+<li><b>Domain knowledge</b> beats everything: “days since last login” for churn</li>
+<li><b>Missing indicators</b> and count of missing per row</li>
+</ul>
+
+<h2 id="selection">Feature selection</h2>
+<div class="table-wrap"><table>
+<tr><th>Family</th><th>Methods</th><th>Pros / cons</th></tr>
+<tr><td>Filter</td><td>Variance threshold, correlation with target, chi², ANOVA F, mutual information, VIF</td><td>Fast, model-agnostic; ignores feature interactions</td></tr>
+<tr><td>Wrapper</td><td>Forward/backward selection, RFE (recursive feature elimination), exhaustive</td><td>Considers interactions; expensive, overfit risk — use inside CV</td></tr>
+<tr><td>Embedded</td><td>Lasso/L1, tree importances, SelectFromModel, boosting with gain</td><td>Efficient, part of training; model-specific biases</td></tr>
+<tr><td>Other</td><td>Permutation importance, SHAP, Boruta, stability selection</td><td>More reliable importance estimates</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Selection must happen inside CV</div><p>Selecting features using the full dataset (e.g. top 20 by correlation with y) and then cross-validating gives wildly optimistic scores — the classic leakage in Hastie et al. Put selection steps in the Pipeline.</p></div>
+
+<h2 id="imbalance">Imbalanced classes</h2>
+<ol>
+<li><b>Use the right metric:</b> precision, recall, F1/Fβ, PR-AUC, recall@precision, cost — not accuracy.</li>
+<li><b>Stratified splits</b> and stratified CV.</li>
+<li><b>Class weights / cost-sensitive learning</b> (class_weight="balanced", scale_pos_weight).</li>
+<li><b>Resampling</b> (training folds only!): random undersampling of the majority, random oversampling, <b>SMOTE</b> (synthetic minority points interpolated between a minority point and its minority neighbours), ADASYN, SMOTE-Tomek/ENN cleaning.</li>
+<li><b>Threshold tuning</b> on validation data — often the single most effective step.</li>
+<li><b>Anomaly-detection framing</b> for extreme imbalance; collect more positive examples.</li>
+<li><b>Recalibrate</b> probabilities after weighting/resampling if probabilities are used.</li>
+</ol>
+
+<h2 id="leakage">Data leakage</h2>
+<p>Information that wouldn't be available at prediction time sneaks into training, producing great offline scores and disappointing production results.</p>
+<div class="table-wrap"><table>
+<tr><th>Type</th><th>Example</th><th>Prevention</th></tr>
+<tr><td>Target leakage</td><td>“refund_issued” used to predict fraud; “days_in_hospital” to predict admission</td><td>For every feature ask: is it known at prediction time? Use point-in-time feature snapshots</td></tr>
+<tr><td>Train–test contamination</td><td>Scaling/imputation/selection/target-encoding fit on all data</td><td>Pipelines; fit transforms on training folds only</td></tr>
+<tr><td>Temporal leakage</td><td>Random split of time data; rolling features including the current row</td><td>Time-based splits; shift windows</td></tr>
+<tr><td>Group leakage</td><td>Same patient/customer in train and test</td><td>GroupKFold</td></tr>
+<tr><td>Duplicates</td><td>Near-identical rows across splits</td><td>Deduplicate before splitting</td></tr>
+</table></div>
+
+<h2 id="pipelines">Pipelines: the leakage-proof pattern</h2>
+<script type="text/plain" class="snippet" data-title="ColumnTransformer + Pipeline (memorise this)">
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
+
+num = ["age", "income", "tenure"]
+cat = ["city", "plan"]
+pre = ColumnTransformer([
+    ("num", Pipeline([("imp", SimpleImputer(strategy="median", add_indicator=True)),
+                      ("sc", StandardScaler())]), num),
+    ("cat", Pipeline([("imp", SimpleImputer(strategy="most_frequent")),
+                      ("oh", OneHotEncoder(handle_unknown="ignore", min_frequency=20))]), cat),
+])
+model = Pipeline([("pre", pre), ("clf", LogisticRegression(max_iter=1000, class_weight="balanced"))])
+print(cross_val_score(model, df[num + cat], df["churn"], cv=5, scoring="average_precision").mean())
+</script>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="prep-pipeline" data-title="Build a ColumnTransformer pipeline on messy data">
+<div class="lab-task"><p>The DataFrame has numeric NaNs, a categorical column with NaNs and rare levels. Build <code>model</code> = Pipeline(ColumnTransformer → LogisticRegression(max_iter=1000)) where numeric columns get median imputation + scaling and categorical columns get most-frequent imputation + <code>OneHotEncoder(handle_unknown="ignore")</code>. Compute 5-fold CV ROC-AUC into <code>auc</code>. The model must predict on a row with an unseen city without crashing.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
+
+rng = np.random.default_rng(0)
+n = 1500
+df = pd.DataFrame({
+    "age": rng.normal(40, 12, n).round(),
+    "income": rng.lognormal(10.5, 0.6, n),
+    "tenure": rng.integers(0, 120, n).astype(float),
+    "city": rng.choice(["Mumbai", "Delhi", "Pune", "Kochi", "Indore"], n, p=[.35, .3, .2, .1, .05]),
+})
+logit = -1 + 0.04 * (df.age - 40) - 0.02 * df.tenure + (df.city == "Pune") * 1.2
+df["churn"] = (rng.random(n) < 1 / (1 + np.exp(-logit))).astype(int)
+for c in ["age", "income", "tenure", "city"]:
+    df.loc[rng.random(n) < 0.08, c] = np.nan
+num, cat = ["age", "income", "tenure"], ["city"]
+
+model = None  # TODO
+auc = None    # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
+
+rng = np.random.default_rng(0)
+n = 1500
+df = pd.DataFrame({
+    "age": rng.normal(40, 12, n).round(),
+    "income": rng.lognormal(10.5, 0.6, n),
+    "tenure": rng.integers(0, 120, n).astype(float),
+    "city": rng.choice(["Mumbai", "Delhi", "Pune", "Kochi", "Indore"], n, p=[.35, .3, .2, .1, .05]),
+})
+logit = -1 + 0.04 * (df.age - 40) - 0.02 * df.tenure + (df.city == "Pune") * 1.2
+df["churn"] = (rng.random(n) < 1 / (1 + np.exp(-logit))).astype(int)
+for c in ["age", "income", "tenure", "city"]:
+    df.loc[rng.random(n) < 0.08, c] = np.nan
+num, cat = ["age", "income", "tenure"], ["city"]
+
+pre = ColumnTransformer([
+    ("num", Pipeline([("imp", SimpleImputer(strategy="median")), ("sc", StandardScaler())]), num),
+    ("cat", Pipeline([("imp", SimpleImputer(strategy="most_frequent")), ("oh", OneHotEncoder(handle_unknown="ignore"))]), cat),
+])
+model = Pipeline([("pre", pre), ("clf", LogisticRegression(max_iter=1000))])
+auc = cross_val_score(model, df[num + cat], df.churn, cv=5, scoring="roc_auc").mean()
+print("CV ROC-AUC:", round(auc, 3))
+model.fit(df[num + cat], df.churn)
+print(model.predict_proba(pd.DataFrame([{"age": 30, "income": 50000, "tenure": 3, "city": "Jaipur"}]))[:, 1])
+</script>
+<script type="text/x-python" data-part="check">
+import pandas as pd
+assert model is not None and auc is not None, "build model and compute auc"
+assert auc > 0.7, f"AUC {auc:.2f} too low"
+model.fit(df[num + cat], df.churn)
+p = model.predict_proba(pd.DataFrame([{"age": 30, "income": 50000, "tenure": 3, "city": "Jaipur"}]))
+assert p.shape == (1, 2), "should predict on an unseen city"
+print("Robust pipeline: handles NaNs, scaling, unseen categories. AUC =", round(auc, 3))
+</script>
+</div>
+
+<div class="lab" data-id="prep-leakage" data-title="Catch feature-selection leakage">
+<div class="lab-task"><p>The features are <b>pure noise</b> — the honest accuracy is ~50%. (1) Reproduce the leak: select the 20 best features with <code>SelectKBest(f_classif)</code> on <i>all</i> data, then cross-validate → <code>leaky</code>. (2) Do it correctly with selection inside a Pipeline → <code>honest</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.model_selection import cross_val_score
+
+rng = np.random.default_rng(0)
+X = rng.normal(size=(100, 5000))
+y = rng.integers(0, 2, 100)
+
+leaky = None   # TODO
+honest = None  # TODO
+print("leaky:", leaky, "| honest:", honest)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.model_selection import cross_val_score
+
+rng = np.random.default_rng(0)
+X = rng.normal(size=(100, 5000))
+y = rng.integers(0, 2, 100)
+
+X_sel = SelectKBest(f_classif, k=20).fit_transform(X, y)          # looked at ALL labels
+leaky = cross_val_score(LogisticRegression(), X_sel, y, cv=5).mean()
+honest = cross_val_score(make_pipeline(SelectKBest(f_classif, k=20), LogisticRegression()), X, y, cv=5).mean()
+print(f"leaky CV accuracy: {leaky:.2f}  (fantasy)")
+print(f"honest CV accuracy: {honest:.2f} (truth: noise)")
+</script>
+<script type="text/x-python" data-part="check">
+assert leaky is not None and honest is not None, "compute both"
+assert leaky > 0.75, "the leaky protocol should look impressive"
+assert honest < 0.65, "the honest protocol should be near chance"
+print(f"Leak exposed: {leaky:.2f} vs {honest:.2f}")
+</script>
+</div>
+
+<div class="lab" data-id="prep-target-encoding" data-title="Target encoding without leakage">
+<div class="lab-task"><p>High-cardinality <code>merchant</code> (500 levels) drives fraud. Compare 5-fold CV ROC-AUC of a <code>HistGradientBoostingClassifier</code> using (a) naive in-sample target encoding (category mean of y over the whole data) → <code>auc_naive</code>, vs (b) sklearn's <code>TargetEncoder</code> (cross-fitted) inside a Pipeline → <code>auc_proper</code>. Then compute the <b>true</b> holdout AUC of the naive approach on a fresh test set (<code>auc_naive_holdout</code>) to see that the CV number was a lie.</p></div>
+<div data-part="hint">Naive encoding on a train frame: <code>enc = train.groupby("merchant").fraud.mean()</code>; map train and test with it (fill unseen with the global mean).</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+from sklearn.preprocessing import TargetEncoder
+from sklearn.pipeline import make_pipeline
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.metrics import roc_auc_score
+
+rng = np.random.default_rng(1)
+n, k = 4000, 500
+risk = rng.normal(-3, 1.2, k)
+df = pd.DataFrame({"merchant": rng.integers(0, k, n), "amount": rng.lognormal(3, 1, n)})
+df["fraud"] = (rng.random(n) < 1 / (1 + np.exp(-(risk[df.merchant] + 0.3 * np.log(df.amount))))).astype(int)
+train, test = train_test_split(df, test_size=0.3, random_state=0, stratify=df.fraud)
+
+auc_naive = None          # TODO (CV on train with in-sample encoding)
+auc_proper = None         # TODO (CV on train with TargetEncoder in a pipeline)
+auc_naive_holdout = None  # TODO (fit naive on train, evaluate on test)
+print(auc_naive, auc_proper, auc_naive_holdout)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, pandas as pd
+from sklearn.preprocessing import TargetEncoder
+from sklearn.pipeline import make_pipeline
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.metrics import roc_auc_score
+
+rng = np.random.default_rng(1)
+n, k = 4000, 500
+risk = rng.normal(-3, 1.2, k)
+df = pd.DataFrame({"merchant": rng.integers(0, k, n), "amount": rng.lognormal(3, 1, n)})
+df["fraud"] = (rng.random(n) < 1 / (1 + np.exp(-(risk[df.merchant] + 0.3 * np.log(df.amount))))).astype(int)
+train, test = train_test_split(df, test_size=0.3, random_state=0, stratify=df.fraud)
+
+hgb = lambda: HistGradientBoostingClassifier(random_state=0)
+# (a) naive: encode with ALL training labels, then CV → each row's own label leaks into its feature
+enc = train.groupby("merchant").fraud.mean()
+Xn = pd.DataFrame({"te": train.merchant.map(enc), "amount": train.amount})
+auc_naive = cross_val_score(hgb(), Xn, train.fraud, cv=5, scoring="roc_auc").mean()
+# (b) proper: cross-fitted TargetEncoder inside the pipeline
+Xp = train[["merchant", "amount"]].astype({"merchant": "category"})
+pipe = make_pipeline(TargetEncoder(target_type="binary", random_state=0), hgb())
+auc_proper = cross_val_score(pipe, Xp, train.fraud, cv=5, scoring="roc_auc").mean()
+# (c) the truth for the naive approach
+m = hgb().fit(Xn, train.fraud)
+Xt = pd.DataFrame({"te": test.merchant.map(enc).fillna(train.fraud.mean()), "amount": test.amount})
+auc_naive_holdout = roc_auc_score(test.fraud, m.predict_proba(Xt)[:, 1])
+print(f"naive CV AUC {auc_naive:.3f} → real holdout {auc_naive_holdout:.3f} | proper CV AUC {auc_proper:.3f}")
+</script>
+<script type="text/x-python" data-part="check">
+assert None not in (auc_naive, auc_proper, auc_naive_holdout), "compute all three"
+assert auc_naive > auc_naive_holdout + 0.05, "naive CV should be clearly optimistic vs the real holdout"
+assert abs(auc_proper - auc_naive_holdout) < abs(auc_naive - auc_naive_holdout), "proper CV should be a more honest estimate"
+print("Lesson: target encoding must be cross-fitted.")
+</script>
+</div>
+
+<div class="lab" data-id="prep-imbalance" data-title="Class weights vs undersampling vs threshold">
+<div class="lab-task"><p>With 3% positives, compare three strategies on validation <b>F1</b>: <code>f1_plain</code> (RandomForest default, threshold 0.5), <code>f1_weighted</code> (<code>class_weight="balanced_subsample"</code>), and <code>f1_tuned</code> (plain model with the best threshold from <code>precision_recall_curve</code>). Use <code>RandomForestClassifier(n_estimators=100, min_samples_leaf=3, random_state=0)</code>.</p></div>
+<div data-part="hint">From <code>p, r, t = precision_recall_curve(y_val, proba)</code>: <code>f1 = 2*p*r/(p+r+1e-12)</code>, best threshold = <code>t[np.argmax(f1[:-1])]</code>.</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import f1_score, precision_recall_curve
+
+X, y = make_classification(n_samples=10000, n_features=15, n_informative=6, weights=[0.97], class_sep=1.0, random_state=4)
+X_tr, X_val, y_tr, y_val = train_test_split(X, y, stratify=y, test_size=0.3, random_state=0)
+
+f1_plain = f1_weighted = f1_tuned = None
+# TODO
+print(f1_plain, f1_weighted, f1_tuned)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import f1_score, precision_recall_curve
+
+X, y = make_classification(n_samples=10000, n_features=15, n_informative=6, weights=[0.97], class_sep=1.0, random_state=4)
+X_tr, X_val, y_tr, y_val = train_test_split(X, y, stratify=y, test_size=0.3, random_state=0)
+
+rf = lambda **kw: RandomForestClassifier(n_estimators=100, min_samples_leaf=3, random_state=0, **kw)
+plain = rf().fit(X_tr, y_tr)
+f1_plain = f1_score(y_val, plain.predict(X_val))
+weighted = rf(class_weight="balanced_subsample").fit(X_tr, y_tr)
+f1_weighted = f1_score(y_val, weighted.predict(X_val))
+proba = plain.predict_proba(X_val)[:, 1]
+p, r, t = precision_recall_curve(y_val, proba)
+f1 = 2 * p * r / (p + r + 1e-12)
+best_t = t[np.argmax(f1[:-1])]
+f1_tuned = f1_score(y_val, (proba >= best_t).astype(int))
+print(f"plain {f1_plain:.3f} | class-weighted {f1_weighted:.3f} | threshold-tuned {f1_tuned:.3f} (t={best_t:.2f})")
+# In practice tune the threshold on validation, then confirm on an untouched test set.
+</script>
+<script type="text/x-python" data-part="check">
+assert None not in (f1_plain, f1_weighted, f1_tuned), "compute all three F1 scores"
+assert f1_tuned > f1_plain, "threshold tuning should beat the default 0.5 threshold"
+print("Threshold tuning is often the biggest win for imbalanced problems.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="data-prep-f6d1b01" data-l="1"><summary>How do you handle missing values?</summary><div class="ans"><p>First understand why they're missing (MCAR/MAR/MNAR) and how much. Options: drop rows/columns if few/mostly missing; simple imputation (median/mode) plus a missing-indicator flag; model-based (KNN, iterative/MICE); time-series fill (forward-fill/interpolate); or models that handle NaN natively (gradient boosting). Fit imputers on training data only, and validate the choice with CV.</p></div></details>
+<details class="qa" data-id="data-prep-6e19781" data-l="2"><summary>Explain MCAR, MAR and MNAR.</summary><div class="ans"><p>MCAR: missingness is unrelated to any data — deleting is unbiased. MAR: missingness depends on observed variables — imputation conditioning on them works. MNAR: missingness depends on the unobserved value itself (e.g. high incomes withheld) — any method is biased without modelling the mechanism; missing indicators help capture it.</p></div></details>
+<details class="qa" data-id="data-prep-a1a0a79" data-l="1"><summary>When should you normalise vs standardise?</summary><div class="ans"><p>Standardise (z-score) as the general default for linear models, SVM, PCA, kNN, neural nets — it centres and handles unbounded data. Min-max normalise when you need a bounded range (e.g. pixel intensities, some NN inputs) and there are no strong outliers. RobustScaler with outliers. Trees need neither.</p></div></details>
+<details class="qa" data-id="data-prep-d78cf63" data-l="1"><summary>One-hot vs label encoding — when to use each?</summary><div class="ans"><p>One-hot for nominal categories in linear/distance-based models (no false order). Label/ordinal encoding for ordinal categories, or for tree models where arbitrary integer codes are acceptable. For high cardinality, use target/frequency/hashing encoding or native categorical support.</p></div></details>
+<details class="qa" data-id="data-prep-8695a47" data-l="2"><summary>What is target encoding and its risk?</summary><div class="ans"><p>Replacing each category with the (smoothed) mean of the target for that category. Risk: target leakage — a row's own label influences its feature, and rare categories get extreme values that memorise labels. Mitigate with out-of-fold (cross-fitted) encoding, smoothing toward the global mean, and adding noise.</p></div></details>
+<details class="qa" data-id="data-prep-7a02ed6" data-l="1"><summary>What is data leakage? Give examples.</summary><div class="ans"><p>When training uses information that won't be available at prediction time, inflating offline metrics. Examples: features recorded after the outcome (target leakage), fitting scalers/imputers/feature selection/target encoders on all data before splitting, random splits on time series, the same customer in train and test, duplicates across splits.</p></div></details>
+<details class="qa" data-id="data-prep-9cd9df7" data-l="2"><summary>How do you deal with an imbalanced dataset?</summary><div class="ans"><p>Choose suitable metrics (PR-AUC, F1, recall@precision, cost); stratify splits; apply class weights or resampling (undersampling, SMOTE) only on training folds; tune the decision threshold on validation; consider ensemble methods like balanced random forests; get more minority data; recalibrate probabilities if needed.</p></div></details>
+<details class="qa" data-id="data-prep-71f2605" data-l="2"><summary>How does SMOTE work and what are its drawbacks?</summary><div class="ans"><p>For each minority sample, pick one of its k nearest minority neighbours and create a synthetic point at a random position on the line between them. Drawbacks: can create noisy/overlapping samples in class-overlap regions, ignores the majority class distribution, struggles in high dimensions and with categorical features (use SMOTENC), and must be applied only inside training folds. Often class weights + threshold tuning do as well.</p></div></details>
+<details class="qa" data-id="data-prep-c66c6c8" data-l="2"><summary>Filter vs wrapper vs embedded feature selection?</summary><div class="ans"><p>Filter: rank features by statistics independent of the model (correlation, chi², mutual information) — fast but ignores interactions. Wrapper: search subsets by training models (RFE, forward/backward) — accounts for interactions, expensive, overfit-prone. Embedded: selection during training (Lasso, tree importances) — efficient compromise.</p></div></details>
+<details class="qa" data-id="data-prep-60dc24f" data-l="2"><summary>How do you detect and treat outliers?</summary><div class="ans"><p>Detect with visualisation, z-scores, IQR rule, robust z (MAD), or multivariate methods (Isolation Forest, Mahalanobis). Investigate cause: data error (fix/remove), legitimate extreme (keep, maybe transform/cap), or the signal itself (fraud). Treatments: winsorising, log transforms, robust scaling, robust losses, tree models.</p></div></details>
+<details class="qa" data-id="data-prep-5b8c62c" data-l="2"><summary>How would you encode a feature with 10,000 categories?</summary><div class="ans"><p>Target encoding with cross-fitting and smoothing, frequency encoding, hashing trick, grouping rare categories into “Other”, learned embeddings (neural nets), or native categorical support in LightGBM/CatBoost. Avoid one-hot (sparse and huge) unless using a linear model on sparse matrices.</p></div></details>
+<details class="qa" data-id="data-prep-6cbb766" data-l="2"><summary>Why should preprocessing be inside a pipeline?</summary><div class="ans"><p>So every transformation is fit only on training folds during CV and applied identically at inference — preventing leakage and train/serve skew — and so the whole thing can be tuned (GridSearch over preprocessing params) and serialised as one artifact.</p></div></details>
+<details class="qa" data-id="data-prep-b0aeebd" data-l="3"><summary>How would you encode cyclical features like hour of day?</summary><div class="ans"><p>Map to the unit circle: sin(2π·hour/24) and cos(2π·hour/24), so 23:00 and 00:00 are close. Trees can also handle raw hour with splits, and one-hot works if each value has enough data.</p></div></details>
+<details class="qa" data-id="data-prep-85971ed" data-l="2"><summary>Which algorithms are sensitive to feature scaling and which aren't?</summary><div class="ans"><p>Sensitive: kNN, K-means, SVM, PCA, LDA, regularised linear/logistic regression, anything trained by gradient descent (neural nets). Insensitive: decision trees, random forests, gradient boosting, Naive Bayes (per-feature distributions).</p></div></details>
+</div>
+</main>
+</body>
+</html>

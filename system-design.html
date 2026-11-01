@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ML system design · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script>
+</head>
+<body data-page="system-design">
+<main>
+<div class="eyebrow">Production · The open-ended design round</div>
+<h1>ML system design</h1>
+<p class="lede">“Design a fraud detection system.” “How would you predict churn?” These 45-minute rounds test structured thinking more than any single algorithm. Use a repeatable framework, make trade-offs explicit, and go deep where the interviewer pulls. Four worked case studies below.</p>
+<div class="toc"><a href="#framework">Framework</a><a href="#timing">Time plan</a><a href="#cases">Case studies</a><a href="#patterns">Reusable patterns</a><a href="#signals">What interviewers score</a><a href="#qa">Q&A</a></div>
+
+<h2 id="framework">The 8-step framework</h2>
+<ol>
+<li><b>Clarify the problem & goal.</b> Who uses the predictions, what decision do they drive, what is success in business terms? Scale (users, QPS), latency, constraints (regulation, explainability, fairness), existing system/baseline.</li>
+<li><b>Frame as an ML task.</b> Input → output; classification/regression/ranking; prediction unit and timing; label definition (and its delay and noise). Is ML even needed? Start with a heuristic baseline.</li>
+<li><b>Metrics.</b> Offline (PR-AUC, NDCG, MAPE…) and online (conversion, loss prevented, CTR) + guardrails (latency, complaints, fairness).</li>
+<li><b>Data.</b> Sources, labelling, volume, freshness, biases, privacy; how to build training sets without leakage (point-in-time).</li>
+<li><b>Features.</b> Grouped by entity (user, item, context, interactions), real-time vs batch, embeddings; feature store.</li>
+<li><b>Model.</b> Baseline → simple interpretable model → stronger (GBM / two-tower / sequence models); training cadence, imbalance handling, validation scheme.</li>
+<li><b>Serving & architecture.</b> Batch vs online, candidate generation + ranking, latency budget, caching, fallbacks; draw the diagram.</li>
+<li><b>Evaluation, deployment & monitoring.</b> Offline eval → shadow → A/B test; monitoring of drift, data quality, performance; retraining; feedback loops; iteration plan.</li>
+</ol>
+<div class="callout interview"><div class="tag">💬 Opening line</div><p>“Before I jump into models, can I clarify the goal and constraints? … Here's how I'll structure it: problem framing, metrics, data and features, model, serving, then evaluation and monitoring. I'll start simple and go deeper wherever you'd like.”</p></div>
+
+<h2 id="timing">Time plan for 45 minutes</h2>
+<div class="table-wrap"><table><tr><th>Minutes</th><th>Focus</th></tr>
+<tr><td>0–7</td><td>Clarify requirements, define objective & ML framing</td></tr>
+<tr><td>7–12</td><td>Metrics (offline/online/guardrails)</td></tr>
+<tr><td>12–22</td><td>Data, labels, features</td></tr>
+<tr><td>22–32</td><td>Models: baseline → final, training, trade-offs</td></tr>
+<tr><td>32–40</td><td>Serving architecture, scale, latency</td></tr>
+<tr><td>40–45</td><td>Evaluation/A-B, monitoring, retraining, risks</td></tr></table></div>
+
+<h2 id="cases">Case studies</h2>
+<div data-tabs>
+<div class="tabs"><button class="on">💳 Fraud detection</button><button>📉 Churn prediction</button><button>🛍️ Recommendations</button><button>📦 Demand forecasting</button></div>
+
+<div class="tab-panel on">
+<h3>Real-time card fraud detection</h3>
+<p><b>Clarify:</b> block/flag transactions at authorisation; decision in &lt; 100 ms; fraud rate ~0.1–0.5%; cost of missed fraud (amount + chargeback fees) vs false declines (lost sale, customer friction); review team capacity.</p>
+<p><b>Framing:</b> binary classification per transaction → risk score; actions by thresholds: approve / step-up auth (OTP) / decline / manual review.</p>
+<p><b>Labels:</b> chargebacks & confirmed fraud reports — delayed 30–90 days and noisy; declined transactions have no outcome (selection bias → keep a small random approve holdout or use reject inference).</p>
+<p><b>Metrics:</b> offline PR-AUC, recall at fixed FPR (e.g. 0.1%), fraud $ caught at review capacity (precision@k); online: fraud loss rate, false-decline rate, customer complaints; latency p99.</p>
+<p><b>Features:</b> transaction (amount, merchant category, channel, currency), velocity (count/sum in last 1 h/24 h per card/device/IP — streaming aggregates), deviation from the customer's habits (amount z-score vs history, new merchant/device/country), device fingerprint, geo distance from last transaction / impossible travel, merchant risk (target-encoded, smoothed), graph features (shared devices/cards between accounts).</p>
+<p><b>Model:</b> rules baseline → gradient boosting (LightGBM/XGBoost) with class weights; calibrated scores; optional graph/sequence models for rings; unsupervised Isolation Forest scores as extra features for new patterns.</p>
+<p><b>Serving:</b> streaming feature computation (Kafka + Flink) into an online feature store; low-latency model service (in-memory GBM, ONNX/Treelite); timeout fallback to rules; decision engine combining model score + rules + business policies.</p>
+<p><b>Monitoring:</b> score distribution & PSI per feature hourly, alert rates, analyst feedback precision, delayed-label performance; adversarial adaptation → frequent retraining (weekly) + rapid rule updates; champion/challenger.</p>
+</div>
+
+<div class="tab-panel">
+<h3>Subscription churn prediction</h3>
+<p><b>Clarify:</b> who acts on it (retention team offering discounts?), budget/capacity, how early do we need to know (30 days ahead?), definition of churn (cancellation vs inactivity for 30 days).</p>
+<p><b>Framing:</b> binary classification: “will this active customer churn in the next 30 days?”, scored weekly in batch. Better: <b>uplift modelling</b> — who will be <i>persuaded</i> by an offer (not just who will churn) to avoid wasting incentives on sure-stayers and lost causes.</p>
+<p><b>Training set:</b> snapshots at many past dates; features from data before the snapshot only; label from the following 30 days (point-in-time, no leakage); time-based validation.</p>
+<p><b>Features:</b> tenure, plan, price changes, usage trend (last 7 vs previous 28 days), engagement decline, support tickets & sentiment, payment failures, contract end date, discounts, cohort, NPS.</p>
+<p><b>Model:</b> logistic regression baseline (explainable drivers) → GBM; SHAP for reason codes the retention team can use; calibrated probabilities to compute expected value = P(churn) × CLV × P(save | offer) − offer cost.</p>
+<p><b>Metrics:</b> offline PR-AUC, lift / precision in the top decile; online: A/B test of targeted campaign vs control → retained revenue net of incentive cost.</p>
+<p><b>Serving:</b> weekly batch scoring into the CRM; dashboards; monitor drift after pricing changes; retrain monthly.</p>
+</div>
+
+<div class="tab-panel">
+<h3>E-commerce product recommendations</h3>
+<p><b>Clarify:</b> surface (home feed, “similar items”, email), catalogue size (10M items), users (50M), latency (&lt; 200 ms), objectives (CTR, conversion, GMV, diversity, new-item exposure).</p>
+<p><b>Architecture — multi-stage:</b> (1) <b>candidate generation</b> from millions to ~1,000: collaborative filtering / matrix factorisation, two-tower embedding model with approximate nearest-neighbour search (FAISS/HNSW), co-purchase graphs, popularity/trending, content-based for new items; (2) <b>ranking</b> ~1,000 → 50 with a feature-rich model (GBM/LambdaMART or a deep ranking model) predicting P(click), P(purchase); (3) <b>re-ranking</b> for business rules, diversity, freshness, de-duplication, sponsored slots.</p>
+<p><b>Data & labels:</b> implicit feedback (impressions, clicks, add-to-cart, purchases) with position bias; negatives = shown but not clicked (and sampled); train on logged data with care for exposure bias.</p>
+<p><b>Features:</b> user (history embeddings, demographics, recency), item (category, price, popularity, embeddings from text/images), user–item (past interactions with category/brand, similarity scores), context (time, device, session).</p>
+<p><b>Cold start:</b> new users → popularity + onboarding preferences + session-based models; new items → content embeddings + exploration boost.</p>
+<p><b>Metrics:</b> offline recall@k (candidates), NDCG@k/MAP (ranking); online A/B: CTR, conversion, revenue/session, long-term retention; guardrails: diversity, coverage, latency.</p>
+<p><b>Ops:</b> embeddings/indices refreshed daily, ranking model retrained daily/weekly, real-time session features, bandits/exploration to avoid feedback loops.</p>
+</div>
+
+<div class="tab-panel">
+<h3>Store–SKU demand forecasting</h3>
+<p><b>Clarify:</b> decision = replenishment orders; horizon (next 14 days, daily), granularity (10k SKUs × 500 stores), lead times, cost of stock-out vs overstock (perishables!).</p>
+<p><b>Framing:</b> probabilistic regression per store–SKU–day; produce quantiles (P50, P90) because ordering decisions depend on service level.</p>
+<p><b>Model:</b> seasonal-naive & moving-average baselines → a <b>global LightGBM</b> across all series with lag features (7, 14, 28, 364 days), rolling means, price & promo flags, holidays, weather, store/SKU categoricals, Tweedie or quantile loss; hierarchical reconciliation (SKU → category → store); special handling for intermittent demand and new products (similar-item priors).</p>
+<p><b>Validation:</b> rolling-origin backtests over multiple cut-offs mirroring the 14-day horizon; metrics WAPE, bias, pinball loss; evaluate by segment (fast vs slow movers).</p>
+<p><b>Serving:</b> nightly batch pipeline (Airflow) → forecasts table → ordering system; forecast-value-add vs planners' overrides.</p>
+<p><b>Monitoring:</b> forecast accuracy per segment once actuals land, bias drift, stock-outs (censored demand: sales ≠ demand when out of stock — correct the training labels), promotion calendar changes.</p>
+</div>
+</div>
+
+<h2 id="patterns">Reusable patterns & trade-offs</h2>
+<div class="table-wrap"><table>
+<tr><th>Pattern</th><th>When</th></tr>
+<tr><td>Rules/heuristics baseline first</td><td>Always — gives a benchmark and a fallback</td></tr>
+<tr><td>Two-stage retrieval + ranking</td><td>Huge candidate sets (search, recommendations, ads)</td></tr>
+<tr><td>Calibrated score + decision layer</td><td>Different actions at different risk thresholds; costs change faster than models</td></tr>
+<tr><td>Point-in-time snapshots</td><td>Any label in the future relative to features (churn, credit, fraud)</td></tr>
+<tr><td>Human-in-the-loop</td><td>High-stakes or uncertain cases; generates labels</td></tr>
+<tr><td>Exploration / holdouts</td><td>Feedback loops (recs, credit approvals, fraud declines)</td></tr>
+<tr><td>Uplift modelling</td><td>Targeting interventions (marketing, retention)</td></tr>
+<tr><td>Embeddings + ANN search</td><td>Similarity, semantic search, RAG retrieval</td></tr>
+</table></div>
+
+<h2 id="signals">What interviewers score</h2>
+<ul><li>Asks clarifying questions and ties ML choices to the business objective.</li><li>Clear problem framing with a well-defined label and leakage awareness.</li><li>Sensible metric choices including online metrics and guardrails.</li><li>Starts simple and justifies added complexity.</li><li>Concrete, creative features grounded in the domain.</li><li>Understands production: latency, scale, freshness, monitoring, retraining, failure modes.</li><li>Communicates trade-offs and drives the conversation with structure.</li></ul>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="system-design-3cc2946" data-l="2"><summary>How would you design a system to detect fake reviews?</summary><div class="ans"><p>Clarify the action (hide, downrank, review) and costs. Labels from moderation decisions and known fraud rings (noisy; use active learning). Features: text (embeddings, repetitiveness, sentiment extremity), reviewer behaviour (account age, review velocity, rating variance, burstiness on one product), graph signals (reviewer–product bipartite communities), metadata (IP/device sharing, verified purchase). Model: GBM on behavioural + text features, graph-based detection for rings. Metrics: precision at moderation capacity, recall on known rings; monitor adversarial shifts; human review loop.</p></div></details>
+<details class="qa" data-id="system-design-2a65492" data-l="2"><summary>How do you define the label for a churn model?</summary><div class="ans"><p>Work with the business: explicit cancellation for subscriptions; for non-contractual businesses, inactivity beyond a threshold chosen from the return-probability curve (e.g. 95% of users inactive for 45 days never return). Fix a prediction point and horizon (churn within 30 days after snapshot), exclude already-churned users, and keep feature windows strictly before the snapshot.</p></div></details>
+<details class="qa" data-id="system-design-3cae099" data-l="2"><summary>How would you handle the cold-start problem in recommendations?</summary><div class="ans"><p>New users: popular/trending items, onboarding questions, contextual signals (location, device, referrer), session-based recommendations that adapt within the first clicks. New items: content-based features/embeddings (text, image, category, price), exploration boosts or bandits to gather interactions, similar-item mapping.</p></div></details>
+<details class="qa" data-id="system-design-7f16aa5" data-l="3"><summary>How would you evaluate a recommender offline and online?</summary><div class="ans"><p>Offline: time-split holdout of interactions; recall@k for candidate generation; NDCG@k/MAP/MRR for ranking; coverage, diversity, novelty; counterfactual/off-policy evaluation with logged propensities (IPS) to correct exposure bias. Online: A/B test on CTR, conversion, revenue/session, retention, with guardrails (latency, diversity, complaints).</p></div></details>
+<details class="qa" data-id="system-design-29df504" data-l="2"><summary>Batch-scored model or real-time API for a credit-limit increase campaign?</summary><div class="ans"><p>Batch: eligibility and offers are decided periodically, latency isn't critical, features come from monthly statements, and batch is cheaper, easier to audit and explain. Real-time only if the offer is triggered by in-session events.</p></div></details>
+<details class="qa" data-id="system-design-7588906" data-l="2"><summary>How would you predict ETA for a food delivery app?</summary><div class="ans"><p>Decompose into stages (restaurant prep time, courier assignment & pickup, travel time) with separate models or a model with stage features; features: restaurant historical prep times by hour, current order load, courier location & availability, route distance, real-time traffic, weather; GBM with quantile loss for P50/P90; evaluate MAE and on-time %; online calibration; monitor during peaks and adjust quickly with real-time features.</p></div></details>
+<details class="qa" data-id="system-design-215d807" data-l="3"><summary>How would you ensure fairness in a loan approval model?</summary><div class="ans"><p>Exclude protected attributes as inputs but test for proxies; measure fairness metrics across groups (approval-rate parity, equal opportunity/TPR parity, calibration within groups); analyse trade-offs with business and legal; mitigations: reweighting, constraints during training, group-specific thresholds where legal; explainability (reason codes, adverse-action notices); documentation (model cards), monitoring and periodic audits.</p></div></details>
+<details class="qa" data-id="system-design-34699f0" data-l="2"><summary>Your model will be used to rank search results. Which loss and metrics?</summary><div class="ans"><p>Learning-to-rank: pointwise (regression/classification of relevance), pairwise (RankNet, LambdaRank) or listwise (LambdaMART, ListNet). LambdaMART (LightGBM/XGBoost rank:ndcg) is a strong default. Offline NDCG@10/MRR from graded relevance labels or click models (correct position bias); online CTR, successful sessions, time to click, abandonment.</p></div></details>
+</div>
+</main>
+</body>
+</html>

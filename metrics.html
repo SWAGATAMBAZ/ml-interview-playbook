@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Evaluation metrics · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="metrics">
+<main>
+<div class="eyebrow">Foundations · Measuring what matters</div>
+<h1>Evaluation metrics</h1>
+<p class="lede">Choosing the right metric is a judgement call interviewers love: precision vs recall, ROC-AUC vs PR-AUC, why accuracy lies on imbalanced data, F1 vs Fβ, log-loss and calibration, regression metrics, ranking metrics, and tying it all to business cost.</p>
+<div class="toc"><a href="#cm">Confusion matrix</a><a href="#demo">Threshold demo</a><a href="#cls">Classification metrics</a><a href="#roc">ROC vs PR</a><a href="#prob">Probabilistic metrics</a><a href="#multi">Multiclass averaging</a><a href="#reg">Regression metrics</a><a href="#rank">Ranking metrics</a><a href="#choose">Choosing a metric</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<h2 id="cm">Confusion matrix</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>Predicted positive</th><th>Predicted negative</th></tr>
+<tr><td><b>Actual positive</b></td><td>True Positive (TP)</td><td>False Negative (FN) — Type II error, “miss”</td></tr>
+<tr><td><b>Actual negative</b></td><td>False Positive (FP) — Type I error, “false alarm”</td><td>True Negative (TN)</td></tr>
+</table></div>
+<div class="callout math"><div class="tag">∑ Core formulas</div>
+$$\text{Accuracy}=\frac{TP+TN}{N}\quad \text{Precision}=\frac{TP}{TP+FP}\quad \text{Recall (TPR, sensitivity)}=\frac{TP}{TP+FN}$$
+$$\text{Specificity (TNR)}=\frac{TN}{TN+FP}\quad \text{FPR}=\frac{FP}{FP+TN}=1-\text{specificity}\quad F_1=\frac{2PR}{P+R}\quad F_\beta=\frac{(1+\beta^2)PR}{\beta^2P+R}$$</div>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p><b>Precision:</b> of everything I flagged, how much was really positive? (“Don't cry wolf.”) <b>Recall:</b> of all real positives, how many did I catch? (“Don't miss the wolf.”) Spam filters care about precision (don't lose real mail); cancer screening cares about recall (don't miss a tumour).</p></div>
+
+<h2 id="demo">Move the threshold</h2>
+<div class="widget" data-demo="threshold"><div class="widget-title">Threshold, confusion matrix & ROC</div><div class="widget-sub">Drop prevalence to 2% and watch accuracy stay high while recall collapses at a high threshold.</div></div>
+
+<h2 id="cls">Classification metrics: when to use which</h2>
+<div class="table-wrap"><table>
+<tr><th>Metric</th><th>Use when</th><th>Caveat</th></tr>
+<tr><td>Accuracy</td><td>Balanced classes, equal error costs</td><td>Misleading with imbalance (99% by predicting “no fraud”)</td></tr>
+<tr><td>Precision</td><td>False positives are costly (spam, recommending wrong products, manual review capacity)</td><td>Ignores misses</td></tr>
+<tr><td>Recall</td><td>False negatives are costly (disease, fraud, safety)</td><td>Trivially 1 by flagging everything</td></tr>
+<tr><td>F1 / Fβ</td><td>Need a single number balancing both; β &gt; 1 weights recall</td><td>Ignores TN; threshold-dependent</td></tr>
+<tr><td>Specificity</td><td>Medical testing alongside sensitivity</td><td></td></tr>
+<tr><td>Balanced accuracy</td><td>Imbalance; mean of per-class recall</td><td></td></tr>
+<tr><td>MCC (Matthews)</td><td>Single robust score using all four cells, imbalance-safe</td><td>Less intuitive</td></tr>
+<tr><td>Cohen's κ</td><td>Agreement beyond chance (annotators)</td><td></td></tr>
+<tr><td>Precision@k / Recall@k</td><td>Fixed review capacity (top 100 alerts per day)</td><td></td></tr>
+</table></div>
+
+<h2 id="roc">ROC-AUC vs PR-AUC</h2>
+<ul>
+<li><b>ROC curve:</b> TPR vs FPR across all thresholds. <b>AUC</b> = probability that a random positive is scored above a random negative (equivalent to the Mann–Whitney U statistic). 0.5 = random, 1 = perfect. Threshold- and scale-invariant (a ranking metric).</li>
+<li><b>PR curve:</b> precision vs recall. <b>Average precision (PR-AUC)</b>; baseline = prevalence (e.g. 0.01 for 1% positives).</li>
+<li>With heavy imbalance, ROC-AUC can look great because FPR stays tiny when TN is huge — e.g. 1,000 false positives among 1,000,000 negatives is FPR 0.001 but may swamp 100 true positives. PR-AUC exposes this. <b>Use PR-AUC when positives are rare and you care about the positive class.</b></li>
+<li>ROC-AUC doesn't change if you rescale scores; it says nothing about calibration.</li>
+</ul>
+
+<h2 id="prob">Probabilistic metrics & calibration</h2>
+<ul>
+<li><b>Log-loss:</b> \(-\frac1n\sum[y\log p+(1-y)\log(1-p)]\) — punishes confident errors; proper scoring rule.</li>
+<li><b>Brier score:</b> \(\frac1n\sum(p-y)^2\) — MSE of probabilities; decomposes into calibration + refinement.</li>
+<li><b>Calibration:</b> among cases predicted 0.7, ~70% should be positive. Check with a reliability diagram / ECE. Fix with Platt scaling (sigmoid) or isotonic regression (CalibratedClassifierCV) on held-out data.</li>
+<li>Calibration matters whenever probabilities feed decisions: expected-value pricing, risk scores, thresholds based on costs.</li>
+</ul>
+
+<h2 id="multi">Multiclass averaging</h2>
+<div class="table-wrap"><table>
+<tr><th>Average</th><th>How</th><th>Effect</th></tr>
+<tr><td>Macro</td><td>Compute metric per class, unweighted mean</td><td>Every class equal — highlights poor minority-class performance</td></tr>
+<tr><td>Weighted</td><td>Per-class metric weighted by support</td><td>Reflects class frequencies</td></tr>
+<tr><td>Micro</td><td>Pool all TP/FP/FN globally</td><td>For single-label multiclass, micro-F1 = accuracy</td></tr>
+</table></div>
+
+<h2 id="reg">Regression metrics</h2>
+<div class="table-wrap"><table>
+<tr><th>Metric</th><th>Formula</th><th>Notes</th></tr>
+<tr><td>MAE</td><td>\(\frac1n\sum|y-\hat y|\)</td><td>Robust; same units; optimal constant = median</td></tr>
+<tr><td>MSE / RMSE</td><td>\(\frac1n\sum(y-\hat y)^2\), √</td><td>Penalises large errors; optimal constant = mean; RMSE in y's units</td></tr>
+<tr><td>R²</td><td>\(1-\text{SSE}/\text{SST}\)</td><td>Variance explained; can be negative on test</td></tr>
+<tr><td>Adjusted R²</td><td>penalises # features</td><td>Model comparison in-sample</td></tr>
+<tr><td>MAPE</td><td>\(\frac1n\sum|e/y|\)</td><td>Scale-free; breaks at y≈0; asymmetric</td></tr>
+<tr><td>RMSLE</td><td>RMSE of log(1+y)</td><td>Relative errors; penalises under-prediction more; skewed targets</td></tr>
+<tr><td>Huber / quantile loss</td><td>—</td><td>Robust / interval evaluation</td></tr>
+</table></div>
+<p><b>RMSE vs MAE:</b> RMSE ≥ MAE always; a large gap means a few big errors. Choose RMSE when big errors are disproportionately costly, MAE when all errors cost linearly or with outliers.</p>
+
+<h2 id="rank">Ranking & recommendation metrics</h2>
+<ul><li><b>Precision@k, Recall@k, Hit rate@k</b></li><li><b>MAP</b> (mean average precision): rewards relevant items ranked early.</li><li><b>MRR</b>: mean of 1/rank of the first relevant item.</li><li><b>NDCG@k</b>: graded relevance with log-discount \(\sum\frac{2^{rel_i}-1}{\log_2(i+1)}\), normalised by the ideal ranking.</li><li>Beyond accuracy: coverage, diversity, novelty, and online metrics (CTR, conversion, dwell time).</li></ul>
+
+<h2 id="choose">Choosing a metric (the interview framework)</h2>
+<ol><li>What decision does the model drive, and what does each error type cost? Translate to a cost matrix if possible.</li><li>Is the positive class rare? → PR-AUC / F1 / recall at fixed precision.</li><li>Ranking or thresholded decision? → AUC/NDCG vs precision/recall at an operating point.</li><li>Do probabilities matter? → log-loss, Brier, calibration.</li><li>Are there capacity constraints? → precision@k.</li><li>Pick one primary metric + guardrail metrics (latency, fairness across segments, calibration).</li></ol>
+<div class="callout interview"><div class="tag">💬 Example answer</div><p>“For fraud with 0.2% positives and an ops team that can review 500 cases a day, I'd optimise PR-AUC during model selection, then choose the threshold that gives the top 500 scores and report precision@500 and the fraud value caught, with false-positive rate as a guardrail for customer friction.”</p></div>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="met-scratch" data-title="Metrics from scratch">
+<div class="lab-task"><p>Implement <code>confusion(y, yhat)</code> returning <code>(tp, fp, fn, tn)</code>, and <code>prf(y, yhat)</code> returning <code>(precision, recall, f1)</code>. Then implement <code>auc_rank(y, scores)</code> as the probability that a random positive outscores a random negative (count ties as ½).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+
+def confusion(y, yhat):
+    return None  # TODO (tp, fp, fn, tn)
+
+def prf(y, yhat):
+    return None  # TODO (precision, recall, f1)
+
+def auc_rank(y, scores):
+    return None  # TODO
+
+y = np.array([1, 0, 1, 1, 0, 0, 1, 0, 0, 0])
+s = np.array([.9, .8, .7, .6, .55, .4, .35, .3, .2, .1])
+print(confusion(y, (s >= .5).astype(int)), prf(y, (s >= .5).astype(int)), auc_rank(y, s))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+
+def confusion(y, yhat):
+    y, yhat = np.asarray(y), np.asarray(yhat)
+    tp = int(((y == 1) & (yhat == 1)).sum()); fp = int(((y == 0) & (yhat == 1)).sum())
+    fn = int(((y == 1) & (yhat == 0)).sum()); tn = int(((y == 0) & (yhat == 0)).sum())
+    return tp, fp, fn, tn
+
+def prf(y, yhat):
+    tp, fp, fn, tn = confusion(y, yhat)
+    p = tp / (tp + fp) if tp + fp else 0.0
+    r = tp / (tp + fn) if tp + fn else 0.0
+    f = 2 * p * r / (p + r) if p + r else 0.0
+    return p, r, f
+
+def auc_rank(y, scores):
+    y, s = np.asarray(y), np.asarray(scores)
+    pos, neg = s[y == 1], s[y == 0]
+    diff = pos[:, None] - neg[None, :]
+    return ((diff > 0).sum() + 0.5 * (diff == 0).sum()) / (len(pos) * len(neg))
+
+y = np.array([1, 0, 1, 1, 0, 0, 1, 0, 0, 0])
+s = np.array([.9, .8, .7, .6, .55, .4, .35, .3, .2, .1])
+yhat = (s >= .5).astype(int)
+print("tp fp fn tn:", confusion(y, yhat)); print("P R F1:", np.round(prf(y, yhat), 3)); print("AUC:", auc_rank(y, s))
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.metrics import precision_recall_fscore_support, roc_auc_score, confusion_matrix
+rng = np.random.default_rng(0)
+yy = rng.integers(0, 2, 300); ss = np.round(rng.random(300) + 0.3 * yy, 2); hh = (ss > 0.6).astype(int)
+tn, fp, fn, tp = confusion_matrix(yy, hh).ravel()
+assert confusion(yy, hh) == (tp, fp, fn, tn), "confusion counts wrong (order is tp, fp, fn, tn)"
+p, r, f, _ = precision_recall_fscore_support(yy, hh, average="binary")
+assert np.allclose(prf(yy, hh), (p, r, f)), "precision/recall/F1 wrong"
+assert abs(auc_rank(yy, ss) - roc_auc_score(yy, ss)) < 1e-12, "AUC (with ties) wrong"
+print("All three match sklearn — including tie handling in AUC.")
+</script>
+</div>
+
+<div class="lab" data-id="met-roc-vs-pr" data-title="ROC-AUC vs PR-AUC under imbalance">
+<div class="lab-task"><p>Train the same logistic regression on datasets with 50% and 1% positives (same class separation). Store ROC-AUC and PR-AUC (<code>average_precision_score</code>) in dict <code>res</code> = <code>{0.5: (roc, pr), 0.01: (roc, pr)}</code>. Notice how ROC-AUC barely moves while PR-AUC collapses.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score, average_precision_score
+
+res = {}
+for pos_rate in [0.5, 0.01]:
+    X, y = make_classification(n_samples=40000, n_features=10, n_informative=4, weights=[1 - pos_rate], class_sep=0.8, flip_y=0, random_state=0)
+    X_tr, X_te, y_tr, y_te = train_test_split(X, y, stratify=y, random_state=0)
+    # TODO: fit LogisticRegression(max_iter=1000), fill res[pos_rate]
+print(res)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score, average_precision_score
+
+res = {}
+for pos_rate in [0.5, 0.01]:
+    X, y = make_classification(n_samples=40000, n_features=10, n_informative=4, weights=[1 - pos_rate], class_sep=0.8, flip_y=0, random_state=0)
+    X_tr, X_te, y_tr, y_te = train_test_split(X, y, stratify=y, random_state=0)
+    p = LogisticRegression(max_iter=1000).fit(X_tr, y_tr).predict_proba(X_te)[:, 1]
+    res[pos_rate] = (roc_auc_score(y_te, p), average_precision_score(y_te, p))
+    print(f"positives {pos_rate:>4}: ROC-AUC {res[pos_rate][0]:.3f} | PR-AUC {res[pos_rate][1]:.3f} (baseline {y_te.mean():.3f})")
+</script>
+<script type="text/x-python" data-part="check">
+assert set(res) == {0.5, 0.01}, "fill both"
+assert abs(res[0.5][0] - res[0.01][0]) < 0.1, "ROC-AUC should be fairly stable across prevalence"
+assert res[0.01][1] < res[0.5][1] - 0.3, "PR-AUC should drop sharply at 1% prevalence"
+print("ROC-AUC hides imbalance; PR-AUC doesn't.")
+</script>
+</div>
+
+<div class="lab" data-id="met-calibration" data-title="Calibrate a classifier">
+<div class="lab-task"><p>Naive Bayes gives over-confident probabilities. Wrap <code>GaussianNB()</code> in <code>CalibratedClassifierCV(method="isotonic", cv=5)</code> as <code>cal</code>. Compare Brier scores (<code>brier_raw</code>, <code>brier_cal</code>) on the test set and plot reliability curves with <code>calibration_curve</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import GaussianNB
+from sklearn.calibration import CalibratedClassifierCV, calibration_curve
+from sklearn.metrics import brier_score_loss
+
+X, y = make_classification(n_samples=20000, n_features=20, n_informative=5, n_redundant=10, random_state=0)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3, random_state=0)
+
+raw = GaussianNB().fit(X_tr, y_tr)
+cal = None        # TODO
+brier_raw = None  # TODO
+brier_cal = None  # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import GaussianNB
+from sklearn.calibration import CalibratedClassifierCV, calibration_curve
+from sklearn.metrics import brier_score_loss
+
+X, y = make_classification(n_samples=20000, n_features=20, n_informative=5, n_redundant=10, random_state=0)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3, random_state=0)
+
+raw = GaussianNB().fit(X_tr, y_tr)
+cal = CalibratedClassifierCV(GaussianNB(), method="isotonic", cv=5).fit(X_tr, y_tr)
+p_raw, p_cal = raw.predict_proba(X_te)[:, 1], cal.predict_proba(X_te)[:, 1]
+brier_raw, brier_cal = brier_score_loss(y_te, p_raw), brier_score_loss(y_te, p_cal)
+plt.figure(figsize=(4.5, 4))
+for name, p in [("raw NB", p_raw), ("isotonic", p_cal)]:
+    fr, mp = calibration_curve(y_te, p, n_bins=10)
+    plt.plot(mp, fr, "o-", label=name)
+plt.plot([0, 1], [0, 1], "k--", lw=1); plt.xlabel("mean predicted"); plt.ylabel("fraction positive"); plt.legend(); plt.show()
+print(f"Brier raw {brier_raw:.4f} → calibrated {brier_cal:.4f}")
+</script>
+<script type="text/x-python" data-part="check">
+assert cal is not None and brier_cal is not None and brier_raw is not None, "fit cal and compute both Brier scores"
+assert brier_cal < brier_raw * 0.95, "calibration should clearly lower the Brier score"
+print("Better calibrated probabilities.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="metrics-4a0a955" data-l="1"><summary>Explain precision and recall with an example.</summary><div class="ans"><p>Precision = TP/(TP+FP): of the transactions flagged as fraud, the fraction actually fraudulent. Recall = TP/(TP+FN): of all fraudulent transactions, the fraction we flagged. Raising the threshold increases precision and lowers recall; the right balance depends on the costs of false alarms vs misses.</p></div></details>
+<details class="qa" data-id="metrics-05740f3" data-l="1"><summary>Why is accuracy a bad metric for imbalanced data?</summary><div class="ans"><p>With 1% positives, predicting “negative” for everyone gives 99% accuracy while catching nothing. Accuracy is dominated by the majority class; use precision/recall, F1, PR-AUC, balanced accuracy or MCC, or a cost-based metric.</p></div></details>
+<details class="qa" data-id="metrics-de67908" data-l="2"><summary>What does ROC-AUC mean intuitively?</summary><div class="ans"><p>The probability that the model scores a randomly chosen positive higher than a randomly chosen negative. It summarises ranking quality across all thresholds; 0.5 is random, 1.0 perfect. It is insensitive to class balance and to monotonic transformations of scores.</p></div></details>
+<details class="qa" data-id="metrics-d43cd38" data-l="2"><summary>When would you prefer PR-AUC over ROC-AUC?</summary><div class="ans"><p>When positives are rare and you care about performance on them (fraud, disease, defects). ROC-AUC uses FPR, whose denominator (all negatives) is huge, so many false positives barely move it; PR-AUC uses precision, which directly reflects false alarms relative to true detections.</p></div></details>
+<details class="qa" data-id="metrics-60f35bb" data-l="2"><summary>What is the F1 score and when is it not appropriate?</summary><div class="ans"><p>The harmonic mean of precision and recall, high only when both are high. Not appropriate when costs of FP and FN differ a lot (use Fβ or a cost function), when true negatives matter, or when you need threshold-free comparison (use AUCs).</p></div></details>
+<details class="qa" data-id="metrics-134042e" data-l="2"><summary>Macro vs micro vs weighted averaging?</summary><div class="ans"><p>Macro: average per-class metrics equally — highlights minority-class performance. Weighted: average weighted by class support. Micro: aggregate TP/FP/FN across classes — dominated by large classes; equals accuracy for single-label multiclass.</p></div></details>
+<details class="qa" data-id="metrics-3b9df73" data-l="2"><summary>What is model calibration and how do you check it?</summary><div class="ans"><p>A model is calibrated if predicted probabilities match observed frequencies (of cases predicted 0.8, ~80% are positive). Check with reliability diagrams, Expected Calibration Error, Brier score. Fix with Platt scaling or isotonic regression on held-out data. SVMs, Naive Bayes, boosted trees and class-weighted models often need it.</p></div></details>
+<details class="qa" data-id="metrics-ac6f32d" data-l="1"><summary>RMSE vs MAE — when to use which?</summary><div class="ans"><p>RMSE squares errors, so it penalises large errors more and corresponds to predicting the mean; use it when big misses are especially costly. MAE treats all errors linearly, is robust to outliers and corresponds to the median. Report both: a big RMSE/MAE gap signals a few large errors.</p></div></details>
+<details class="qa" data-id="metrics-7550dd5" data-l="2"><summary>Type I vs Type II error?</summary><div class="ans"><p>Type I = false positive (rejecting a true null; flagging a legit transaction). Type II = false negative (failing to reject a false null; missing fraud). In hypothesis testing α controls Type I; power = 1 − β where β is the Type II rate.</p></div></details>
+<details class="qa" data-id="metrics-05daa5f" data-l="3"><summary>How do you choose a classification threshold?</summary><div class="ans"><p>Not 0.5 by default. Options: maximise F1/Fβ on validation; minimise expected cost using a cost matrix (threshold = C_FP / (C_FP + C_FN) for calibrated probabilities); meet a constraint (precision ≥ 90%, or top-k capacity); Youden's J on ROC. Choose on validation data and confirm on test.</p></div></details>
+<details class="qa" data-id="metrics-6a5a421" data-l="2"><summary>What is log-loss and why might it be preferred to accuracy?</summary><div class="ans"><p>The negative mean log-likelihood of true labels under predicted probabilities. It evaluates probability quality, heavily penalises confident wrong predictions, is a proper scoring rule (optimised by true probabilities), and is differentiable — accuracy ignores confidence entirely.</p></div></details>
+<details class="qa" data-id="metrics-7b54aa3" data-l="2"><summary>Your model has 0.95 ROC-AUC but the business says it's useless. Why might that be?</summary><div class="ans"><p>Extreme imbalance (precision at usable thresholds is tiny), evaluation on the wrong population/time period (leakage or drift), metric misaligned with the decision (they need top-k precision or calibrated risk), poor performance on the segment that matters, or predictions that aren't actionable/come too late.</p></div></details>
+<details class="qa" data-id="metrics-c1e19b8" data-l="3"><summary>What is NDCG?</summary><div class="ans"><p>Normalised Discounted Cumulative Gain: sums graded relevance of ranked items discounted by log₂(position + 1), divided by the ideal DCG so it lies in [0, 1]. It rewards putting highly relevant items at the top; used for search and recommendation ranking evaluation (NDCG@k).</p></div></details>
+<details class="qa" data-id="metrics-c5f63ee" data-l="2"><summary>What is MCC and why is it useful?</summary><div class="ans"><p>Matthews Correlation Coefficient = (TP·TN − FP·FN)/√((TP+FP)(TP+FN)(TN+FP)(TN+FN)), ranging −1 to 1. It uses all four confusion-matrix cells and is high only if the classifier does well on both classes — a reliable single metric under imbalance.</p></div></details>
+</div>
+</main>
+</body>
+</html>

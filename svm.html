@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Support Vector Machines · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="svm">
+<main>
+<div class="eyebrow">Supervised · Margin-based · Classification & regression</div>
+<h1>Support Vector Machines (SVM)</h1>
+<p class="lede">Find the separating hyperplane with the widest margin; let a few points violate it at a cost C; use the kernel trick to get non-linear boundaries without ever computing high-dimensional features. Classic questions: what are support vectors, what do C and gamma do, what is the kernel trick, hinge loss vs log loss.</p>
+<div class="toc"><a href="#pitch">30-sec answer</a><a href="#intuition">Intuition</a><a href="#math">Maths</a><a href="#demo">Margin & C</a><a href="#kernel">Kernel trick</a><a href="#hp">C & gamma</a><a href="#svr">SVR</a><a href="#practice">Practical</a><a href="#procon">Pros/cons</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“An SVM finds the hyperplane \(w^Tx+b=0\) that maximises the margin \(2/\lVert w\rVert\) between classes. The soft-margin version minimises \(\tfrac12\lVert w\rVert^2 + C\sum\xi_i\), equivalently L2-regularised hinge loss; C trades margin width against training errors. Only the support vectors — points on or inside the margin — determine the solution. Via the dual problem, data appear only through dot products, so we can replace them with a kernel such as RBF \(e^{-\gamma\lVert x-z\rVert^2}\) to get non-linear boundaries. Large C or large γ overfit. Features must be scaled, and kernel SVMs scale roughly O(n²)–O(n³), so they're best for small-to-medium data.”</p></div>
+
+<h2 id="intuition">Intuition</h2>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Many lines can separate two groups. SVM picks the one that leaves the widest empty “street” between them, because a wide street is less likely to be crossed by new points. The points standing on the edge of the street are the support vectors — move any other point (without crossing the street) and the line doesn't change.</p></div>
+
+<h2 id="math">Maths</h2>
+<h3>Hard margin (separable data)</h3>
+<div class="callout math"><div class="tag">∑ Primal</div>$$\min_{w,b}\ \frac12\lVert w\rVert^2\quad\text{s.t.}\quad y_i(w^Tx_i+b)\ge1\ \ \forall i,\qquad y_i\in\{-1,+1\}$$<p>Distance from a point to the hyperplane is \(|w^Tx+b|/\lVert w\rVert\); with the canonical scaling (closest points have \(|w^Tx+b|=1\)) the margin width is \(2/\lVert w\rVert\), so maximising it = minimising \(\lVert w\rVert^2\).</p></div>
+<h3>Soft margin</h3>
+<div class="callout math"><div class="tag">∑ Primal with slack ξ</div>$$\min_{w,b,\xi}\ \frac12\lVert w\rVert^2 + C\sum_i\xi_i\quad\text{s.t.}\quad y_i(w^Tx_i+b)\ge1-\xi_i,\ \xi_i\ge0$$
+$$\Longleftrightarrow\ \min_{w,b}\ \frac12\lVert w\rVert^2 + C\sum_i\max\big(0,\,1-y_i(w^Tx_i+b)\big)\quad\text{(hinge loss)}$$</div>
+<h3>Dual (where kernels come from)</h3>
+<div class="callout math"><div class="tag">∑ Dual problem</div>$$\max_\alpha\ \sum_i\alpha_i-\frac12\sum_{i,j}\alpha_i\alpha_jy_iy_j\,x_i^Tx_j\quad\text{s.t.}\ 0\le\alpha_i\le C,\ \sum_i\alpha_iy_i=0$$
+$$f(x)=\operatorname{sign}\Big(\sum_{i\in SV}\alpha_iy_i\,K(x_i,x)+b\Big)$$<p>KKT conditions: \(\alpha_i=0\) for points outside the margin (irrelevant), \(0&lt;\alpha_i&lt;C\) on the margin, \(\alpha_i=C\) inside/misclassified. The non-zero α's are the support vectors.</p></div>
+
+<h2 id="demo">Margin and C</h2>
+<div class="widget" data-demo="svm"><div class="widget-title">Linear soft-margin SVM</div><div class="widget-sub">Two overlapping classes with a couple of “outliers”. Slide C and watch the street narrow and the support vectors change.</div></div>
+
+<h2 id="kernel">The kernel trick</h2>
+<p>The dual only needs dot products \(x_i^Tx_j\). Replace them with \(K(x_i,x_j)=\phi(x_i)^T\phi(x_j)\) for some feature map φ — possibly infinite-dimensional — without ever computing φ. A valid kernel must be symmetric positive semi-definite (Mercer's condition).</p>
+<div class="table-wrap"><table>
+<tr><th>Kernel</th><th>K(x, z)</th><th>Notes</th></tr>
+<tr><td>Linear</td><td>\(x^Tz\)</td><td>High-dimensional sparse data (text); use LinearSVC for speed</td></tr>
+<tr><td>Polynomial</td><td>\((\gamma x^Tz+r)^d\)</td><td>Feature interactions up to degree d</td></tr>
+<tr><td>RBF / Gaussian</td><td>\(\exp(-\gamma\lVert x-z\rVert^2)\)</td><td>Default; infinite-dimensional φ; similarity decays with distance</td></tr>
+<tr><td>Sigmoid</td><td>\(\tanh(\gamma x^Tz+r)\)</td><td>Rarely used; not always PSD</td></tr>
+</table></div>
+<p>Example: for 2-D \(x\), \((x^Tz)^2=\phi(x)^T\phi(z)\) with \(\phi(x)=(x_1^2,\sqrt2x_1x_2,x_2^2)\) — a circle in 2-D becomes a plane in 3-D.</p>
+
+<h2 id="hp">Hyperparameters: C and gamma</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Parameter</th><th>Low value</th><th>High value</th><th>Tip</th></tr>
+<tr><td>C</td><td>Wide soft margin, more violations allowed, smoother boundary (high bias)</td><td>Narrow margin, fits training points (high variance)</td><td>Log grid 1e-2…1e3</td></tr>
+<tr><td>gamma (RBF)</td><td>Each point influences far away → smooth, near-linear boundary</td><td>Influence very local → islands around points, overfits</td><td>Log grid 1e-4…10; "scale" = 1/(d·Var(X)) default</td></tr>
+<tr><td>kernel</td><td colspan="2">linear / rbf / poly / sigmoid / precomputed</td><td>Start with linear (if many features) and RBF</td></tr>
+<tr><td>degree, coef0</td><td colspan="2">Polynomial kernel degree and offset r</td><td>degree 2–3</td></tr>
+<tr><td>class_weight</td><td colspan="2">Per-class C multiplier</td><td>"balanced" for imbalance</td></tr>
+<tr><td>probability</td><td colspan="2">Enables Platt scaling via internal 5-fold CV</td><td>Slow; or use CalibratedClassifierCV</td></tr>
+<tr><td>epsilon (SVR)</td><td colspan="2">Width of the no-penalty tube</td><td>Scale with the noise level of y</td></tr>
+</table></div>
+<div class="callout interview"><div class="tag">💬 Tuning together</div><p>C and γ interact — tune them jointly on a 2-D log grid (the classic heat-map). Diagonal bands of similar performance are common: larger γ needs smaller C to stay regularised.</p></div>
+
+<h2 id="svr">Support Vector Regression</h2>
+<p>SVR fits a function and ignores errors smaller than ε (the ε-insensitive tube); points outside the tube become support vectors and pay a linear penalty weighted by C. It's robust to small noise and outliers, works with kernels, but needs scaled X (and often scaled y).</p>
+
+<h2 id="practice">Practical notes</h2>
+<ul>
+<li><b>Scale features</b> — margins and RBF distances are scale-dependent.</li>
+<li><b>Complexity:</b> kernel SVC training ≈ O(n²) to O(n³), memory for the kernel matrix → slow beyond ~50–100k rows. For big data use LinearSVC / SGDClassifier(loss="hinge"), or kernel approximation (Nystroem, RBFSampler) + a linear model.</li>
+<li><b>No native probabilities:</b> decision_function gives signed distances; use Platt scaling.</li>
+<li><b>Multiclass:</b> SVC uses one-vs-one (K(K−1)/2 classifiers); LinearSVC uses one-vs-rest.</li>
+<li>Robust in high dimensions (d ≫ n), e.g. text, genomics, because complexity depends on the margin, not d.</li>
+</ul>
+
+<h2 id="procon">Pros, cons & when to use</h2>
+<div class="procon"><div class="pro"><h4>✅ Strengths</h4><ul><li>Effective in high-dimensional spaces, even d &gt; n</li><li>Max-margin → good generalisation; convex (unique global optimum)</li><li>Flexible non-linear boundaries via kernels</li><li>Memory-efficient prediction (support vectors only)</li></ul></div>
+<div class="con"><h4>❌ Weaknesses</h4><ul><li>Doesn't scale to very large n (kernel)</li><li>Sensitive to C, γ, kernel choice and feature scaling</li><li>No direct probabilities; hard to interpret with kernels</li><li>Noisy, overlapping classes → many support vectors, slow</li></ul></div></div>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="svm-grid" data-title="Tune C and gamma for an RBF SVM">
+<div class="lab-task"><p>On the non-linear moons data, build <code>pipe</code> = StandardScaler → <code>SVC(kernel="rbf")</code> and run a <code>GridSearchCV</code> named <code>search</code> over C ∈ {0.1, 1, 10, 100} and gamma ∈ {0.01, 0.1, 1, 10} with 5-fold CV. Print the score grid as a table and compare with a linear kernel.</p></div>
+<div data-part="hint">Pipeline parameter names use double underscores: <code>"svc__C"</code>, <code>"svc__gamma"</code>.</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+from sklearn.datasets import make_moons
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+from sklearn.model_selection import GridSearchCV, cross_val_score
+
+X, y = make_moons(n_samples=400, noise=0.25, random_state=0)
+print("linear kernel CV acc:", cross_val_score(Pipeline([("sc", StandardScaler()), ("svc", SVC(kernel="linear"))]), X, y, cv=5).mean())
+
+pipe = None    # TODO
+search = None  # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, pandas as pd
+from sklearn.datasets import make_moons
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+from sklearn.model_selection import GridSearchCV, cross_val_score
+
+X, y = make_moons(n_samples=400, noise=0.25, random_state=0)
+print("linear kernel CV acc:", round(cross_val_score(Pipeline([("sc", StandardScaler()), ("svc", SVC(kernel="linear"))]), X, y, cv=5).mean(), 3))
+
+pipe = Pipeline([("sc", StandardScaler()), ("svc", SVC(kernel="rbf"))])
+grid = {"svc__C": [0.1, 1, 10, 100], "svc__gamma": [0.01, 0.1, 1, 10]}
+search = GridSearchCV(pipe, grid, cv=5).fit(X, y)
+res = pd.DataFrame(search.cv_results_)
+print(res.pivot(index="param_svc__C", columns="param_svc__gamma", values="mean_test_score").round(3))
+print("best:", search.best_params_, round(search.best_score_, 3))
+print("support vectors:", search.best_estimator_["svc"].n_support_)
+</script>
+<script type="text/x-python" data-part="check">
+assert search is not None and hasattr(search, "best_params_"), "fit GridSearchCV as search"
+assert set(search.best_params_) == {"svc__C", "svc__gamma"}, "grid should cover svc__C and svc__gamma"
+assert len(search.cv_results_["params"]) == 16, "use the 4x4 grid"
+assert search.best_score_ > 0.9, "RBF should beat the linear kernel comfortably"
+print("RBF best CV accuracy:", round(search.best_score_, 3))
+</script>
+</div>
+
+<div class="lab" data-id="svm-hinge" data-title="Hinge loss and support vectors by hand">
+<div class="lab-task"><p>Write <code>hinge(y, scores)</code> returning the mean of max(0, 1 − y·score) for labels in {−1, +1}. Then fit a linear <code>SVC(kernel="linear", C=1)</code> and verify that the support vectors are exactly the points with margin \(y_i f(x_i) \le 1\) (store their count in <code>n_sv_from_margin</code>).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import make_blobs
+from sklearn.svm import SVC
+
+def hinge(y, scores):
+    return None  # TODO
+
+X, y01 = make_blobs(n_samples=120, centers=2, cluster_std=1.6, random_state=3)
+y = np.where(y01 == 1, 1, -1)
+svm = SVC(kernel="linear", C=1).fit(X, y)
+f = svm.decision_function(X)
+n_sv_from_margin = None  # TODO: count points with y*f <= 1 (use a small tolerance, e.g. 1 + 1e-3)
+print("sklearn support vectors:", len(svm.support_), "| from margins:", n_sv_from_margin)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import make_blobs
+from sklearn.svm import SVC
+
+def hinge(y, scores):
+    return np.mean(np.maximum(0, 1 - y * scores))
+
+X, y01 = make_blobs(n_samples=120, centers=2, cluster_std=1.6, random_state=3)
+y = np.where(y01 == 1, 1, -1)
+svm = SVC(kernel="linear", C=1).fit(X, y)
+f = svm.decision_function(X)
+n_sv_from_margin = int(np.sum(y * f <= 1 + 1e-3))
+print("sklearn support vectors:", len(svm.support_), "| from margins:", n_sv_from_margin)
+print("mean hinge loss:", round(hinge(y, f), 4), "| margin width:", round(2 / np.linalg.norm(svm.coef_), 3))
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert hinge(np.array([1, -1, 1]), np.array([2.0, 0.5, 0.2])) is not None, "hinge returns None"
+assert abs(hinge(np.array([1, -1, 1]), np.array([2.0, 0.5, 0.2])) - (0 + 1.5 + 0.8) / 3) < 1e-9, "hinge formula is wrong"
+assert n_sv_from_margin is not None and abs(n_sv_from_margin - len(svm.support_)) <= 2, "support vectors should be the points with y·f ≤ 1"
+print("Support vectors = points on or inside the margin ✔")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="svm-74ec7ed" data-l="1"><summary>What are support vectors?</summary><div class="ans"><p>Training points that lie on the margin boundary or violate it (inside the margin or misclassified) — those with non-zero dual coefficients α. They alone define the hyperplane; removing any other point leaves the solution unchanged.</p></div></details>
+<details class="qa" data-id="svm-b030163" data-l="1"><summary>What is the role of C in SVM?</summary><div class="ans"><p>C is the penalty on slack (margin violations), i.e. inverse regularisation. Large C → fewer violations, narrower margin, risk of overfitting outliers. Small C → wider margin, more violations tolerated, smoother boundary, more bias.</p></div></details>
+<details class="qa" data-id="svm-618fe27" data-l="2"><summary>What does gamma do in an RBF kernel?</summary><div class="ans"><p>γ controls how far a single training point's influence reaches: K = exp(−γ‖x − z‖²). Large γ → narrow bumps, very wiggly boundary, overfitting; small γ → broad influence, smooth almost-linear boundary, underfitting. Tune jointly with C.</p></div></details>
+<details class="qa" data-id="svm-2251502" data-l="2"><summary>Explain the kernel trick.</summary><div class="ans"><p>Algorithms that depend on data only through dot products (like the SVM dual) can replace xᵢᵀxⱼ with a kernel K(xᵢ, xⱼ) = φ(xᵢ)ᵀφ(xⱼ). This implicitly operates in a high (even infinite) dimensional feature space where data may be linearly separable, without ever computing φ — cost depends on n, not on the dimension of φ.</p></div></details>
+<details class="qa" data-id="svm-125bd7b" data-l="2"><summary>Why maximise the margin?</summary><div class="ans"><p>A larger margin means the classifier is robust to small perturbations and, from statistical learning theory, has lower capacity (VC-dimension bound depends on margin, not dimension), giving better generalisation guarantees. It also yields a unique solution among all separating hyperplanes.</p></div></details>
+<details class="qa" data-id="svm-d0841bf" data-l="2"><summary>Hinge loss vs log loss — compare SVM and logistic regression.</summary><div class="ans"><p>Hinge loss is zero for points correctly classified beyond the margin, so only support vectors matter → sparse solution, no probabilities. Log loss is never zero, every point contributes, and it yields calibrated probabilities. Both are convex surrogates for 0-1 loss and use L2 regularisation; performance is often similar for linear problems.</p></div></details>
+<details class="qa" data-id="svm-d8db86c" data-l="2"><summary>Why is feature scaling important for SVM?</summary><div class="ans"><p>The margin is measured in Euclidean distance and the RBF kernel depends on ‖x − z‖, so large-scale features dominate both. Unscaled data also slows down solvers. Standardise inside a pipeline.</p></div></details>
+<details class="qa" data-id="svm-2c797b6" data-l="2"><summary>How does SVM handle multiclass classification?</summary><div class="ans"><p>Via decomposition: one-vs-one (K(K−1)/2 pairwise classifiers, majority vote — sklearn SVC) or one-vs-rest (K classifiers — LinearSVC). Crammer–Singer is a joint multiclass formulation.</p></div></details>
+<details class="qa" data-id="svm-f0194b9" data-l="3"><summary>Why solve the dual instead of the primal?</summary><div class="ans"><p>The dual depends on data only via dot products, enabling kernels; its size depends on n (not on the feature dimension); and the solution is sparse in α (support vectors). For linear SVMs with huge n and moderate d, the primal (LinearSVC, SGD) is actually faster.</p></div></details>
+<details class="qa" data-id="svm-b0d293a" data-l="2"><summary>When would you not use an SVM?</summary><div class="ans"><p>Very large datasets (kernel SVM scales ~n²–n³), lots of noise/overlap (many support vectors), when calibrated probabilities or interpretability are needed, or with heterogeneous tabular data where gradient boosting typically wins.</p></div></details>
+<details class="qa" data-id="svm-e5ad7c2" data-l="3"><summary>What makes a function a valid kernel?</summary><div class="ans"><p>Mercer's condition: K must be symmetric and positive semi-definite — every Gram matrix it produces has non-negative eigenvalues — so it corresponds to an inner product in some feature space. Sums, products and positive scalings of valid kernels are valid kernels.</p></div></details>
+<details class="qa" data-id="svm-ec4d0c2" data-l="2"><summary>How do you get probabilities from an SVM?</summary><div class="ans"><p>Platt scaling: fit a logistic regression on the SVM decision values using cross-validation (SVC(probability=True) or CalibratedClassifierCV). Isotonic regression is an alternative with more data.</p></div></details>
+</div>
+</main>
+</body>
+</html>

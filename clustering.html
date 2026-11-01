@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hierarchical, DBSCAN, GMM & anomaly detection · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="clustering">
+<main>
+<div class="eyebrow">Unsupervised · Clustering beyond K-means · Outliers</div>
+<h1>Hierarchical, DBSCAN, GMM & anomaly detection</h1>
+<p class="lede">When clusters aren't round, K is unknown, or you need probabilities or noise labels, K-means isn't enough. This page covers the other clustering families interviewers expect you to compare, plus the unsupervised anomaly detectors used in fraud and monitoring: Isolation Forest, LOF and One-Class SVM.</p>
+<div class="toc"><a href="#pitch">30-sec answer</a><a href="#hier">Hierarchical</a><a href="#dbscan">DBSCAN</a><a href="#gmm">GMM & EM</a><a href="#compare">Which clustering?</a><a href="#anomaly">Anomaly detection</a><a href="#hp">Hyperparameters</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“Hierarchical agglomerative clustering starts with every point as its own cluster and repeatedly merges the closest pair according to a linkage — single, complete, average or Ward — giving a dendrogram you can cut at any height, no K needed upfront but O(n²) memory. DBSCAN is density-based: core points have at least min_samples neighbours within eps; it finds arbitrarily shaped clusters and labels outliers as noise, but struggles with varying densities. GMMs model data as a mixture of Gaussians fitted with EM, giving soft assignments and elliptical clusters, with K chosen by BIC. For anomalies I'd use Isolation Forest — anomalies are isolated in fewer random splits — or LOF for local density deviations.”</p></div>
+
+<h2 id="hier">Hierarchical (agglomerative) clustering</h2>
+<ol><li>Start with n singleton clusters.</li><li>Merge the two closest clusters according to the linkage criterion.</li><li>Repeat until one cluster remains; record merges in a <b>dendrogram</b>.</li><li>Cut the dendrogram at a height (distance threshold) or at K clusters.</li></ol>
+<div class="table-wrap"><table>
+<tr><th>Linkage</th><th>Distance between clusters</th><th>Behaviour</th></tr>
+<tr><td>Single</td><td>Closest pair of points</td><td>Finds elongated shapes; “chaining” effect, sensitive to noise</td></tr>
+<tr><td>Complete</td><td>Farthest pair of points</td><td>Compact, similar-diameter clusters; outlier-sensitive</td></tr>
+<tr><td>Average (UPGMA)</td><td>Mean of all pairwise distances</td><td>Compromise</td></tr>
+<tr><td>Ward</td><td>Increase in total within-cluster variance after merging</td><td>Compact, similar-size, K-means-like; Euclidean only; usual default</td></tr>
+</table></div>
+<p><b>Pros:</b> no K upfront, dendrogram reveals structure at all scales, any distance (except Ward). <b>Cons:</b> O(n²) memory, O(n² log n)–O(n³) time, greedy merges can't be undone. Divisive (top-down) clustering is the reverse.</p>
+
+<h2 id="dbscan">DBSCAN</h2>
+<ul>
+<li><b>Core point:</b> has ≥ min_samples points (including itself) within radius eps.</li>
+<li><b>Border point:</b> within eps of a core point but not core itself.</li>
+<li><b>Noise:</b> neither — labelled −1.</li>
+<li>Clusters = maximal sets of density-connected points (chains of core points + their borders).</li>
+</ul>
+<p><b>Choosing eps:</b> k-distance plot — sort each point's distance to its k-th nearest neighbour (k = min_samples) and pick the “knee”. <b>min_samples:</b> rule of thumb ≥ d + 1, often 2·d. <b>Pros:</b> arbitrary shapes, no K, explicit outliers, robust to noise. <b>Cons:</b> single global density (fails when densities vary — use <b>HDBSCAN</b>), sensitive to eps, struggles in high dimensions, needs scaling.</p>
+
+<h2 id="gmm">Gaussian Mixture Models & EM</h2>
+<div class="callout math"><div class="tag">∑ Mixture density</div>$$p(x)=\sum_{k=1}^K\pi_k\,\mathcal N(x\mid\mu_k,\Sigma_k),\qquad\sum_k\pi_k=1$$
+<p><b>E-step:</b> responsibilities \(\gamma_{ik}=\frac{\pi_k\mathcal N(x_i\mid\mu_k,\Sigma_k)}{\sum_j\pi_j\mathcal N(x_i\mid\mu_j,\Sigma_j)}\) (soft assignments).<br><b>M-step:</b> \(N_k=\sum_i\gamma_{ik}\), \(\pi_k=N_k/n\), \(\mu_k=\frac1{N_k}\sum_i\gamma_{ik}x_i\), \(\Sigma_k=\frac1{N_k}\sum_i\gamma_{ik}(x_i-\mu_k)(x_i-\mu_k)^T\).<br>Each EM iteration never decreases the log-likelihood; converges to a local maximum.</p></div>
+<ul><li><b>covariance_type:</b> full (any ellipse), tied (shared), diag (axis-aligned), spherical (K-means-like).</li><li>Choose K with <b>BIC/AIC</b> (penalised likelihood) — lower is better.</li><li>Gives probabilities, densities (for anomaly scores: low p(x) = unusual), and can generate samples.</li><li>Risks: singular covariances (a component collapses onto a point) — use reg_covar; local optima — n_init.</li></ul>
+
+<h2 id="compare">Which clustering algorithm?</h2>
+<div class="table-wrap"><table>
+<tr><th>Algorithm</th><th>Cluster shape</th><th>Needs K</th><th>Noise handling</th><th>Scale</th><th>Use when</th></tr>
+<tr><td>K-means</td><td>Spherical, similar size</td><td>Yes</td><td>None</td><td>Large n</td><td>Fast segmentation, numeric data</td></tr>
+<tr><td>Hierarchical</td><td>Depends on linkage</td><td>No (cut later)</td><td>Weak</td><td>≤ ~10–20k</td><td>Want a taxonomy/dendrogram</td></tr>
+<tr><td>DBSCAN / HDBSCAN</td><td>Arbitrary</td><td>No</td><td>Explicit noise</td><td>Medium–large</td><td>Spatial/GPS data, irregular shapes, outliers</td></tr>
+<tr><td>GMM</td><td>Elliptical</td><td>Yes (BIC)</td><td>Low-density scores</td><td>Medium</td><td>Soft membership, overlapping clusters</td></tr>
+<tr><td>Spectral</td><td>Arbitrary (graph-based)</td><td>Yes</td><td>Weak</td><td>Small–medium</td><td>Non-convex shapes, graphs</td></tr>
+<tr><td>Mean-shift</td><td>Arbitrary (density modes)</td><td>No</td><td>Some</td><td>Small</td><td>Unknown K, mode finding</td></tr>
+</table></div>
+
+<h2 id="anomaly">Anomaly / outlier detection</h2>
+<div class="table-wrap"><table>
+<tr><th>Method</th><th>Idea</th><th>Strengths / caveats</th></tr>
+<tr><td>Z-score / IQR rules</td><td>|z| &gt; 3; outside [Q1 − 1.5·IQR, Q3 + 1.5·IQR]</td><td>Univariate, simple; z-score assumes normality</td></tr>
+<tr><td>Isolation Forest</td><td>Random splits isolate anomalies in fewer steps → short average path length</td><td>Fast, scalable, high-dim friendly; <code>contamination</code> sets the threshold</td></tr>
+<tr><td>Local Outlier Factor</td><td>Compares a point's local density with its neighbours' (LOF ≫ 1 = outlier)</td><td>Detects local outliers in varying densities; O(n²); use novelty=True for new data</td></tr>
+<tr><td>One-Class SVM</td><td>Learns a boundary enclosing normal data (RBF kernel)</td><td>Novelty detection; sensitive to ν, γ, scaling; slow on big n</td></tr>
+<tr><td>GMM / KDE density</td><td>Low likelihood under fitted density</td><td>Probabilistic; struggles in high dimensions</td></tr>
+<tr><td>Autoencoder reconstruction</td><td>High reconstruction error</td><td>Images, sequences, complex data</td></tr>
+<tr><td>Robust covariance (EllipticEnvelope)</td><td>Mahalanobis distance with robust estimates</td><td>Assumes Gaussian data</td></tr>
+</table></div>
+<p><b>Outlier vs novelty detection:</b> outlier detection fits on contaminated data; novelty detection trains on clean “normal” data and flags new deviations. Evaluate with labelled incidents if any exist (precision@k, PR-AUC); otherwise review top-scored cases with domain experts.</p>
+
+<h2 id="hp">Key hyperparameters</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Model</th><th>Parameters</th><th>Guidance</th></tr>
+<tr><td>AgglomerativeClustering</td><td>n_clusters or distance_threshold, linkage, metric</td><td>Ward + Euclidean default; inspect dendrogram</td></tr>
+<tr><td>DBSCAN</td><td>eps, min_samples, metric</td><td>k-distance plot for eps; scale data; HDBSCAN: min_cluster_size</td></tr>
+<tr><td>GaussianMixture</td><td>n_components, covariance_type, n_init, reg_covar</td><td>BIC over K × covariance types</td></tr>
+<tr><td>IsolationForest</td><td>n_estimators, max_samples (256), contamination, max_features</td><td>contamination ≈ expected anomaly rate</td></tr>
+<tr><td>LocalOutlierFactor</td><td>n_neighbors (20), contamination, novelty</td><td>n_neighbors ≥ min cluster size</td></tr>
+<tr><td>OneClassSVM</td><td>nu (upper bound on outlier fraction), gamma, kernel</td><td>Scale first; nu ≈ anomaly rate</td></tr>
+</table></div>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="cl-dbscan-moons" data-title="K-means vs DBSCAN on moons">
+<div class="lab-task"><p>On two interleaving moons, compare the Adjusted Rand Index of <code>KMeans(2)</code> and <code>DBSCAN</code>. Tune DBSCAN's <code>eps</code> so that <code>ari_db</code> &gt; 0.95 (data are standardised; try values around 0.2–0.4 with <code>min_samples=5</code>).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import make_moons
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.metrics import adjusted_rand_score
+
+X, y = make_moons(n_samples=500, noise=0.06, random_state=0)
+X = StandardScaler().fit_transform(X)
+ari_km = adjusted_rand_score(y, KMeans(2, n_init=10, random_state=0).fit_predict(X))
+
+db = DBSCAN(eps=0.05, min_samples=5).fit(X)    # TODO: tune eps
+ari_db = adjusted_rand_score(y, db.labels_)
+print("K-means ARI:", round(ari_km, 3), "| DBSCAN ARI:", round(ari_db, 3), "| noise points:", (db.labels_ == -1).sum())
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import make_moons
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.metrics import adjusted_rand_score
+from sklearn.neighbors import NearestNeighbors
+
+X, y = make_moons(n_samples=500, noise=0.06, random_state=0)
+X = StandardScaler().fit_transform(X)
+ari_km = adjusted_rand_score(y, KMeans(2, n_init=10, random_state=0).fit_predict(X))
+
+# k-distance heuristic: distance to 5th neighbour, look at upper quantiles
+k_dist = np.sort(NearestNeighbors(n_neighbors=5).fit(X).kneighbors(X)[0][:, -1])
+print("95th pct of 5-NN distance:", round(np.quantile(k_dist, 0.95), 3))
+db = DBSCAN(eps=0.3, min_samples=5).fit(X)
+ari_db = adjusted_rand_score(y, db.labels_)
+print("K-means ARI:", round(ari_km, 3), "| DBSCAN ARI:", round(ari_db, 3), "| noise points:", (db.labels_ == -1).sum())
+</script>
+<script type="text/x-python" data-part="check">
+assert ari_km < 0.6, "K-means should fail on moons"
+assert ari_db > 0.95, f"tune eps — DBSCAN ARI is only {ari_db:.2f}"
+print("DBSCAN follows the moon shapes; K-means can't.")
+</script>
+</div>
+
+<div class="lab" data-id="cl-gmm-bic" data-title="Choose GMM components with BIC">
+<div class="lab-task"><p>Fit <code>GaussianMixture(n_components=k, covariance_type="full", random_state=0)</code> for k = 1…7 and store BIC values in <code>bics</code> (dict). Set <code>best_k</code> to the argmin. Then print soft membership probabilities for the first 3 points.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.mixture import GaussianMixture
+rng = np.random.default_rng(0)
+X = np.vstack([rng.multivariate_normal([0, 0], [[2, 1.5], [1.5, 2]], 300),
+               rng.multivariate_normal([6, 0], [[0.5, 0], [0, 0.5]], 200),
+               rng.multivariate_normal([3, 5], [[1, -0.6], [-0.6, 1]], 250)])
+bics = {}
+# TODO
+best_k = None
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.mixture import GaussianMixture
+rng = np.random.default_rng(0)
+X = np.vstack([rng.multivariate_normal([0, 0], [[2, 1.5], [1.5, 2]], 300),
+               rng.multivariate_normal([6, 0], [[0.5, 0], [0, 0.5]], 200),
+               rng.multivariate_normal([3, 5], [[1, -0.6], [-0.6, 1]], 250)])
+bics = {k: GaussianMixture(n_components=k, covariance_type="full", random_state=0).fit(X).bic(X) for k in range(1, 8)}
+best_k = min(bics, key=bics.get)
+print({k: round(v) for k, v in bics.items()}, "→ best k =", best_k)
+gmm = GaussianMixture(best_k, random_state=0).fit(X)
+print("weights:", gmm.weights_.round(2))
+print("soft memberships:\n", gmm.predict_proba(X[:3]).round(3))
+</script>
+<script type="text/x-python" data-part="check">
+assert set(bics) == set(range(1, 8)), "fit k = 1..7"
+assert best_k == 3, f"BIC should pick 3 components, got {best_k}"
+print("BIC found the 3 elliptical clusters.")
+</script>
+</div>
+
+<div class="lab" data-id="cl-isoforest" data-title="Fraud-style anomaly detection with Isolation Forest">
+<div class="lab-task"><p>Transactions with 2% injected anomalies. Fit <code>IsolationForest(n_estimators=300, contamination=0.02, random_state=0)</code> as <code>iso</code>, get anomaly scores with <code>-iso.score_samples(X)</code> (higher = more anomalous) into <code>scores</code>, and compute <code>precision_at_k</code> for the top 40 scores against the true labels.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.ensemble import IsolationForest
+from sklearn.metrics import roc_auc_score
+rng = np.random.default_rng(1)
+normal = rng.normal(size=(1960, 6))
+anom = rng.normal(size=(40, 6)) * 1.0 + rng.choice([-4.5, 4.5], size=(40, 6)) * (rng.random((40, 6)) < 0.35)
+X = np.vstack([normal, anom]); y = np.r_[np.zeros(1960), np.ones(40)]
+
+iso = None                 # TODO
+scores = None              # TODO
+precision_at_k = None      # TODO
+print(precision_at_k)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.ensemble import IsolationForest
+from sklearn.metrics import roc_auc_score
+rng = np.random.default_rng(1)
+normal = rng.normal(size=(1960, 6))
+anom = rng.normal(size=(40, 6)) * 1.0 + rng.choice([-4.5, 4.5], size=(40, 6)) * (rng.random((40, 6)) < 0.35)
+X = np.vstack([normal, anom]); y = np.r_[np.zeros(1960), np.ones(40)]
+
+iso = IsolationForest(n_estimators=300, contamination=0.02, random_state=0).fit(X)
+scores = -iso.score_samples(X)
+top = np.argsort(scores)[::-1][:40]
+precision_at_k = y[top].mean()
+print("ROC-AUC:", round(roc_auc_score(y, scores), 3), "| precision@40:", precision_at_k)
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.metrics import roc_auc_score
+assert iso is not None and scores is not None, "fit iso and compute scores"
+assert roc_auc_score(y, scores) > 0.9, "higher score should mean more anomalous (did you negate score_samples?)"
+assert precision_at_k is not None and precision_at_k > 0.6, "precision@40 too low"
+print("Isolation Forest catches most injected anomalies.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="clustering-55187eb" data-l="1"><summary>How does hierarchical clustering work and what's a dendrogram?</summary><div class="ans"><p>Agglomerative: start with each point as a cluster and repeatedly merge the two closest clusters per the linkage criterion until one remains. The dendrogram is the tree of merges with heights = merge distances; cutting it horizontally gives a flat clustering, and long vertical gaps suggest natural cluster counts.</p></div></details>
+<details class="qa" data-id="clustering-e8de2d2" data-l="2"><summary>Compare single, complete, average and Ward linkage.</summary><div class="ans"><p>Single: min pairwise distance — follows chains, finds non-convex shapes but sensitive to noise. Complete: max distance — compact clusters, outlier-sensitive. Average: mean distance — balanced. Ward: minimises the increase in within-cluster variance — compact, equal-size clusters similar to K-means; requires Euclidean distance.</p></div></details>
+<details class="qa" data-id="clustering-d948627" data-l="1"><summary>Explain DBSCAN and its parameters.</summary><div class="ans"><p>Density-based clustering: a core point has at least min_samples points within distance eps; clusters grow by connecting core points that are within eps of each other plus their border points; everything else is noise. eps sets the neighbourhood size, min_samples the density threshold. Choose eps from the knee of a k-distance plot.</p></div></details>
+<details class="qa" data-id="clustering-b38e992" data-l="2"><summary>When does DBSCAN fail?</summary><div class="ans"><p>Clusters with very different densities (one eps can't fit all — use HDBSCAN or OPTICS), high-dimensional data where distances concentrate, unscaled features, and when eps is poorly chosen (too small → everything noise, too large → one cluster).</p></div></details>
+<details class="qa" data-id="clustering-a5eb515" data-l="2"><summary>K-means vs GMM?</summary><div class="ans"><p>K-means: hard assignments, spherical equal-variance clusters, minimises inertia, faster. GMM: soft probabilistic assignments, elliptical clusters with their own covariances and weights, maximises likelihood via EM, gives densities and supports BIC model selection. K-means is a limiting case of GMM.</p></div></details>
+<details class="qa" data-id="clustering-d18ccf0" data-l="2"><summary>Explain the EM algorithm.</summary><div class="ans"><p>For models with latent variables: the E-step computes the posterior over latent variables (responsibilities) given current parameters; the M-step maximises the expected complete-data log-likelihood to update parameters. Repeat until convergence. Log-likelihood never decreases; converges to a local optimum, so use multiple inits.</p></div></details>
+<details class="qa" data-id="clustering-aab532e" data-l="2"><summary>How does Isolation Forest detect anomalies?</summary><div class="ans"><p>It builds random trees by picking a random feature and a random split value between its min and max. Anomalies are few and different, so they get isolated near the root — short average path lengths across trees. The anomaly score normalises the average path length by that expected for a random point (c(n)).</p></div></details>
+<details class="qa" data-id="clustering-9e53f74" data-l="2"><summary>What is Local Outlier Factor?</summary><div class="ans"><p>LOF compares a point's local reachability density to that of its k nearest neighbours. Points in a region much sparser than their neighbours' regions get LOF ≫ 1. It finds local outliers in datasets with clusters of different densities, unlike global distance rules.</p></div></details>
+<details class="qa" data-id="clustering-615f8d1" data-l="2"><summary>How would you build an anomaly detection system for transactions without labels?</summary><div class="ans"><p>Engineer behavioural features (amount vs user's history, velocity, new device/merchant, time-of-day), scale, fit an unsupervised detector (Isolation Forest / LOF / autoencoder), set the threshold by alert capacity (top-k per day), have analysts review alerts, and use their feedback as labels to move to a supervised model (with the unsupervised score as a feature). Monitor drift and alert precision.</p></div></details>
+<details class="qa" data-id="clustering-d19251d" data-l="3"><summary>How do you choose the number of components in a GMM?</summary><div class="ans"><p>Fit over a range of K (and covariance types) and pick the lowest BIC = −2 log L + p log n (AIC uses 2p, tends to choose more components). Also check stability, cluster sizes and interpretability; a Bayesian GMM with a Dirichlet process prior can shrink unused components automatically.</p></div></details>
+<details class="qa" data-id="clustering-fa7f682" data-l="2"><summary>Difference between outlier detection and novelty detection?</summary><div class="ans"><p>Outlier detection: training data contain outliers; find them in that data (unsupervised). Novelty detection: train on clean normal data only, then flag new observations that differ (semi-supervised), e.g. One-Class SVM or LOF(novelty=True).</p></div></details>
+</div>
+</main>
+</body>
+</html>

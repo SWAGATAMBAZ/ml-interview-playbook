@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ML fundamentals · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="fundamentals">
+<main>
+<div class="eyebrow">Foundations · The concepts behind every model</div>
+<h1>ML fundamentals</h1>
+<p class="lede">The opening 15 minutes of most ML interviews: types of learning, the bias–variance trade-off, over/underfitting, loss functions and optimisation, parametric vs non-parametric, generative vs discriminative, and the curse of dimensionality. Crisp answers here set the tone for the rest of the interview.</p>
+<div class="toc"><a href="#types">Types of learning</a><a href="#workflow">ML workflow</a><a href="#biasvar">Bias–variance</a><a href="#demo">Demo</a><a href="#fit">Over/underfitting</a><a href="#loss">Loss functions</a><a href="#opt">Optimisation</a><a href="#mle">MLE vs MAP</a><a href="#families">Model families</a><a href="#nfl">No free lunch</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<h2 id="types">Types of learning</h2>
+<div class="table-wrap"><table>
+<tr><th>Type</th><th>Data</th><th>Goal</th><th>Examples</th></tr>
+<tr><td>Supervised</td><td>Features + labels</td><td>Predict labels (classification) or numbers (regression)</td><td>Churn, fraud, price prediction</td></tr>
+<tr><td>Unsupervised</td><td>Features only</td><td>Find structure: clusters, low-dim representations, anomalies</td><td>Segmentation, PCA, outlier detection</td></tr>
+<tr><td>Semi-supervised</td><td>Few labels + many unlabelled</td><td>Use unlabelled data to improve a supervised model</td><td>Pseudo-labelling, label propagation</td></tr>
+<tr><td>Self-supervised</td><td>Labels created from the data itself</td><td>Learn representations</td><td>Masked language modelling, contrastive learning</td></tr>
+<tr><td>Reinforcement</td><td>Agent, environment, rewards</td><td>Learn a policy maximising cumulative reward</td><td>Games, bidding, RLHF</td></tr>
+<tr><td>Online / batch</td><td>Streaming vs fixed dataset</td><td>Update incrementally vs retrain</td><td>Ad click models (online)</td></tr>
+</table></div>
+
+<h2 id="workflow">The end-to-end ML workflow</h2>
+<ol><li><b>Frame the problem:</b> business objective → ML task, target definition, success metric, baseline, constraints (latency, interpretability).</li><li><b>Data:</b> collect, understand (EDA), check quality and leakage, define train/validation/test splits (by time/group if needed).</li><li><b>Features:</b> cleaning, encoding, scaling, engineering, selection.</li><li><b>Modelling:</b> baseline → simple model → stronger models; CV; tune hyperparameters.</li><li><b>Evaluation:</b> held-out test, error analysis, slices/fairness, calibration, business impact estimate.</li><li><b>Deployment & monitoring:</b> serving, drift/performance monitoring, retraining, A/B test (see <a href="mlops.html">MLOps</a>).</li></ol>
+
+<h2 id="biasvar">The bias–variance trade-off</h2>
+<div class="callout math"><div class="tag">∑ Decomposition of expected squared error</div>$$\mathbb E\big[(y-\hat f(x))^2\big]=\underbrace{\big(\mathbb E[\hat f(x)]-f(x)\big)^2}_{\text{bias}^2}+\underbrace{\mathbb E\big[(\hat f(x)-\mathbb E[\hat f(x)])^2\big]}_{\text{variance}}+\underbrace{\sigma^2}_{\text{irreducible noise}}$$
+<p>Expectations are over training sets drawn from the same distribution. <b>Bias:</b> error from wrong assumptions (model too simple). <b>Variance:</b> sensitivity to the particular training sample (model too flexible). Noise can't be reduced by any model.</p></div>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Darts analogy: high bias = all darts clustered, but away from the bullseye (consistently wrong). High variance = darts scattered all over (inconsistent). You want them clustered on the bullseye.</p></div>
+
+<h2 id="demo">See it</h2>
+<div class="widget" data-demo="biasvar"><div class="widget-title">Bias–variance with polynomial regression</div><div class="widget-sub">Degree 1 underfits sin(πx); degree 15 with few points overfits. Add data or ridge λ and watch the test error recover.</div></div>
+
+<h2 id="fit">Overfitting and underfitting</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>Underfitting (high bias)</th><th>Overfitting (high variance)</th></tr>
+<tr><td>Symptoms</td><td>High train error ≈ high validation error</td><td>Low train error, much higher validation error</td></tr>
+<tr><td>Learning curve</td><td>Both curves plateau high and close together; more data won't help</td><td>Large gap that narrows as data grows; more data helps</td></tr>
+<tr><td>Fixes</td><td>More complex model, more/better features, less regularisation, train longer, boosting</td><td>More data, regularisation, simpler model, feature selection, early stopping, dropout, bagging, augmentation, CV-based tuning</td></tr>
+</table></div>
+
+<h2 id="loss">Loss functions</h2>
+<div class="table-wrap"><table>
+<tr><th>Loss</th><th>Formula</th><th>Used for / property</th></tr>
+<tr><td>Squared (MSE)</td><td>\((y-\hat y)^2\)</td><td>Regression; estimates mean; outlier-sensitive; Gaussian MLE</td></tr>
+<tr><td>Absolute (MAE)</td><td>\(|y-\hat y|\)</td><td>Regression; estimates median; robust; Laplace MLE</td></tr>
+<tr><td>Huber</td><td>quadratic if \(|e|\le\delta\), linear beyond</td><td>Robust regression, smooth</td></tr>
+<tr><td>Quantile (pinball)</td><td>\(\max(\tau e,(\tau-1)e)\)</td><td>Quantiles, prediction intervals</td></tr>
+<tr><td>Log loss / cross-entropy</td><td>\(-[y\log p+(1-y)\log(1-p)]\)</td><td>Classification probabilities; Bernoulli MLE; proper scoring rule</td></tr>
+<tr><td>Hinge</td><td>\(\max(0,1-y\,f(x))\)</td><td>SVM; margin-based, no probabilities</td></tr>
+<tr><td>Exponential</td><td>\(e^{-y f(x)}\)</td><td>AdaBoost; outlier-sensitive</td></tr>
+<tr><td>0-1 loss</td><td>\(\mathbb 1[y\ne\hat y]\)</td><td>What accuracy measures; non-differentiable → use surrogates above</td></tr>
+</table></div>
+<p><b>Loss vs metric:</b> the loss is what the optimiser minimises (must be differentiable/convenient); the metric is what the business cares about (F1, revenue, recall at k). They often differ — choose a loss that aligns with the metric and tune thresholds/hyperparameters on the metric.</p>
+
+<h2 id="opt">Optimisation basics</h2>
+<ul>
+<li><b>Gradient descent:</b> \(\theta\leftarrow\theta-\eta\nabla L\). Batch (all data, stable, slow), stochastic (one row, noisy, can escape shallow minima), mini-batch (standard).</li>
+<li><b>Learning rate:</b> too large → divergence/oscillation; too small → slow. Schedules (step decay, cosine), adaptive optimisers (Momentum, RMSProp, Adam).</li>
+<li><b>Convexity:</b> convex losses (linear/logistic regression, SVM) have one global minimum; neural nets are non-convex.</li>
+<li><b>Feature scaling</b> makes loss contours rounder → faster convergence.</li>
+<li><b>Second-order methods</b> (Newton, L-BFGS) use curvature: fewer iterations, more cost per iteration.</li>
+<li><b>Coordinate descent</b> (Lasso), closed form (OLS, Ridge), EM (mixtures), greedy (trees).</li>
+</ul>
+<div class="widget" data-demo="gd"><div class="widget-title">Learning-rate intuition</div><div class="widget-sub">Gradient descent on a 1-D quadratic.</div></div>
+
+<h2 id="mle">MLE vs MAP</h2>
+<p><b>Maximum likelihood:</b> \(\hat\theta=\arg\max_\theta P(\text{data}\mid\theta)\). <b>Maximum a posteriori:</b> \(\hat\theta=\arg\max_\theta P(\text{data}\mid\theta)P(\theta)\) — MLE plus a prior, which acts as regularisation (Gaussian prior → L2, Laplace prior → L1). With lots of data the likelihood dominates and MAP → MLE. Full Bayesian inference keeps the whole posterior instead of a point estimate.</p>
+
+<h2 id="families">Model families</h2>
+<div class="table-wrap"><table>
+<tr><th>Distinction</th><th>Meaning</th><th>Examples</th></tr>
+<tr><td>Parametric</td><td>Fixed number of parameters regardless of n; strong assumptions; fast</td><td>Linear/logistic regression, Naive Bayes, (most) neural nets</td></tr>
+<tr><td>Non-parametric</td><td>Complexity grows with data; flexible; need more data</td><td>kNN, decision trees, kernel SVM, Gaussian processes</td></tr>
+<tr><td>Generative</td><td>Model P(x, y) = P(x|y)P(y); can generate data</td><td>Naive Bayes, LDA/QDA, GMM, HMM</td></tr>
+<tr><td>Discriminative</td><td>Model P(y|x) or the decision boundary directly</td><td>Logistic regression, SVM, trees, neural nets</td></tr>
+<tr><td>Linear vs non-linear</td><td>Decision boundary/hypothesis linear in features?</td><td>LR, linear SVM vs trees, RBF-SVM, kNN</td></tr>
+<tr><td>Instance-based vs model-based</td><td>Keep data and compare vs learn a function</td><td>kNN vs everything else</td></tr>
+</table></div>
+
+<h2 id="nfl">No free lunch, Occam's razor & the curse of dimensionality</h2>
+<ul><li><b>No free lunch:</b> averaged over all possible problems, no algorithm beats another — performance comes from assumptions matching the data. Hence: try several models, validate empirically.</li><li><b>Occam's razor:</b> among models with similar validation performance, prefer the simpler one (generalises better, cheaper, more interpretable).</li><li><b>Curse of dimensionality:</b> as d grows, data become sparse, distances concentrate, and the samples needed grow exponentially. Hurts kNN, clustering, density estimation most. Mitigate with feature selection, dimensionality reduction, regularisation, domain knowledge.</li></ul>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="fund-learning-curve" data-title="Diagnose bias vs variance with learning curves">
+<div class="lab-task"><p>Use <code>learning_curve</code> (5-fold, train sizes <code>np.linspace(0.1, 1.0, 6)</code>) for a depth-2 tree and an unlimited-depth tree on the same data. Store the final (largest train size) mean train and validation scores in dict <code>final</code> as <code>{"shallow": (train, val), "deep": (train, val)}</code>, then plot both curves. Which model has high bias, which high variance?</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import make_classification
+from sklearn.model_selection import learning_curve
+from sklearn.tree import DecisionTreeClassifier
+
+X, y = make_classification(n_samples=2000, n_features=20, n_informative=10, flip_y=0.08, random_state=0)
+models = {"shallow": DecisionTreeClassifier(max_depth=2, random_state=0),
+          "deep": DecisionTreeClassifier(random_state=0)}
+final = {}
+# TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import make_classification
+from sklearn.model_selection import learning_curve
+from sklearn.tree import DecisionTreeClassifier
+
+X, y = make_classification(n_samples=2000, n_features=20, n_informative=10, flip_y=0.08, random_state=0)
+models = {"shallow": DecisionTreeClassifier(max_depth=2, random_state=0),
+          "deep": DecisionTreeClassifier(random_state=0)}
+final = {}
+fig, axes = plt.subplots(1, 2, figsize=(9, 3.2), sharey=True)
+for ax, (name, m) in zip(axes, models.items()):
+    sizes, tr, va = learning_curve(m, X, y, cv=5, train_sizes=np.linspace(0.1, 1.0, 6))
+    ax.plot(sizes, tr.mean(1), "o-", label="train"); ax.plot(sizes, va.mean(1), "o-", label="validation")
+    ax.set_title(name); ax.set_xlabel("training examples"); ax.legend()
+    final[name] = (tr.mean(1)[-1], va.mean(1)[-1])
+plt.tight_layout(); plt.show()
+print({k: tuple(round(v, 3) for v in t) for k, t in final.items()})
+print("shallow: both low & close → high bias | deep: train=1.0, big gap → high variance")
+</script>
+<script type="text/x-python" data-part="check">
+assert set(final) == {"shallow", "deep"}, "final needs keys shallow and deep"
+(st, sv), (dt, dv) = final["shallow"], final["deep"]
+assert dt > 0.99 and dt - dv > 0.1, "deep tree should show a big train/validation gap (high variance)"
+assert st - sv < 0.05, "shallow tree's curves should be close together (high bias)"
+print("Correct diagnosis: shallow = high bias, deep = high variance.")
+</script>
+</div>
+
+<div class="lab" data-id="fund-bias-var-sim" data-title="Estimate bias² and variance by simulation">
+<div class="lab-task"><p>Repeat 200 times: draw a fresh training set of 30 points from y = sin(2πx) + noise, fit a polynomial of the given degree with <code>np.polyfit</code>, and predict at <code>x0 = 0.3</code>. Compute <code>bias2</code> = (mean prediction − true value)² and <code>var</code> = variance of predictions for degrees 1 and 9 (dicts keyed by degree).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+rng = np.random.default_rng(0)
+f = lambda x: np.sin(2 * np.pi * x)
+x0 = 0.3
+bias2, var = {}, {}
+for deg in [1, 9]:
+    preds = []
+    for _ in range(200):
+        x = rng.uniform(0, 1, 30); y = f(x) + rng.normal(scale=0.3, size=30)
+        # TODO: fit polynomial of degree deg, predict at x0, append
+        pass
+    # TODO: fill bias2[deg], var[deg]
+print(bias2, var)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+rng = np.random.default_rng(0)
+f = lambda x: np.sin(2 * np.pi * x)
+x0 = 0.3
+bias2, var = {}, {}
+for deg in [1, 9]:
+    preds = []
+    for _ in range(200):
+        x = rng.uniform(0, 1, 30); y = f(x) + rng.normal(scale=0.3, size=30)
+        coefs = np.polyfit(x, y, deg)
+        preds.append(np.polyval(coefs, x0))
+    preds = np.array(preds)
+    bias2[deg] = (preds.mean() - f(x0)) ** 2
+    var[deg] = preds.var()
+for d in bias2:
+    print(f"degree {d}: bias² = {bias2[d]:.4f}, variance = {var[d]:.4f}")
+</script>
+<script type="text/x-python" data-part="check">
+assert set(bias2) == {1, 9} and set(var) == {1, 9}, "fill both degrees"
+assert bias2[1] > 10 * bias2[9], "degree 1 should have much larger bias²"
+assert var[9] > var[1], "degree 9 should have larger variance"
+print("Simple model: high bias. Flexible model: high variance.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="fundamentals-90ea0ca" data-l="1"><summary>Explain the bias–variance trade-off.</summary><div class="ans"><p>Expected test error = bias² + variance + irreducible noise. Bias is error from overly simple assumptions (underfitting); variance is error from sensitivity to the specific training sample (overfitting). Increasing model complexity typically lowers bias and raises variance; the goal is the complexity that minimises total error, found via validation. Regularisation, more data and ensembling shift the trade-off.</p></div></details>
+<details class="qa" data-id="fundamentals-1155af6" data-l="1"><summary>How do you detect and prevent overfitting?</summary><div class="ans"><p>Detect: training performance much better than validation/CV performance; learning curves with a persistent gap. Prevent: more data or augmentation, simpler model, regularisation (L1/L2, dropout), early stopping, feature selection, ensembling (bagging), proper CV for tuning, and removing leakage.</p></div></details>
+<details class="qa" data-id="fundamentals-91bf57e" data-l="1"><summary>What is the difference between supervised and unsupervised learning?</summary><div class="ans"><p>Supervised learning trains on labelled examples to predict a target (classification/regression) and is evaluated against true labels. Unsupervised learning has no labels and finds structure — clusters, low-dimensional representations, density/anomalies — and evaluation is harder (internal metrics, downstream usefulness).</p></div></details>
+<details class="qa" data-id="fundamentals-e9ef60e" data-l="2"><summary>Parametric vs non-parametric models?</summary><div class="ans"><p>Parametric models have a fixed number of parameters and strong functional assumptions (linear regression, logistic regression, Naive Bayes) — efficient, need less data, may underfit. Non-parametric models grow in complexity with data (kNN, trees, kernel methods, GPs) — flexible, need more data, risk overfitting, often slower at prediction.</p></div></details>
+<details class="qa" data-id="fundamentals-e8735e3" data-l="2"><summary>Generative vs discriminative models?</summary><div class="ans"><p>Generative models learn P(x|y) and P(y) (hence the joint) and use Bayes' rule to classify; they can generate samples and handle missing data (Naive Bayes, GMM, HMM). Discriminative models learn P(y|x) or the boundary directly (logistic regression, SVM, trees). Discriminative models usually have lower asymptotic error; generative ones can be better with little data.</p></div></details>
+<details class="qa" data-id="fundamentals-c235d81" data-l="2"><summary>Why do we need a separate validation and test set?</summary><div class="ans"><p>The validation set (or CV) is used repeatedly for model selection and hyperparameter tuning, so performance on it is optimistically biased. The test set is touched once at the end to give an unbiased estimate of generalisation. Reusing the test set for decisions turns it into another validation set.</p></div></details>
+<details class="qa" data-id="fundamentals-4463765" data-l="2"><summary>What is the curse of dimensionality?</summary><div class="ans"><p>As features grow, volume grows exponentially, so data become sparse, distances between points concentrate (nearest ≈ farthest), and the amount of data needed to generalise grows exponentially. Distance-based methods suffer most. Remedies: feature selection, dimensionality reduction, regularisation, domain knowledge.</p></div></details>
+<details class="qa" data-id="fundamentals-5d54fd4" data-l="2"><summary>What is the difference between a loss function and an evaluation metric?</summary><div class="ans"><p>The loss is optimised during training and needs mathematical convenience (differentiable, convex where possible) — e.g. log-loss. The metric measures what the business cares about and may be non-differentiable — e.g. F1, precision@k, revenue. Choose a loss aligned with the metric and select thresholds/hyperparameters on the metric.</p></div></details>
+<details class="qa" data-id="fundamentals-f7b2825" data-l="2"><summary>Batch vs stochastic vs mini-batch gradient descent?</summary><div class="ans"><p>Batch uses the full dataset per update: accurate gradients, expensive, smooth convergence. Stochastic uses one sample: cheap and noisy, can escape shallow local minima, needs decaying learning rates. Mini-batch (32–1024) balances both and exploits vectorised hardware — the default in practice.</p></div></details>
+<details class="qa" data-id="fundamentals-d79113c" data-l="3"><summary>What is the relationship between MLE, MAP and regularisation?</summary><div class="ans"><p>MLE maximises the likelihood. MAP maximises likelihood × prior; taking logs adds −log prior to the loss. A zero-mean Gaussian prior adds an L2 penalty (Ridge/weight decay); a Laplace prior adds an L1 penalty (Lasso). So regularisation = encoding a prior belief that parameters are small.</p></div></details>
+<details class="qa" data-id="fundamentals-9257f25" data-l="2"><summary>What would you do if your model performs well on training data but poorly in production?</summary><div class="ans"><p>Check for data leakage in training features; train/serve skew (different preprocessing or feature computation online); distribution shift (data/concept drift) between training period and now; a validation scheme that didn't mirror production (random split vs time split, unseen groups); label definition differences; and bugs in the serving pipeline. Then fix the root cause and set up monitoring.</p></div></details>
+<details class="qa" data-id="fundamentals-6ef435d" data-l="2"><summary>How do you approach a new ML problem?</summary><div class="ans"><p>Clarify the business goal and how predictions will be used; define target, metric and baseline; check data availability, quality and leakage; choose a validation scheme mirroring production; build a simple baseline; iterate on features and models with error analysis; evaluate on slices; consider deployment constraints and monitoring; communicate trade-offs.</p></div></details>
+<details class="qa" data-id="fundamentals-d16bc92" data-l="2"><summary>What is the no free lunch theorem and what does it mean in practice?</summary><div class="ans"><p>Averaged over all possible data-generating distributions, every learning algorithm performs equally. A model is only better when its inductive bias matches the problem. Practically: no universally best model — try several reasonable ones and validate on your data.</p></div></details>
+<details class="qa" data-id="fundamentals-2bc1a48" data-l="3"><summary>Can a model have both high bias and high variance?</summary><div class="ans"><p>Yes — e.g. a model with the wrong functional form (bias) that's also fit on tiny noisy data with many parameters (variance), or a deep tree on badly chosen features. The decomposition terms aren't strictly opposed; good features can reduce both.</p></div></details>
+<details class="qa" data-id="fundamentals-7e8ea74" data-l="2"><summary>What is inductive bias?</summary><div class="ans"><p>The set of assumptions a learning algorithm uses to generalise beyond seen data: linearity (linear models), smoothness/locality (kNN, RBF), axis-aligned piecewise-constant structure (trees), translation equivariance (CNNs), feature independence (Naive Bayes). Choosing a model is choosing an inductive bias.</p></div></details>
+</div>
+</main>
+</body>
+</html>

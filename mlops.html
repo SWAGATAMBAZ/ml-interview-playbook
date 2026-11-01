@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MLOps & production ML · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="mlops">
+<main>
+<div class="eyebrow">Production · Getting models to work after the notebook</div>
+<h1>MLOps & production ML</h1>
+<p class="lede">Modern DS and MLE interviews always ask how a model reaches and survives production: the ML lifecycle, versioning data/code/models, experiment tracking and model registries, feature stores, serving patterns, CI/CD/CT, deployment strategies, and — asked in almost every screen — monitoring, drift detection and retraining.</p>
+<div class="toc"><a href="#pitch">30-sec answer</a><a href="#lifecycle">Lifecycle</a><a href="#vs">MLOps vs DevOps</a><a href="#versioning">Versioning & tracking</a><a href="#features">Feature stores & skew</a><a href="#serving">Serving patterns</a><a href="#deploy">Deployment strategies</a><a href="#cicd">CI/CD/CT</a><a href="#monitor">Monitoring</a><a href="#drift">Drift</a><a href="#demo">Drift demo</a><a href="#retrain">Retraining</a><a href="#maturity">Maturity & tools</a><a href="#incident">Incident playbook</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“MLOps applies DevOps practices to ML, but an ML system has three things that change — code, data and the model — so we version all three, track experiments (MLflow, W&B), register models with lineage, and automate training pipelines. Features are computed once and shared offline/online (a feature store) to avoid training–serving skew. I choose batch, online or streaming serving based on latency needs, release with shadow/canary deployments and A/B tests, and monitor four layers: service health, data quality, drift in inputs and predictions, and model performance once labels arrive. Drift or performance alerts trigger investigation and scheduled or triggered retraining, with automated validation gates and easy rollback.”</p></div>
+
+<h2 id="lifecycle">The ML lifecycle</h2>
+<p>Problem framing → data collection & validation → feature engineering → training & experiment tracking → evaluation & validation gates → packaging & registry → deployment → monitoring → feedback & retraining → (back to data). Only a small fraction of a real ML system is model code; the rest is data pipelines, configuration, serving infrastructure, monitoring and process (“Hidden Technical Debt in ML Systems”).</p>
+
+<h2 id="vs">MLOps vs DevOps</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>DevOps</th><th>MLOps</th></tr>
+<tr><td>Artifacts</td><td>Code</td><td>Code + data + model + features + config</td></tr>
+<tr><td>Testing</td><td>Unit/integration tests</td><td>+ data validation, model quality tests, fairness, robustness</td></tr>
+<tr><td>Pipelines</td><td>CI/CD</td><td>CI/CD + <b>CT</b> (continuous training)</td></tr>
+<tr><td>Failure modes</td><td>Crashes, errors</td><td>Silent degradation: drift, skew, stale features — model still returns 200 OK</td></tr>
+<tr><td>Monitoring</td><td>Latency, errors, uptime</td><td>+ data quality, drift, prediction distribution, model metrics</td></tr>
+<tr><td>Reproducibility</td><td>Same code → same binary</td><td>Needs same data snapshot, seed, environment, hyperparameters</td></tr>
+</table></div>
+
+<h2 id="versioning">Versioning, experiment tracking & registry</h2>
+<ul>
+<li><b>Code:</b> Git. <b>Data:</b> DVC, lakeFS, Delta Lake/Iceberg time travel, dataset snapshots with hashes. <b>Environment:</b> pinned requirements, Docker images.</li>
+<li><b>Experiment tracking</b> (MLflow, Weights & Biases, Neptune): parameters, metrics, artifacts, code version, data version for every run → compare and reproduce.</li>
+<li><b>Model registry</b> (MLflow Model Registry, SageMaker, Vertex AI): versioned models with stages/aliases (staging → production → archived), lineage (which data/code/run produced it), approvals, model cards.</li>
+<li><b>Packaging:</b> pickle/joblib (Python-only, version-sensitive), ONNX (portable, fast runtime), MLflow pyfunc, TorchScript, PMML; containerise with Docker.</li>
+</ul>
+<script type="text/plain" class="snippet" data-title="MLflow tracking + registry (run locally)">
+import mlflow, mlflow.sklearn
+mlflow.set_experiment("churn")
+with mlflow.start_run() as run:
+    mlflow.log_params({"max_depth": 6, "learning_rate": 0.05})
+    model.fit(X_tr, y_tr)
+    mlflow.log_metric("val_auc", roc_auc_score(y_val, model.predict_proba(X_val)[:, 1]))
+    mlflow.sklearn.log_model(model, "model", registered_model_name="churn-model")
+</script>
+
+<h2 id="features">Feature stores and training–serving skew</h2>
+<ul>
+<li><b>Training–serving skew:</b> features computed differently in the offline training pipeline (SQL/Spark) and the online service (Java/Python), or data arrives differently — the model sees a different distribution in production.</li>
+<li><b>Feature store</b> (Feast, Tecton, Databricks/Vertex/SageMaker feature stores): one definition of each feature, an <b>offline store</b> for training with <b>point-in-time correct</b> joins (no future leakage), an <b>online store</b> (low-latency key-value) for serving, plus sharing, lineage and monitoring.</li>
+<li>Other mitigations: reuse the same transformation code (sklearn Pipeline inside the model artifact), log features at serving time and train on the logs.</li>
+</ul>
+
+<h2 id="serving">Serving patterns</h2>
+<div class="table-wrap"><table>
+<tr><th>Pattern</th><th>How</th><th>Latency</th><th>Use cases</th></tr>
+<tr><td>Batch / offline</td><td>Scheduled job scores all entities, writes to a table</td><td>Hours</td><td>Churn scores, lead scoring, demand forecasts, recommendations precomputed nightly</td></tr>
+<tr><td>Online / real-time</td><td>REST/gRPC endpoint (FastAPI, TorchServe, BentoML, KServe, SageMaker endpoints)</td><td>ms</td><td>Fraud checks at payment, search ranking, pricing</td></tr>
+<tr><td>Streaming</td><td>Consume events (Kafka/Kinesis), compute features & predictions continuously (Flink, Spark Streaming)</td><td>Seconds</td><td>Real-time anomaly detection, live personalisation</td></tr>
+<tr><td>Edge / on-device</td><td>Model shipped to mobile/IoT (TFLite, Core ML, ONNX)</td><td>ms, offline</td><td>Keyboard prediction, camera features, privacy</td></tr>
+<tr><td>Embedded in DB / app</td><td>SQL UDF, model inside service</td><td>Varies</td><td>Simple models, low ops</td></tr>
+</table></div>
+<p><b>Latency levers:</b> simpler/smaller models, distillation, quantisation, ONNX runtime, caching, precomputing features, batching requests, autoscaling, GPU for deep models, two-stage (cheap candidate generation + expensive re-ranking).</p>
+<script type="text/plain" class="snippet" data-title="Minimal FastAPI model service">
+from fastapi import FastAPI
+from pydantic import BaseModel
+import joblib, pandas as pd
+
+app = FastAPI()
+model = joblib.load("model.joblib")          # a full sklearn Pipeline: preprocessing + model
+
+class Customer(BaseModel):
+    tenure: float
+    monthly_charges: float
+    contract: str
+
+@app.post("/predict")
+def predict(c: Customer):
+    p = model.predict_proba(pd.DataFrame([c.model_dump()]))[0, 1]
+    return {"churn_probability": round(float(p), 4), "model_version": "churn-v12"}
+# run: uvicorn app:app --host 0.0.0.0 --port 8000   (containerise with Docker, deploy on k8s)
+</script>
+
+<h2 id="deploy">Deployment strategies</h2>
+<div class="table-wrap"><table>
+<tr><th>Strategy</th><th>How</th><th>Why</th></tr>
+<tr><td>Shadow (dark launch)</td><td>New model receives a copy of live traffic; predictions logged, not used</td><td>Validate behaviour, latency and skew with zero user risk</td></tr>
+<tr><td>Canary</td><td>Route a small % (1–10%) of traffic to the new model, increase if healthy</td><td>Limit blast radius</td></tr>
+<tr><td>Blue–green</td><td>Two identical environments; switch traffic at once</td><td>Zero downtime, instant rollback</td></tr>
+<tr><td>A/B test</td><td>Randomised split with statistical comparison of business metrics</td><td>Measure causal business impact</td></tr>
+<tr><td>Multi-armed bandit</td><td>Adaptive traffic allocation to the better variant</td><td>Less regret during the test; harder inference</td></tr>
+<tr><td>Rolling update</td><td>Gradually replace instances (Kubernetes)</td><td>Standard infra rollout</td></tr>
+<tr><td>Champion–challenger</td><td>Challenger runs alongside champion; promoted on evidence</td><td>Continuous improvement process</td></tr>
+</table></div>
+
+<h2 id="cicd">CI / CD / CT for ML</h2>
+<ul>
+<li><b>CI:</b> unit tests for feature code, data schema & quality tests (Great Expectations, Pandera, TFDV), training-pipeline smoke tests on a sample, linting, reproducibility checks.</li>
+<li><b>Model validation gates:</b> new model must beat the current one on a fixed holdout and on key slices, pass fairness/robustness/latency/size checks, and calibration thresholds — otherwise the pipeline stops.</li>
+<li><b>CD:</b> automatically package, register and deploy (to staging → canary → prod) with rollback.</li>
+<li><b>CT:</b> pipelines (Airflow, Kubeflow, Vertex/SageMaker Pipelines, Prefect, Dagster) retrain on schedule or triggers.</li>
+<li><b>Infrastructure as code</b> (Terraform), containers, Kubernetes; secrets & access control; audit logs.</li>
+</ul>
+
+<h2 id="monitor">Monitoring: four layers</h2>
+<div class="table-wrap"><table>
+<tr><th>Layer</th><th>What to track</th><th>Examples</th></tr>
+<tr><td>1. Service health</td><td>Latency (p50/p95/p99), throughput, error rate, CPU/GPU/memory, uptime</td><td>Prometheus + Grafana, CloudWatch</td></tr>
+<tr><td>2. Data quality</td><td>Schema changes, missing-value rates, out-of-range values, new categories, volume drops, freshness</td><td>A pipeline starts sending age in months</td></tr>
+<tr><td>3. Drift</td><td>Input feature distributions, prediction distribution, (when available) label distribution</td><td>PSI, KS, Jensen–Shannon, χ²; Evidently, WhyLabs, Arize</td></tr>
+<tr><td>4. Model performance</td><td>Actual metrics once labels arrive (AUC, precision, MAPE), per segment; business KPIs</td><td>Delayed labels → use proxies meanwhile</td></tr>
+</table></div>
+<p><b>Delayed labels</b> (fraud chargebacks after 60 days, churn after a month): monitor input/prediction drift and proxy metrics in the meantime; build label-joining pipelines; estimate performance (e.g. confidence-based estimation).</p>
+
+<h2 id="drift">Types of drift</h2>
+<div class="table-wrap"><table>
+<tr><th>Type</th><th>What changes</th><th>Example</th><th>Detect</th></tr>
+<tr><td>Data / covariate drift</td><td>P(X)</td><td>New user segment (older users) after a marketing campaign</td><td>Feature distribution tests (PSI, KS)</td></tr>
+<tr><td>Concept drift</td><td>P(Y | X) — the relationship</td><td>Fraudsters change tactics; COVID changes buying behaviour</td><td>Performance drop with labels; error-rate monitors (DDM, ADWIN)</td></tr>
+<tr><td>Label / prior drift</td><td>P(Y)</td><td>Fraud rate doubles</td><td>Prediction & label distribution shift</td></tr>
+<tr><td>Prediction drift</td><td>Distribution of model outputs</td><td>Share of “high risk” jumps from 5% to 20%</td><td>Score histograms, PSI on predictions</td></tr>
+<tr><td>Upstream / data pipeline changes</td><td>Feature semantics</td><td>Units or encoding changed upstream</td><td>Schema & quality checks</td></tr>
+</table></div>
+<p>Drift can be <b>sudden</b> (policy change), <b>gradual</b>, <b>incremental</b> or <b>recurring/seasonal</b>. Not all drift hurts the model — confirm impact before retraining.</p>
+<div class="callout math"><div class="tag">∑ Population Stability Index</div>$$\text{PSI}=\sum_{b}(A_b-E_b)\ln\frac{A_b}{E_b}$$<p>E = expected (training/reference) share in bin b, A = actual (production) share. Rule of thumb: &lt; 0.1 stable, 0.1–0.25 moderate shift, &gt; 0.25 significant. KS statistic = max distance between the two CDFs (sensitive at large n — p-values become tiny for trivial shifts, so use effect-size thresholds).</p></div>
+
+<h2 id="demo">Drift demo</h2>
+<div class="widget" data-demo="drift"><div class="widget-title">PSI and KS under a distribution shift</div><div class="widget-sub">Shift the production mean or widen its spread and watch PSI cross the alert thresholds.</div></div>
+
+<h2 id="retrain">Retraining strategies</h2>
+<ul>
+<li><b>Scheduled</b> (daily/weekly/monthly) — simple, predictable; may be wasteful or too slow.</li>
+<li><b>Triggered</b> by drift or performance alerts — efficient, needs reliable monitors.</li>
+<li><b>Online/incremental learning</b> — continuous updates (SGD, partial_fit, river) for fast-changing data; risk of instability and poisoning.</li>
+<li>Choose the training window: sliding window (forget old regimes) vs expanding (more data); weight recent data more.</li>
+<li>Always run validation gates + shadow/canary before promoting; keep the previous version for rollback.</li>
+<li>Beware <b>feedback loops</b>: the model's decisions change future training data (e.g., only approved loans get repayment labels) — use exploration, holdout groups, reject inference.</li>
+</ul>
+
+<h2 id="maturity">MLOps maturity & tools</h2>
+<div class="table-wrap"><table>
+<tr><th>Level</th><th>Characteristics</th></tr>
+<tr><td>0 — manual</td><td>Notebooks, manual hand-off of a model file, rare releases, no monitoring</td></tr>
+<tr><td>1 — pipeline automation</td><td>Automated training pipeline, continuous training, feature store, model registry, monitoring</td></tr>
+<tr><td>2 — CI/CD automation</td><td>Pipelines themselves are tested and deployed automatically; rapid, reliable iteration</td></tr>
+</table></div>
+<p><b>Common stack:</b> Git + DVC · MLflow/W&B · Airflow/Kubeflow/Prefect · Feast · Docker + Kubernetes · FastAPI/BentoML/KServe/Seldon · Prometheus/Grafana · Evidently/WhyLabs/Arize · Great Expectations · cloud platforms (SageMaker, Vertex AI, Azure ML, Databricks).</p>
+<p><b>LLM-era additions (LLMOps):</b> prompt & model versioning, evaluation sets and LLM-as-judge evals, guardrails, RAG index freshness, token cost/latency monitoring, hallucination and safety monitoring.</p>
+
+<h2 id="incident">Incident playbook: “accuracy dropped from 92% to 78%”</h2>
+<ol>
+<li>Is it real? Check the monitoring pipeline, label delays, metric computation, sample size.</li>
+<li>When did it start? Correlate with deployments, upstream data changes, product launches, seasonality.</li>
+<li>Data quality: schema changes, null spikes, new categories, unit changes, broken joins, stale features.</li>
+<li>Drift analysis: which features shifted (PSI per feature), prediction distribution, segment-level performance.</li>
+<li>Training–serving skew: compare logged online features vs offline recomputation for the same entities.</li>
+<li>Mitigate: roll back, fall back to rules/previous model, fix pipeline; retrain on recent data if concept drift.</li>
+<li>Post-mortem: add the missing monitor/test, document, adjust retraining policy.</li>
+</ol>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="ops-psi" data-title="Compute PSI and KS for feature drift">
+<div class="lab-task"><p>Implement <code>psi(expected, actual, bins=10)</code> using bin edges from the <b>reference</b> deciles (first/last edges = −inf/+inf); clip shares at 1e-6. Compute PSI and the KS statistic (<code>scipy.stats.ks_2samp</code>) for each feature in <code>prod</code> vs <code>ref</code>, store PSI per feature in dict <code>psis</code>, and list features with PSI &gt; 0.25 in <code>alerts</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+from scipy.stats import ks_2samp
+rng = np.random.default_rng(0)
+ref = pd.DataFrame({"age": rng.normal(35, 8, 20000), "income": rng.lognormal(10, .5, 20000), "sessions": rng.poisson(5, 20000).astype(float)})
+prod = pd.DataFrame({"age": rng.normal(42, 9, 5000), "income": rng.lognormal(10, .5, 5000), "sessions": rng.poisson(5.3, 5000).astype(float)})
+
+def psi(expected, actual, bins=10):
+    # TODO
+    return None
+
+psis = {}
+alerts = []
+print(psis, alerts)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, pandas as pd
+from scipy.stats import ks_2samp
+rng = np.random.default_rng(0)
+ref = pd.DataFrame({"age": rng.normal(35, 8, 20000), "income": rng.lognormal(10, .5, 20000), "sessions": rng.poisson(5, 20000).astype(float)})
+prod = pd.DataFrame({"age": rng.normal(42, 9, 5000), "income": rng.lognormal(10, .5, 5000), "sessions": rng.poisson(5.3, 5000).astype(float)})
+
+def psi(expected, actual, bins=10):
+    edges = np.unique(np.quantile(expected, np.linspace(0, 1, bins + 1)))
+    edges[0], edges[-1] = -np.inf, np.inf
+    e = np.histogram(expected, edges)[0] / len(expected)
+    a = np.histogram(actual, edges)[0] / len(actual)
+    e, a = np.clip(e, 1e-6, None), np.clip(a, 1e-6, None)
+    return float(np.sum((a - e) * np.log(a / e)))
+
+psis = {c: psi(ref[c], prod[c]) for c in ref}
+alerts = [c for c, v in psis.items() if v > 0.25]
+for c in ref:
+    print(f"{c:9s} PSI={psis[c]:.3f}  KS={ks_2samp(ref[c], prod[c]).statistic:.3f}")
+print("ALERT:", alerts)
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert psi(ref.income, ref.income) is not None and psi(ref.income, ref.income) < 1e-9, "identical data must give PSI 0"
+assert set(psis) == {"age", "income", "sessions"}, "compute PSI for all three features"
+assert alerts == ["age"], f"only age drifted strongly; got {alerts}"
+assert psis["income"] < 0.05, "income didn't drift"
+print("Drift detected on age only. PSI:", {k: round(v, 3) for k, v in psis.items()})
+</script>
+</div>
+
+<div class="lab" data-id="ops-artifact" data-title="Package a pipeline as one versioned artifact">
+<div class="lab-task"><p>Serialise the full preprocessing + model pipeline with <code>joblib</code> to an in-memory buffer, reload it as <code>loaded</code>, and verify identical predictions. Build a <code>metadata</code> dict with keys <code>model_version</code>, <code>sklearn_version</code>, <code>features</code>, <code>val_auc</code> and <code>data_hash</code> (sha256 of the training data bytes, first 12 hex chars) — the minimum lineage you'd log to a registry.</p></div>
+<script type="text/x-python" data-part="starter">
+import io, hashlib, joblib, sklearn
+import numpy as np, pandas as pd
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
+
+X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+X_tr, X_val, y_tr, y_val = train_test_split(X, y, stratify=y, random_state=0)
+model = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000)).fit(X_tr, y_tr)
+
+loaded = None    # TODO: dump to io.BytesIO, seek(0), load
+metadata = None  # TODO
+print(metadata)
+</script>
+<script type="text/x-python" data-part="solution">
+import io, hashlib, joblib, sklearn
+import numpy as np, pandas as pd
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
+
+X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+X_tr, X_val, y_tr, y_val = train_test_split(X, y, stratify=y, random_state=0)
+model = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000)).fit(X_tr, y_tr)
+
+buf = io.BytesIO(); joblib.dump(model, buf); buf.seek(0)
+loaded = joblib.load(buf)
+metadata = {
+    "model_version": "bc-logreg-1.0.0",
+    "sklearn_version": sklearn.__version__,
+    "features": list(X.columns),
+    "val_auc": round(roc_auc_score(y_val, loaded.predict_proba(X_val)[:, 1]), 4),
+    "data_hash": hashlib.sha256(pd.util.hash_pandas_object(X_tr, index=True).values.tobytes()).hexdigest()[:12],
+}
+print({k: (v if k != "features" else f"{len(v)} features") for k, v in metadata.items()})
+print("artifact size:", round(len(buf.getvalue()) / 1024, 1), "KB")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert loaded is not None and np.allclose(loaded.predict_proba(X_val), model.predict_proba(X_val)), "reloaded model must predict identically"
+need = {"model_version", "sklearn_version", "features", "val_auc", "data_hash"}
+assert isinstance(metadata, dict) and need <= set(metadata), f"metadata needs {need}"
+assert len(metadata["data_hash"]) == 12 and len(metadata["features"]) == 30, "data_hash: 12 hex chars; features: 30 names"
+print("Reproducible artifact + lineage metadata ✔")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="mlops-396a10f" data-l="1"><summary>What is MLOps and why is it needed?</summary><div class="ans"><p>The set of practices to reliably build, deploy, monitor and improve ML systems in production — combining ML, data engineering and DevOps. It's needed because models depend on changing data, fail silently, must be reproducible and auditable, and need retraining; without automation, models rot and releases are slow and risky.</p></div></details>
+<details class="qa" data-id="mlops-4551e9b" data-l="1"><summary>What is the difference between data drift and concept drift?</summary><div class="ans"><p>Data (covariate) drift: the distribution of inputs P(X) changes (e.g. a new customer demographic). Concept drift: the relationship between inputs and target P(Y|X) changes (e.g. fraudsters adapt, so the same features now mean something else). Data drift is detectable without labels; concept drift usually needs labels or proxy signals.</p></div></details>
+<details class="qa" data-id="mlops-8babe50" data-l="2"><summary>How do you detect drift in production?</summary><div class="ans"><p>Compare production windows against a reference (training or a stable period): per-feature statistics and tests (PSI, KS, χ², Jensen–Shannon/Wasserstein), prediction-distribution monitoring, multivariate detectors (domain classifier: train a model to distinguish reference vs production — AUC ≫ 0.5 means drift), data-quality checks, and performance metrics once labels arrive. Alert on effect-size thresholds, not just p-values.</p></div></details>
+<details class="qa" data-id="mlops-229cf22" data-l="2"><summary>What should you monitor for a deployed model?</summary><div class="ans"><p>Service health (latency percentiles, errors, throughput, resources), data quality (schema, nulls, ranges, new categories, freshness, volume), input and prediction drift, model performance on labelled feedback (overall and by segment), business KPIs, fairness metrics, and cost.</p></div></details>
+<details class="qa" data-id="mlops-064b4cf" data-l="2"><summary>What is training–serving skew and how do you prevent it?</summary><div class="ans"><p>A mismatch between the data/features the model saw in training and what it receives in production — different code paths, data sources, timing or preprocessing. Prevent with a feature store (shared definitions, point-in-time correct offline data), packaging preprocessing inside the model artifact, logging serving features and training on them, and skew monitors comparing online vs offline features.</p></div></details>
+<details class="qa" data-id="mlops-92cf9c6" data-l="2"><summary>Batch vs real-time inference — how do you choose?</summary><div class="ans"><p>Batch when predictions can be precomputed and a delay is acceptable (daily churn scores) — cheaper and simpler. Real-time when the decision depends on fresh context at request time (fraud at checkout, search ranking) — needs low-latency serving, online features and higher operational cost. Streaming in between for continuous event-driven scoring.</p></div></details>
+<details class="qa" data-id="mlops-e1cf367" data-l="2"><summary>Explain shadow, canary and blue–green deployments.</summary><div class="ans"><p>Shadow: new model gets a copy of live traffic but its predictions aren't used — safe validation. Canary: a small share of real traffic goes to the new model, ramped up if metrics hold. Blue–green: two full environments; traffic switches from blue (old) to green (new) at once, enabling instant rollback.</p></div></details>
+<details class="qa" data-id="mlops-aad0311" data-l="2"><summary>What is a feature store?</summary><div class="ans"><p>A centralised system for defining, computing, storing and serving features: an offline store (historical values with point-in-time joins for training) and an online store (low-latency latest values for inference), with metadata, sharing/reuse across teams, lineage and monitoring. Examples: Feast, Tecton, Databricks, Vertex AI, SageMaker Feature Store.</p></div></details>
+<details class="qa" data-id="mlops-c9160cc" data-l="2"><summary>What does a model registry provide?</summary><div class="ans"><p>Versioned storage of model artifacts with metadata (metrics, parameters, training data and code versions), lifecycle stages/aliases (staging, production, archived), approval workflows, lineage, and a single source of truth that deployment pipelines pull from — enabling reproducibility, audits and rollbacks.</p></div></details>
+<details class="qa" data-id="mlops-557f857" data-l="2"><summary>How do you decide when to retrain a model?</summary><div class="ans"><p>Based on how fast the domain changes and the cost of staleness vs retraining: scheduled retraining matched to the drift rate, triggered retraining on drift/performance alerts, or online learning for fast-moving data. Use backtests to estimate how performance decays with model age, and always gate new models with validation and canaries.</p></div></details>
+<details class="qa" data-id="mlops-d749a7d" data-l="2"><summary>How do you ensure reproducibility of ML experiments?</summary><div class="ans"><p>Version code (Git), data (snapshots/DVC/hashes) and environment (pinned dependencies, Docker); fix random seeds; log parameters, metrics and artifacts with experiment tracking; parameterise pipelines with configs; record lineage in the model registry.</p></div></details>
+<details class="qa" data-id="mlops-1682bd6" data-l="3"><summary>Your model's accuracy dropped suddenly in production. Walk through your investigation.</summary><div class="ans"><p>Verify the alert (label delay, metric bug). Find the start time and correlate with deployments and upstream changes. Check data quality (schema, nulls, units, broken joins, stale features). Measure feature and prediction drift and per-segment performance. Compare online vs offline features for skew. Mitigate (rollback/fallback/fix pipeline), retrain if concept drift, then add monitors/tests and write a post-mortem.</p></div></details>
+<details class="qa" data-id="mlops-ad41255" data-l="2"><summary>What tests would you put in an ML CI pipeline?</summary><div class="ans"><p>Unit tests for feature transformations; data validation (schema, ranges, null rates, distribution expectations); training smoke test on a small sample; model quality gates vs the current champion on a fixed holdout and critical slices; invariance/directional tests (e.g. increasing income shouldn't increase default risk); latency and artifact-size checks; fairness checks; API contract tests.</p></div></details>
+<details class="qa" data-id="mlops-8797829" data-l="2"><summary>How would you handle delayed ground-truth labels when monitoring?</summary><div class="ans"><p>Monitor leading indicators: input drift, prediction-distribution drift, data quality, business proxies (e.g. early repayment signals). Estimate performance with calibrated confidence (CBPE). Build pipelines that join labels when they arrive and backfill performance dashboards; set retraining cadence around label availability.</p></div></details>
+<details class="qa" data-id="mlops-f3cef22" data-l="3"><summary>What are feedback loops in ML systems and how do you mitigate them?</summary><div class="ans"><p>When predictions influence the data the model is later trained on — recommendations shape clicks; credit models only observe outcomes for approved applicants; predictive policing. They bias training data and can amplify errors. Mitigate with exploration (randomised holdouts, bandits), logging propensities and using inverse-propensity weighting, reject inference, and monitoring diversity/coverage.</p></div></details>
+<details class="qa" data-id="mlops-7de8cd0" data-l="2"><summary>How would you serve a model with very tight latency (e.g. &lt; 10 ms)?</summary><div class="ans"><p>Precompute heavy features and cache them in an online store; use a lightweight model or distil/quantise a big one; export to an optimised runtime (ONNX Runtime, Treelite for trees); keep the model in memory in a compiled service; batch where possible; colocate with callers; autoscale; set timeouts with a fallback (default score or rules).</p></div></details>
+</div>
+</main>
+</body>
+</html>

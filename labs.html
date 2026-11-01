@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Coding drills · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/lab.js"></script><script src="assets/labs-index.js"></script>
+</head>
+<body data-page="labs">
+<main>
+<div class="eyebrow">Practice · Live-coding round preparation</div>
+<h1>Coding drills (Python)</h1>
+<p class="lede">Short, focused exercises of the kind asked in DS/ML live-coding rounds: implement core pieces from scratch with NumPy, wrangle features with pandas, and assemble leak-free scikit-learn workflows. Every drill runs in your browser and is auto-graded. Below the drills is a tracker of all labs across the site.</p>
+<div class="toc"><a href="#how">How to practise</a><a href="#numpy">NumPy from scratch</a><a href="#pandas">pandas features</a><a href="#sklearn">scikit-learn craft</a><a href="#capstone">Capstone</a><a href="#tracker">All-labs tracker</a></div>
+
+<h2 id="how">How to practise</h2>
+<ul><li>Attempt each drill <b>without hints</b> first, talking through your approach as if to an interviewer (complexity, edge cases).</li><li>Aim for vectorised NumPy — interviewers notice Python loops over rows.</li><li>After passing, compare with the solution and note one thing you'd do differently.</li><li>Redo failed drills 2–3 days later (spaced repetition). Your code is saved in this browser.</li></ul>
+<div class="callout interview"><div class="tag">💬 Live-coding etiquette</div><p>Clarify inputs/outputs, state assumptions, write a quick correct version first, then optimise; test with a tiny example; mention complexity; handle edge cases (empty input, ties, division by zero).</p></div>
+
+<h2 id="numpy">NumPy from scratch</h2>
+
+<div class="lab" data-id="drill-split" data-kind="DRILL" data-title="Stratified train/test split from scratch">
+<div class="lab-task"><p>Write <code>strat_split(y, test_size, seed)</code> that returns <code>(train_idx, test_idx)</code> such that each class contributes <code>round(test_size × class_count)</code> rows to the test set (shuffle within each class with <code>np.random.default_rng(seed)</code>). Indices must be disjoint and cover all rows.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+
+def strat_split(y, test_size=0.2, seed=0):
+    rng = np.random.default_rng(seed)
+    train_idx, test_idx = [], []
+    # TODO
+    return np.array(train_idx), np.array(test_idx)
+
+y = np.array([0] * 90 + [1] * 10)
+tr, te = strat_split(y, 0.2)
+print(len(tr), len(te), y[te].mean() if len(te) else None)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+
+def strat_split(y, test_size=0.2, seed=0):
+    rng = np.random.default_rng(seed)
+    train_idx, test_idx = [], []
+    for c in np.unique(y):
+        idx = np.flatnonzero(y == c)
+        rng.shuffle(idx)
+        k = int(round(test_size * len(idx)))
+        test_idx.extend(idx[:k]); train_idx.extend(idx[k:])
+    return np.sort(np.array(train_idx)), np.sort(np.array(test_idx))
+
+y = np.array([0] * 90 + [1] * 10)
+tr, te = strat_split(y, 0.2)
+print(len(tr), len(te), "positive rate in test:", y[te].mean())
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+yy = np.array([0] * 137 + [1] * 23 + [2] * 40)
+tr, te = strat_split(yy, 0.25, seed=1)
+assert len(set(tr) & set(te)) == 0, "train and test overlap"
+assert len(tr) + len(te) == len(yy) and set(tr) | set(te) == set(range(len(yy))), "indices must cover all rows"
+for c, cnt in zip(*np.unique(yy, return_counts=True)):
+    assert (yy[te] == c).sum() == int(round(0.25 * cnt)), f"class {c} has wrong test count"
+tr2, te2 = strat_split(yy, 0.25, seed=2)
+assert set(te) != set(te2), "different seeds should give different splits"
+print("Stratified split correct.")
+</script>
+</div>
+
+<div class="lab" data-id="drill-scaler" data-kind="DRILL" data-title="StandardScaler with fit/transform">
+<div class="lab-task"><p>Implement a class <code>MyScaler</code> with <code>fit(X)</code> (store mean and std per column; use std = 1 for constant columns), <code>transform(X)</code> and <code>fit_transform(X)</code>. It must match <code>sklearn.preprocessing.StandardScaler</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+
+class MyScaler:
+    def fit(self, X):
+        # TODO
+        return self
+    def transform(self, X):
+        return None  # TODO
+    def fit_transform(self, X):
+        return self.fit(X).transform(X)
+
+X = np.array([[1.0, 10, 5], [2, 20, 5], [3, 30, 5]])
+print(MyScaler().fit_transform(X))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+
+class MyScaler:
+    def fit(self, X):
+        X = np.asarray(X, dtype=float)
+        self.mean_ = X.mean(0)
+        sd = X.std(0)                       # population std (ddof=0) like sklearn
+        self.scale_ = np.where(sd == 0, 1.0, sd)
+        return self
+    def transform(self, X):
+        return (np.asarray(X, dtype=float) - self.mean_) / self.scale_
+    def fit_transform(self, X):
+        return self.fit(X).transform(X)
+
+X = np.array([[1.0, 10, 5], [2, 20, 5], [3, 30, 5]])
+print(MyScaler().fit_transform(X))
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+rng = np.random.default_rng(0)
+A = rng.normal(5, 3, (50, 4)); A[:, 2] = 7.0
+B = rng.normal(5, 3, (10, 4))
+m, s = MyScaler().fit(A), StandardScaler().fit(A)
+assert m.transform(B) is not None, "transform returns None"
+assert np.allclose(m.transform(B), s.transform(B)), "transform on new data must use the TRAIN statistics"
+print("Matches StandardScaler (including constant columns).")
+</script>
+</div>
+
+<div class="lab" data-id="drill-kfold" data-kind="DRILL" data-title="K-fold indices from scratch">
+<div class="lab-task"><p>Write a generator <code>kfold(n, k, seed)</code> yielding <code>(train_idx, val_idx)</code> pairs: shuffle indices once, split into k folds whose sizes differ by at most 1 (first <code>n % k</code> folds get one extra, like sklearn).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+
+def kfold(n, k=5, seed=0):
+    # TODO: yield train_idx, val_idx
+    return
+    yield
+
+for tr, va in kfold(11, 3):
+    print(len(tr), len(va))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+
+def kfold(n, k=5, seed=0):
+    idx = np.random.default_rng(seed).permutation(n)
+    sizes = np.full(k, n // k); sizes[: n % k] += 1
+    start = 0
+    for s in sizes:
+        val = idx[start:start + s]
+        train = np.concatenate([idx[:start], idx[start + s:]])
+        yield train, val
+        start += s
+
+for tr, va in kfold(11, 3):
+    print(len(tr), len(va))
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+folds = list(kfold(103, 5, seed=3))
+assert len(folds) == 5, "should yield k folds"
+vals = [set(v.tolist()) for _, v in folds]
+assert sorted(len(v) for v in vals) == [20, 20, 21, 21, 21], "fold sizes should differ by at most 1"
+assert set().union(*vals) == set(range(103)) and sum(len(v) for v in vals) == 103, "validation folds must partition all rows"
+for tr, va in folds:
+    assert not set(tr.tolist()) & set(va.tolist()) and len(tr) + len(va) == 103, "train/val must be complementary"
+print("K-fold generator correct.")
+</script>
+</div>
+
+<div class="lab" data-id="drill-softmax" data-kind="DRILL" data-title="Numerically stable softmax + cross-entropy">
+<div class="lab-task"><p>Implement <code>softmax(Z)</code> row-wise (subtract the row max for stability) and <code>cross_entropy(Z, y)</code> = mean of −log softmax(Z)[i, y_i], computed via log-sum-exp so it doesn't overflow for huge logits.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+
+def softmax(Z):
+    return None  # TODO
+
+def cross_entropy(Z, y):
+    return None  # TODO
+
+Z = np.array([[2.0, 1.0, 0.1], [1000.0, 1001.0, 999.0]])
+print(softmax(Z), cross_entropy(Z, np.array([0, 1])))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+
+def softmax(Z):
+    Z = Z - Z.max(axis=1, keepdims=True)
+    E = np.exp(Z)
+    return E / E.sum(axis=1, keepdims=True)
+
+def cross_entropy(Z, y):
+    Zs = Z - Z.max(axis=1, keepdims=True)
+    log_probs = Zs - np.log(np.exp(Zs).sum(axis=1, keepdims=True))
+    return -log_probs[np.arange(len(y)), y].mean()
+
+Z = np.array([[2.0, 1.0, 0.1], [1000.0, 1001.0, 999.0]])
+print(softmax(Z).round(4), round(cross_entropy(Z, np.array([0, 1])), 4))
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.metrics import log_loss
+Z = np.array([[2.0, 1.0, 0.1], [1000.0, 1001.0, 999.0], [-5, 0, 5.0]])
+yy = np.array([0, 1, 2])
+S = softmax(Z)
+assert S is not None and np.all(np.isfinite(S)) and np.allclose(S.sum(1), 1), "softmax rows must be finite and sum to 1"
+ce = cross_entropy(Z, yy)
+assert ce is not None and np.isfinite(ce), "cross-entropy must not overflow"
+assert abs(ce - log_loss(yy, S, labels=[0, 1, 2])) < 1e-9, "cross-entropy value is wrong"
+print("Stable softmax & cross-entropy ✔")
+</script>
+</div>
+
+<div class="lab" data-id="drill-cosine" data-kind="DRILL" data-title="Item-to-item recommendations with cosine similarity">
+<div class="lab-task"><p>Given a user × item rating matrix <code>R</code> (0 = not rated), write <code>similar_items(R, item, k)</code> returning the indices of the k items most cosine-similar to <code>item</code> (item vectors are columns), excluding the item itself, most similar first. Vectorise it.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+
+def similar_items(R, item, k=3):
+    # TODO
+    return None
+
+R = np.array([[5, 4, 0, 1, 0],
+              [4, 5, 1, 0, 0],
+              [0, 1, 5, 4, 4],
+              [1, 0, 4, 5, 5],
+              [5, 5, 0, 0, 1]], dtype=float)
+print(similar_items(R, 0, 2))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+
+def similar_items(R, item, k=3):
+    norms = np.linalg.norm(R, axis=0)
+    norms[norms == 0] = 1e-12
+    sims = (R.T @ R[:, item]) / (norms * norms[item])
+    sims[item] = -np.inf
+    return np.argsort(-sims)[:k]
+
+R = np.array([[5, 4, 0, 1, 0],
+              [4, 5, 1, 0, 0],
+              [0, 1, 5, 4, 4],
+              [1, 0, 4, 5, 5],
+              [5, 5, 0, 0, 1]], dtype=float)
+print(similar_items(R, 0, 2))   # item 1 is most like item 0
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+rng = np.random.default_rng(0)
+RR = (rng.random((40, 12)) < 0.4) * rng.integers(1, 6, (40, 12)).astype(float)
+for it in [0, 5, 11]:
+    S = cosine_similarity(RR.T)[it]; S[it] = -np.inf
+    ref = np.argsort(-S, kind="stable")[:4]
+    got = similar_items(RR, it, 4)
+    assert got is not None and list(got) == list(ref), f"item {it}: expected {ref}, got {got}"
+print("Top-k similar items correct.")
+</script>
+</div>
+
+<div class="lab" data-id="drill-sgd" data-kind="DRILL" data-title="Mini-batch SGD with shuffling">
+<div class="lab-task"><p>Implement <code>sgd_linreg(X, y, lr, epochs, batch, seed)</code> for linear regression (with intercept as <code>w[0]</code>). Each epoch: shuffle rows, iterate over mini-batches, update with the batch MSE gradient. Return the weights.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+
+def sgd_linreg(X, y, lr=0.05, epochs=50, batch=32, seed=0):
+    rng = np.random.default_rng(seed)
+    Xb = np.column_stack([np.ones(len(X)), X])
+    w = np.zeros(Xb.shape[1])
+    # TODO
+    return w
+
+rng = np.random.default_rng(1)
+X = rng.normal(size=(2000, 3)); y = 0.5 + X @ [1.0, -2.0, 3.0] + rng.normal(scale=0.1, size=2000)
+print(sgd_linreg(X, y))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+
+def sgd_linreg(X, y, lr=0.05, epochs=50, batch=32, seed=0):
+    rng = np.random.default_rng(seed)
+    Xb = np.column_stack([np.ones(len(X)), X])
+    w = np.zeros(Xb.shape[1])
+    n = len(y)
+    for _ in range(epochs):
+        order = rng.permutation(n)
+        for s in range(0, n, batch):
+            b = order[s:s + batch]
+            grad = 2 / len(b) * Xb[b].T @ (Xb[b] @ w - y[b])
+            w -= lr * grad
+    return w
+
+rng = np.random.default_rng(1)
+X = rng.normal(size=(2000, 3)); y = 0.5 + X @ [1.0, -2.0, 3.0] + rng.normal(scale=0.1, size=2000)
+print(sgd_linreg(X, y).round(3))
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+w = sgd_linreg(X, y, lr=0.02, epochs=30, batch=64, seed=0)
+assert np.allclose(w, [0.5, 1.0, -2.0, 3.0], atol=0.05), f"weights {np.round(w, 3)} not close to [0.5, 1, -2, 3]"
+print("Mini-batch SGD converged.")
+</script>
+</div>
+
+<div class="lab" data-id="drill-roc" data-kind="DRILL" data-title="ROC curve points and AUC (trapezoid)">
+<div class="lab-task"><p>Write <code>roc_points(y, s)</code> returning arrays <code>(fpr, tpr)</code> starting at (0, 0), using each distinct score as a threshold (predict positive if score ≥ threshold, thresholds in decreasing order). Then <code>auc_trap(fpr, tpr)</code> with the trapezoid rule.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+
+def roc_points(y, s):
+    # TODO
+    return None, None
+
+def auc_trap(fpr, tpr):
+    return None  # TODO
+
+y = np.array([0, 0, 1, 1, 0, 1]); s = np.array([.1, .4, .35, .8, .2, .9])
+f, t = roc_points(y, s); print(f, t, auc_trap(f, t) if f is not None else None)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+
+def roc_points(y, s):
+    y, s = np.asarray(y), np.asarray(s)
+    P, N = (y == 1).sum(), (y == 0).sum()
+    fpr, tpr = [0.0], [0.0]
+    for t in np.unique(s)[::-1]:
+        pred = s >= t
+        tpr.append((pred & (y == 1)).sum() / P)
+        fpr.append((pred & (y == 0)).sum() / N)
+    return np.array(fpr), np.array(tpr)
+
+def auc_trap(fpr, tpr):
+    return float(np.sum((fpr[1:] - fpr[:-1]) * (tpr[1:] + tpr[:-1]) / 2))
+
+y = np.array([0, 0, 1, 1, 0, 1]); s = np.array([.1, .4, .35, .8, .2, .9])
+f, t = roc_points(y, s); print(f.round(2), t.round(2), auc_trap(f, t))
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.metrics import roc_auc_score
+rng = np.random.default_rng(5)
+yy = rng.integers(0, 2, 400); ss = np.round(rng.random(400) * 0.7 + 0.3 * yy, 2)
+f, t = roc_points(yy, ss)
+assert f is not None and f[0] == 0 and t[0] == 0 and f[-1] == 1 and t[-1] == 1, "curve must start at (0,0) and end at (1,1)"
+assert np.all(np.diff(f) >= 0) and np.all(np.diff(t) >= 0), "FPR and TPR must be non-decreasing"
+assert abs(auc_trap(f, t) - roc_auc_score(yy, ss)) < 1e-9, "AUC doesn't match sklearn (tied scores must be one threshold)"
+print("ROC + AUC correct.")
+</script>
+</div>
+
+<div class="lab" data-id="drill-precision-k" data-kind="DRILL" data-title="Precision@k, Recall@k and MRR for recommendations">
+<div class="lab-task"><p>For each user you have a ranked list of recommended item IDs and a set of relevant items. Implement <code>precision_at_k</code>, <code>recall_at_k</code> (per user) and <code>mrr(all_recs, all_rel)</code> (mean over users of 1/rank of the first relevant item, 0 if none).</p></div>
+<script type="text/x-python" data-part="starter">
+def precision_at_k(recs, relevant, k):
+    return None  # TODO
+
+def recall_at_k(recs, relevant, k):
+    return None  # TODO
+
+def mrr(all_recs, all_rel):
+    return None  # TODO
+
+recs = [[3, 1, 7, 9], [5, 2, 8, 1], [4, 6, 2, 3]]
+rel = [{1, 9}, {7}, {4, 2, 3}]
+print([precision_at_k(r, s, 3) for r, s in zip(recs, rel)], mrr(recs, rel))
+</script>
+<script type="text/x-python" data-part="solution">
+def precision_at_k(recs, relevant, k):
+    return sum(1 for r in recs[:k] if r in relevant) / k
+
+def recall_at_k(recs, relevant, k):
+    return sum(1 for r in recs[:k] if r in relevant) / len(relevant) if relevant else 0.0
+
+def mrr(all_recs, all_rel):
+    total = 0.0
+    for recs, rel in zip(all_recs, all_rel):
+        for i, r in enumerate(recs, start=1):
+            if r in rel:
+                total += 1 / i
+                break
+    return total / len(all_recs)
+
+recs = [[3, 1, 7, 9], [5, 2, 8, 1], [4, 6, 2, 3]]
+rel = [{1, 9}, {7}, {4, 2, 3}]
+print([round(precision_at_k(r, s, 3), 3) for r, s in zip(recs, rel)], round(mrr(recs, rel), 3))
+</script>
+<script type="text/x-python" data-part="check">
+recs = [[3, 1, 7, 9], [5, 2, 8, 1], [4, 6, 2, 3]]
+rel = [{1, 9}, {7}, {4, 2, 3}]
+assert abs(precision_at_k(recs[0], rel[0], 3) - 1/3) < 1e-12 and abs(precision_at_k(recs[2], rel[2], 3) - 2/3) < 1e-12, "precision@k wrong"
+assert abs(recall_at_k(recs[0], rel[0], 4) - 1.0) < 1e-12 and abs(recall_at_k(recs[2], rel[2], 2) - 1/3) < 1e-12, "recall@k wrong"
+assert abs(mrr(recs, rel) - (1/2 + 0 + 1) / 3) < 1e-12, "MRR wrong"
+print("Ranking metrics correct.")
+</script>
+</div>
+
+<h2 id="pandas">pandas feature engineering</h2>
+<div class="lab" data-id="drill-rfm" data-kind="DRILL" data-title="RFM features from a transactions table">
+<div class="lab-task"><p>From <code>tx</code> (customer_id, date, amount), build a DataFrame <code>rfm</code> indexed by customer_id with columns <code>recency</code> (days between <code>snapshot</code> and last purchase), <code>frequency</code> (# transactions) and <code>monetary</code> (total amount), using only transactions <b>before</b> the snapshot date.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+rng = np.random.default_rng(0)
+tx = pd.DataFrame({
+    "customer_id": rng.integers(1, 51, 1000),
+    "date": pd.Timestamp("2025-01-01") + pd.to_timedelta(rng.integers(0, 400, 1000), unit="D"),
+    "amount": rng.lognormal(6, 0.8, 1000).round(2),
+})
+snapshot = pd.Timestamp("2025-12-01")
+rfm = None  # TODO
+print(rfm.head() if rfm is not None else None)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, pandas as pd
+rng = np.random.default_rng(0)
+tx = pd.DataFrame({
+    "customer_id": rng.integers(1, 51, 1000),
+    "date": pd.Timestamp("2025-01-01") + pd.to_timedelta(rng.integers(0, 400, 1000), unit="D"),
+    "amount": rng.lognormal(6, 0.8, 1000).round(2),
+})
+snapshot = pd.Timestamp("2025-12-01")
+past = tx[tx.date < snapshot]                     # point-in-time: no future transactions
+rfm = past.groupby("customer_id").agg(
+    recency=("date", lambda d: (snapshot - d.max()).days),
+    frequency=("date", "size"),
+    monetary=("amount", "sum"),
+)
+print(rfm.describe().round(1))
+</script>
+<script type="text/x-python" data-part="check">
+import pandas as pd
+assert rfm is not None and {"recency", "frequency", "monetary"} <= set(rfm.columns), "need recency, frequency, monetary"
+past = tx[tx.date < snapshot]
+assert rfm.frequency.sum() == len(past), "frequency must only count transactions before the snapshot"
+cid = past.customer_id.iloc[0]
+assert rfm.loc[cid, "recency"] == (snapshot - past[past.customer_id == cid].date.max()).days, "recency is wrong"
+assert abs(rfm.loc[cid, "monetary"] - past[past.customer_id == cid].amount.sum()) < 1e-6, "monetary is wrong"
+assert (rfm.recency > 0).all(), "recency should be positive days"
+print("Point-in-time RFM features ✔")
+</script>
+</div>
+
+<div class="lab" data-id="drill-dummies" data-kind="DRILL" data-title="One-hot encoding that survives unseen categories">
+<div class="lab-task"><p><code>pd.get_dummies</code> on train and test separately produces mismatched columns. Write <code>encode(train, test, col)</code> returning <code>(train_enc, test_enc)</code> with identical columns derived from the <b>training</b> categories only (unseen test categories → all zeros). Drop the original column.</p></div>
+<script type="text/x-python" data-part="starter">
+import pandas as pd
+
+def encode(train, test, col):
+    # TODO
+    return None, None
+
+train = pd.DataFrame({"city": ["Pune", "Delhi", "Pune", "Goa"], "x": [1, 2, 3, 4]})
+test = pd.DataFrame({"city": ["Delhi", "Jaipur"], "x": [5, 6]})
+a, b = encode(train, test, "city")
+print(a, b, sep="\n")
+</script>
+<script type="text/x-python" data-part="solution">
+import pandas as pd
+
+def encode(train, test, col):
+    cats = sorted(train[col].dropna().unique())
+    def one(df):
+        d = pd.get_dummies(pd.Categorical(df[col], categories=cats), prefix=col).astype(int)
+        d.index = df.index
+        return pd.concat([df.drop(columns=col), d], axis=1)
+    return one(train), one(test)
+
+train = pd.DataFrame({"city": ["Pune", "Delhi", "Pune", "Goa"], "x": [1, 2, 3, 4]})
+test = pd.DataFrame({"city": ["Delhi", "Jaipur"], "x": [5, 6]})
+a, b = encode(train, test, "city")
+print(a, b, sep="\n")
+# Production equivalent: OneHotEncoder(handle_unknown="ignore") inside a Pipeline
+</script>
+<script type="text/x-python" data-part="check">
+a, b = encode(train, test, "city")
+assert a is not None and list(a.columns) == list(b.columns), "train and test must have identical columns"
+assert "city" not in a.columns and "x" in a.columns, "drop the original column, keep others"
+assert b.filter(like="city").iloc[1].sum() == 0, "unseen category (Jaipur) must be all zeros"
+assert b.filter(like="Delhi").iloc[0, 0] == 1, "Delhi should be encoded in test"
+assert not any("Jaipur" in c for c in a.columns), "categories must come from train only"
+print("Consistent encoding ✔")
+</script>
+</div>
+
+<h2 id="sklearn">scikit-learn craft</h2>
+<div class="lab" data-id="drill-transformer" data-kind="DRILL" data-title="Write a custom sklearn transformer">
+<div class="lab-task"><p>Create <code>Winsorizer(BaseEstimator, TransformerMixin)</code> with parameters <code>lower=0.01, upper=0.99</code>: <code>fit</code> learns per-column quantiles from training data; <code>transform</code> clips to them. Then use it inside a pipeline with LinearRegression as <code>pipe</code> and make sure <code>GridSearchCV</code> can tune <code>winsorizer__upper</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import GridSearchCV
+
+class Winsorizer(BaseEstimator, TransformerMixin):
+    def __init__(self, lower=0.01, upper=0.99):
+        self.lower = lower
+        self.upper = upper
+    # TODO: fit and transform
+
+rng = np.random.default_rng(0)
+X = rng.normal(size=(300, 2)); X[:5] *= 50       # a few wild outliers
+y = X.clip(-3, 3) @ [2.0, -1.0] + rng.normal(scale=0.3, size=300)
+pipe = None  # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import GridSearchCV
+
+class Winsorizer(BaseEstimator, TransformerMixin):
+    def __init__(self, lower=0.01, upper=0.99):
+        self.lower = lower
+        self.upper = upper
+    def fit(self, X, y=None):
+        X = np.asarray(X, dtype=float)
+        self.lo_ = np.quantile(X, self.lower, axis=0)
+        self.hi_ = np.quantile(X, self.upper, axis=0)
+        return self
+    def transform(self, X):
+        return np.clip(np.asarray(X, dtype=float), self.lo_, self.hi_)
+
+rng = np.random.default_rng(0)
+X = rng.normal(size=(300, 2)); X[:5] *= 50
+y = X.clip(-3, 3) @ [2.0, -1.0] + rng.normal(scale=0.3, size=300)
+pipe = Pipeline([("winsorizer", Winsorizer()), ("lr", LinearRegression())])
+gs = GridSearchCV(pipe, {"winsorizer__upper": [0.95, 0.99, 1.0], "winsorizer__lower": [0.0, 0.01, 0.05]}, cv=5, scoring="r2").fit(X, y)
+print(gs.best_params_, round(gs.best_score_, 3))
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.base import clone
+from sklearn.model_selection import GridSearchCV, cross_val_score
+w = Winsorizer(0.05, 0.95).fit(X)
+Z = w.transform(X)
+assert np.allclose(Z.max(0), np.quantile(X, 0.95, axis=0)) and np.allclose(Z.min(0), np.quantile(X, 0.05, axis=0)), "clip to learned quantiles"
+assert clone(Winsorizer(0.1, 0.9)).get_params() == {"lower": 0.1, "upper": 0.9}, "params must be clonable (store __init__ args unchanged)"
+assert pipe is not None, "build pipe"
+gs = GridSearchCV(pipe, {"winsorizer__upper": [0.95, 1.0]}, cv=5).fit(X, y)
+assert gs.best_params_["winsorizer__upper"] == 0.95, "clipping outliers should help here"
+print("Custom transformer works in pipelines & grid search.")
+</script>
+</div>
+
+<div class="lab" data-id="drill-scorer" data-kind="DRILL" data-title="Business-cost scorer with make_scorer">
+<div class="lab-task"><p>A missed fraud (FN) costs ₹5,000, a false alarm (FP) costs ₹200. Write <code>cost(y_true, y_pred)</code> returning total cost, wrap it as <code>cost_scorer = make_scorer(cost, greater_is_better=False)</code>, and use it in <code>GridSearchCV</code> over <code>class_weight ∈ [None, {0: 1, 1: 5}, {0: 1, 1: 25}]</code> for LogisticRegression → <code>search</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import make_scorer, confusion_matrix
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
+
+X, y = make_classification(n_samples=6000, n_features=12, n_informative=5, weights=[0.96], class_sep=0.9, random_state=0)
+
+def cost(y_true, y_pred):
+    return None  # TODO
+
+cost_scorer = None  # TODO
+search = None       # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import make_scorer, confusion_matrix
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
+
+X, y = make_classification(n_samples=6000, n_features=12, n_informative=5, weights=[0.96], class_sep=0.9, random_state=0)
+
+def cost(y_true, y_pred):
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+    return 5000 * fn + 200 * fp
+
+cost_scorer = make_scorer(cost, greater_is_better=False)
+search = GridSearchCV(LogisticRegression(max_iter=1000),
+                      {"class_weight": [None, {0: 1, 1: 5}, {0: 1, 1: 25}]},
+                      scoring=cost_scorer, cv=StratifiedKFold(5, shuffle=True, random_state=0)).fit(X, y)
+for p, s in zip(search.cv_results_["params"], search.cv_results_["mean_test_score"]):
+    print(p, f"avg cost per fold ₹{-s:,.0f}")
+print("best:", search.best_params_)
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert cost(np.array([1, 0, 1, 0]), np.array([0, 1, 1, 0])) == 5200, "cost: 1 FN (5000) + 1 FP (200) = 5200"
+assert search is not None and search.scorer_ is not None, "fit search with the cost scorer"
+assert search.best_params_["class_weight"] is not None, "weighting the rare costly class should lower total cost"
+assert search.best_score_ < 0, "greater_is_better=False makes scores negative"
+print("Optimised directly for business cost.")
+</script>
+</div>
+
+<div class="lab" data-id="drill-boot-auc" data-kind="DRILL" data-title="Confidence interval for AUC by bootstrapping the test set">
+<div class="lab-task"><p>Given test labels and model scores, compute a 95% percentile bootstrap CI for ROC-AUC with 1,000 resamples (resample rows with replacement; skip resamples containing a single class) → <code>ci</code>. Report it like you would to a stakeholder.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.metrics import roc_auc_score
+rng = np.random.default_rng(0)
+y = rng.integers(0, 2, 400)
+s = rng.normal(size=400) + 1.0 * y
+ci = None  # TODO
+print(roc_auc_score(y, s), ci)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.metrics import roc_auc_score
+rng = np.random.default_rng(0)
+y = rng.integers(0, 2, 400)
+s = rng.normal(size=400) + 1.0 * y
+aucs = []
+for _ in range(1000):
+    i = rng.integers(0, len(y), len(y))
+    if len(np.unique(y[i])) < 2:
+        continue
+    aucs.append(roc_auc_score(y[i], s[i]))
+ci = tuple(np.percentile(aucs, [2.5, 97.5]))
+print(f"AUC = {roc_auc_score(y, s):.3f} (95% CI {ci[0]:.3f}–{ci[1]:.3f}, n={len(y)})")
+</script>
+<script type="text/x-python" data-part="check">
+from sklearn.metrics import roc_auc_score
+a = roc_auc_score(y, s)
+assert ci is not None and ci[0] < a < ci[1], "CI must contain the point estimate"
+assert 0.04 < ci[1] - ci[0] < 0.15, "CI width looks wrong for n=400"
+print("Report: AUC with uncertainty ✔")
+</script>
+</div>
+
+<h2 id="capstone">Capstone: end-to-end modelling under interview conditions</h2>
+<div class="lab" data-id="drill-capstone" data-kind="CAPSTONE" data-title="Loan default model: from raw frame to tuned, explained model">
+<div class="lab-task"><p>You get a messy loan dataset (numeric NaNs, categoricals, ~13% defaults). In ≤ 30 minutes: (1) split off a stratified 20% test set (<code>random_state=0</code>); (2) build a leak-free <code>Pipeline</code> with a ColumnTransformer and <code>HistGradientBoostingClassifier</code>; (3) tune 2–3 hyperparameters with <code>RandomizedSearchCV</code> (scoring <code>"average_precision"</code>, ≤ 12 iterations, 3-fold) → <code>search</code>; (4) report test PR-AUC → <code>test_ap</code> and ROC-AUC → <code>test_auc</code>; (5) top-3 permutation-importance features on the test set → <code>top3</code>.</p></div>
+<div data-part="hint">HistGradientBoosting handles NaN natively, so numeric imputation is optional; one-hot (or OrdinalEncoder + categorical_features) for the categoricals.</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+from scipy.stats import loguniform, randint
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.metrics import average_precision_score, roc_auc_score
+from sklearn.inspection import permutation_importance
+
+rng = np.random.default_rng(42)
+n = 5000
+df = pd.DataFrame({
+    "income": rng.lognormal(11, 0.5, n), "loan_amount": rng.lognormal(12, 0.6, n),
+    "credit_score": rng.normal(680, 60, n).clip(300, 850), "tenure_months": rng.integers(1, 240, n).astype(float),
+    "dti": rng.uniform(0, 0.8, n), "employment": rng.choice(["salaried", "self", "contract", "none"], n, p=[.6, .2, .15, .05]),
+    "purpose": rng.choice(["home", "car", "education", "personal"], n),
+})
+z = (-5.0 + 4.0 * df.dti - 0.015 * (df.credit_score - 680) + 0.6 * np.log(df.loan_amount / df.income)
+     + df.employment.map({"salaried": 0, "self": 0.4, "contract": 0.7, "none": 1.4}))
+df["default"] = (rng.random(n) < 1 / (1 + np.exp(-z))).astype(int)
+for c in ["income", "credit_score", "dti"]:
+    df.loc[rng.random(n) < 0.06, c] = np.nan
+X, y = df.drop(columns="default"), df["default"]
+
+search = None
+test_ap = test_auc = None
+top3 = None
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, pandas as pd
+from scipy.stats import loguniform, randint
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.metrics import average_precision_score, roc_auc_score
+from sklearn.inspection import permutation_importance
+
+rng = np.random.default_rng(42)
+n = 5000
+df = pd.DataFrame({
+    "income": rng.lognormal(11, 0.5, n), "loan_amount": rng.lognormal(12, 0.6, n),
+    "credit_score": rng.normal(680, 60, n).clip(300, 850), "tenure_months": rng.integers(1, 240, n).astype(float),
+    "dti": rng.uniform(0, 0.8, n), "employment": rng.choice(["salaried", "self", "contract", "none"], n, p=[.6, .2, .15, .05]),
+    "purpose": rng.choice(["home", "car", "education", "personal"], n),
+})
+z = (-5.0 + 4.0 * df.dti - 0.015 * (df.credit_score - 680) + 0.6 * np.log(df.loan_amount / df.income)
+     + df.employment.map({"salaried": 0, "self": 0.4, "contract": 0.7, "none": 1.4}))
+df["default"] = (rng.random(n) < 1 / (1 + np.exp(-z))).astype(int)
+for c in ["income", "credit_score", "dti"]:
+    df.loc[rng.random(n) < 0.06, c] = np.nan
+X, y = df.drop(columns="default"), df["default"]
+
+# 1) split
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, stratify=y, random_state=0)
+# 2) pipeline (+ a domain feature would be loan_to_income; trees can approximate it from the raw columns)
+num = ["income", "loan_amount", "credit_score", "tenure_months", "dti"]
+cat = ["employment", "purpose"]
+pre = ColumnTransformer([("num", "passthrough", num),
+                         ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cat)])
+pipe = Pipeline([("pre", pre), ("gb", HistGradientBoostingClassifier(early_stopping=True, random_state=0))])
+# 3) tuning
+space = {"gb__learning_rate": loguniform(0.02, 0.2), "gb__max_leaf_nodes": randint(8, 48),
+         "gb__min_samples_leaf": randint(20, 120)}
+search = RandomizedSearchCV(pipe, space, n_iter=12, cv=3, scoring="average_precision", random_state=0).fit(X_tr, y_tr)
+# 4) test metrics
+p = search.predict_proba(X_te)[:, 1]
+test_ap, test_auc = average_precision_score(y_te, p), roc_auc_score(y_te, p)
+print(f"best CV AP {search.best_score_:.3f} | test PR-AUC {test_ap:.3f} (base rate {y_te.mean():.3f}) | test ROC-AUC {test_auc:.3f}")
+# 5) explain
+pi = permutation_importance(search.best_estimator_, X_te, y_te, scoring="average_precision", n_repeats=5, random_state=0)
+imp = pd.Series(pi.importances_mean, index=X_te.columns).sort_values(ascending=False)
+top3 = list(imp.index[:3])
+print(imp.round(4)); print("top3:", top3)
+</script>
+<script type="text/x-python" data-part="check">
+assert search is not None and hasattr(search, "best_estimator_"), "run RandomizedSearchCV"
+assert search.scoring == "average_precision", "tune on average_precision"
+assert len(search.cv_results_["params"]) <= 12, "use at most 12 iterations"
+assert test_ap is not None and test_ap > 0.2, f"test PR-AUC too low ({test_ap})"
+assert test_auc is not None and test_auc > 0.72, f"test ROC-AUC too low ({test_auc})"
+assert top3 is not None and "dti" in top3, "dti should be among the top drivers"
+print("Capstone complete — you'd pass this live-coding round.")
+</script>
+</div>
+
+<h2 id="tracker">All labs across the site</h2>
+<p class="small">Progress is stored in this browser. Click a lab to jump to it.</p>
+<div class="statrow" id="labStats"></div>
+<div class="table-wrap"><table id="labTable"><tr><th>Status</th><th>Lab</th><th>Topic</th></tr></table></div>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const L = window.MLP_LABS || [], done = window.MLP_STORE.get("mlp-labs", {});
+  const t = document.getElementById("labTable");
+  let passed = 0;
+  L.forEach(l => { if (done[l.id]) passed++; t.insertAdjacentHTML("beforeend", `<tr><td>${done[l.id] ? "✅" : "⬜"}</td><td><a href="${l.p}#lab-${l.id}">${window.MLP_esc(l.t)}</a></td><td>${window.MLP_esc(l.g)}</td></tr>`); });
+  document.getElementById("labStats").innerHTML = `<div class="stat"><b>${L.length}</b><span>labs in total</span></div><div class="stat"><b>${passed}</b><span>passed</span></div><div class="stat"><b>${L.length ? Math.round(100 * passed / L.length) : 0}%</b><span>complete</span></div>`;
+});
+</script>
+</main>
+</body>
+</html>

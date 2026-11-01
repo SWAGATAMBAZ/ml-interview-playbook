@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bagging & Random Forest · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="random-forest">
+<main>
+<div class="eyebrow">Supervised · Ensemble · Bagging</div>
+<h1>Bagging & Random Forest</h1>
+<p class="lede">Average many deep, decorrelated trees to cut variance without adding much bias. Random Forest is the most reliable “it just works” model on tabular data and the comparison point for boosting. Expect: how bagging reduces variance, why random feature subsets, OOB error, feature importance pitfalls, RF vs GBM.</p>
+<div class="toc"><a href="#pitch">30-sec answer</a><a href="#bagging">Bagging</a><a href="#rf">Random Forest</a><a href="#math">Why it works</a><a href="#oob">OOB error</a><a href="#importance">Feature importance</a><a href="#hp">Hyperparameters</a><a href="#extra">Extra Trees</a><a href="#vs">RF vs boosting</a><a href="#procon">Pros/cons</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“Random Forest is bagging of decision trees plus feature randomness. Each tree is trained on a bootstrap sample, and at each split only a random subset of features (max_features, e.g. √d) is considered, which decorrelates the trees. Predictions are averaged (regression) or voted/probability-averaged (classification). Averaging B trees with variance σ² and pairwise correlation ρ gives variance \(\rho\sigma^2+\frac{1-\rho}{B}\sigma^2\), so lowering ρ is the key. Trees are grown deep (low bias), more trees never overfit — they just plateau — and the ~37% out-of-bag rows give a free validation estimate. It's robust, needs little tuning or preprocessing, but is large, slower at inference, and impurity importances are biased.”</p></div>
+
+<h2 id="bagging">Bagging (bootstrap aggregating)</h2>
+<ol><li>Draw B bootstrap samples (n rows sampled with replacement).</li><li>Train a high-variance base learner (deep tree) on each, independently and in parallel.</li><li>Aggregate: average for regression, majority vote or averaged probabilities for classification.</li></ol>
+<p>Each bootstrap sample contains about \(1-(1-1/n)^n\approx 1-1/e\approx 63.2\%\) of unique rows; the remaining ~36.8% are <b>out-of-bag</b> for that tree.</p>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Ask 500 people who each saw a slightly different sample of the evidence and were each allowed to look at only a few clues at a time. Individually they're erratic; their average is remarkably stable. That's the “wisdom of crowds” — but only if the crowd's mistakes aren't all the same, which is why RF forces diversity.</p></div>
+
+<h2 id="rf">What Random Forest adds</h2>
+<p>Plain bagged trees are highly correlated — a few strong features dominate every tree's top splits. RF considers only a random subset of <code>max_features</code> candidates at <b>each split</b>, so other features get a chance and the trees disagree more. Defaults: \(\sqrt d\) for classification, all features (1.0) in sklearn regression (originally d/3).</p>
+
+<h2 id="math">Why it works: variance of an average</h2>
+<div class="callout math"><div class="tag">∑ Variance of the ensemble</div>$$\operatorname{Var}\Big(\frac1B\sum_{b=1}^B T_b\Big)=\rho\sigma^2+\frac{1-\rho}{B}\sigma^2$$<p>As B → ∞ the second term vanishes, but the first stays: <b>correlation ρ between trees limits the benefit</b>. Bootstrapping and feature subsampling reduce ρ (at a small cost in individual-tree bias/variance). Bias of the average ≈ bias of one tree, so use low-bias (deep) trees.</p></div>
+
+<h2 id="oob">Out-of-bag (OOB) evaluation</h2>
+<p>For each row, average the predictions of only the trees that didn't see it in training. The resulting OOB score is close to a cross-validation estimate at no extra training cost (<code>oob_score=True</code>). It's slightly pessimistic for small B since each row is predicted by ~37% of the trees. Not valid for time-series or grouped data (rows aren't independent).</p>
+
+<h2 id="importance">Feature importance — and its traps</h2>
+<div class="table-wrap"><table>
+<tr><th>Method</th><th>How</th><th>Caveats</th></tr>
+<tr><td>MDI (feature_importances_)</td><td>Total impurity decrease per feature, averaged over trees</td><td>Training-set based; inflated for high-cardinality/continuous features; splits credit among correlated features</td></tr>
+<tr><td>Permutation importance</td><td>Drop in validation score when a feature's values are shuffled</td><td>Model-agnostic and unbiased w.r.t. cardinality, but correlated features hide each other (shuffling one, the other compensates)</td></tr>
+<tr><td>Drop-column importance</td><td>Retrain without the feature</td><td>Most faithful, most expensive</td></tr>
+<tr><td>SHAP (TreeSHAP)</td><td>Shapley-value attribution per prediction</td><td>Consistent, local + global; exact & fast for trees</td></tr>
+</table></div>
+
+<h2 id="hp">Hyperparameters</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Parameter</th><th>Effect</th><th>Tuning guidance</th></tr>
+<tr><td>n_estimators</td><td>More trees → lower variance, plateau; never overfits but costs time</td><td>200–1000; stop when OOB score flattens</td></tr>
+<tr><td>max_features</td><td>Lower → more decorrelation (lower ρ) but weaker trees</td><td>Most important: try sqrt, log2, 0.2–0.5</td></tr>
+<tr><td>max_depth</td><td>Limits tree complexity</td><td>None (deep) usually; limit for very noisy data / speed</td></tr>
+<tr><td>min_samples_leaf</td><td>Smooths leaves, regularises, shrinks model</td><td>1–10; higher for noisy regression</td></tr>
+<tr><td>min_samples_split, max_leaf_nodes</td><td>Tree size control</td><td>Secondary</td></tr>
+<tr><td>bootstrap, max_samples</td><td>Sample with replacement; fraction per tree</td><td>max_samples 0.5–0.8 speeds up & decorrelates</td></tr>
+<tr><td>class_weight</td><td>"balanced", "balanced_subsample"</td><td>For imbalanced classification</td></tr>
+<tr><td>criterion</td><td>gini/entropy; squared_error/absolute_error/poisson</td><td>Default is fine</td></tr>
+<tr><td>oob_score, n_jobs, random_state</td><td>Free validation; parallelism; reproducibility</td><td>n_jobs=-1</td></tr>
+</table></div>
+
+<h2 id="extra">Extremely Randomised Trees</h2>
+<p>ExtraTrees go further: thresholds are drawn at random (best of random candidates) and by default no bootstrap. Even lower variance and faster training, slightly higher bias. Worth a try alongside RF.</p>
+
+<h2 id="vs">Random Forest vs Gradient Boosting</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>Random Forest</th><th>Gradient Boosting</th></tr>
+<tr><td>Ensemble type</td><td>Parallel, independent trees (bagging)</td><td>Sequential, each tree corrects previous errors</td></tr>
+<tr><td>Reduces mainly</td><td>Variance</td><td>Bias (and variance with shrinkage/subsampling)</td></tr>
+<tr><td>Base trees</td><td>Deep, low bias</td><td>Shallow (depth 3–8), weak learners</td></tr>
+<tr><td>Overfitting with more trees</td><td>No (plateaus)</td><td>Yes — needs early stopping & learning rate</td></tr>
+<tr><td>Tuning effort</td><td>Low; robust defaults</td><td>Higher; usually more accurate when tuned</td></tr>
+<tr><td>Training</td><td>Embarrassingly parallel</td><td>Sequential (parallel within a tree)</td></tr>
+<tr><td>Noisy labels / outliers</td><td>More robust</td><td>Can chase noise</td></tr>
+</table></div>
+
+<h2 id="procon">Pros, cons & when to use</h2>
+<div class="procon"><div class="pro"><h4>✅ Strengths</h4><ul><li>Strong accuracy with little tuning; hard to badly overfit</li><li>No scaling; handles non-linearity, interactions, mixed features</li><li>OOB estimate, feature importance, parallel training</li><li>Robust to outliers and noisy features</li></ul></div>
+<div class="con"><h4>❌ Weaknesses</h4><ul><li>Large models, slower inference than a single tree / linear model</li><li>Less interpretable than one tree</li><li>Can't extrapolate; struggles with very sparse high-dimensional data</li><li>Usually a bit below tuned boosting on tabular benchmarks</li></ul></div></div>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="rf-bootstrap" data-title="Bootstrap maths: the 63.2% rule">
+<div class="lab-task"><p>Simulate: draw a bootstrap sample of size n = 10,000 from indices 0…n−1 and compute the fraction of unique indices in <code>frac_unique</code>. Compare with \(1-(1-1/n)^n\) and \(1-1/e\).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+rng = np.random.default_rng(0)
+n = 10_000
+frac_unique = None  # TODO
+print(frac_unique, 1 - (1 - 1/n) ** n, 1 - np.exp(-1))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+rng = np.random.default_rng(0)
+n = 10_000
+sample = rng.integers(0, n, size=n)          # with replacement
+frac_unique = len(np.unique(sample)) / n
+print(round(frac_unique, 4), round(1 - (1 - 1/n) ** n, 4), round(1 - np.exp(-1), 4))
+print("=> each tree never sees ~36.8% of rows: its out-of-bag set")
+</script>
+<script type="text/x-python" data-part="check">
+assert frac_unique is not None and abs(frac_unique - 0.632) < 0.01, f"expected ≈0.632, got {frac_unique}"
+print("63.2% confirmed.")
+</script>
+</div>
+
+<div class="lab" data-id="rf-variance" data-title="One tree vs bagging vs Random Forest">
+<div class="lab-task"><p>Compare 5-fold CV accuracy of a single <code>DecisionTreeClassifier</code>, a <code>BaggingClassifier</code> of 100 trees, and a <code>RandomForestClassifier(n_estimators=100)</code> on the data below. Store the three mean scores in a dict <code>scores</code> with keys <code>"tree"</code>, <code>"bagging"</code>, <code>"rf"</code>. Use <code>random_state=0</code> everywhere.</p></div>
+<script type="text/x-python" data-part="starter">
+from sklearn.datasets import make_classification
+from sklearn.model_selection import cross_val_score
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import BaggingClassifier, RandomForestClassifier
+
+X, y = make_classification(n_samples=600, n_features=25, n_informative=8, n_redundant=6, flip_y=0.05, random_state=0)
+scores = {}
+# TODO
+print(scores)
+</script>
+<script type="text/x-python" data-part="solution">
+from sklearn.datasets import make_classification
+from sklearn.model_selection import cross_val_score
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import BaggingClassifier, RandomForestClassifier
+
+X, y = make_classification(n_samples=600, n_features=25, n_informative=8, n_redundant=6, flip_y=0.05, random_state=0)
+models = {
+    "tree": DecisionTreeClassifier(random_state=0),
+    "bagging": BaggingClassifier(DecisionTreeClassifier(), n_estimators=100, random_state=0),
+    "rf": RandomForestClassifier(n_estimators=100, random_state=0),
+}
+scores = {k: cross_val_score(m, X, y, cv=5).mean() for k, m in models.items()}
+for k, v in scores.items():
+    print(f"{k:8s} {v:.3f}")
+</script>
+<script type="text/x-python" data-part="check">
+assert set(scores) == {"tree", "bagging", "rf"}, "scores needs keys tree, bagging, rf"
+assert scores["bagging"] > scores["tree"] + 0.03, "bagging should clearly beat a single tree"
+assert scores["rf"] >= scores["bagging"] - 0.01, "RF should match or beat plain bagging"
+print("Variance reduction in action.")
+</script>
+</div>
+
+<div class="lab" data-id="rf-oob-importance" data-title="OOB score + permutation vs impurity importance">
+<div class="lab-task"><p>A random ID-like column (<code>noise_id</code>, high cardinality, no signal) was added. Fit <code>rf</code> with <code>oob_score=True</code>. Compute impurity importance and permutation importance on the test set (<code>n_repeats=10, random_state=0</code>) as pandas Series <code>mdi</code> and <code>perm</code> indexed by column name. See which one is fooled by the noise column.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.inspection import permutation_importance
+
+data = load_breast_cancer(as_frame=True)
+X = data.data[["mean radius", "mean texture", "mean smoothness", "mean symmetry", "mean fractal dimension"]].copy()
+X["noise_id"] = np.random.default_rng(0).permutation(len(X))
+y = data.target
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, stratify=y, random_state=0)
+
+rf = None    # TODO
+mdi = None   # TODO
+perm = None  # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, pandas as pd
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.inspection import permutation_importance
+
+data = load_breast_cancer(as_frame=True)
+X = data.data[["mean radius", "mean texture", "mean smoothness", "mean symmetry", "mean fractal dimension"]].copy()
+X["noise_id"] = np.random.default_rng(0).permutation(len(X))
+y = data.target
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, stratify=y, random_state=0)
+
+rf = RandomForestClassifier(n_estimators=300, oob_score=True, random_state=0).fit(X_tr, y_tr)
+print("OOB accuracy:", round(rf.oob_score_, 3), "| test accuracy:", round(rf.score(X_te, y_te), 3))
+mdi = pd.Series(rf.feature_importances_, index=X.columns)
+pi = permutation_importance(rf, X_te, y_te, n_repeats=10, random_state=0)
+perm = pd.Series(pi.importances_mean, index=X.columns)
+print(pd.DataFrame({"MDI": mdi, "permutation": perm}).sort_values("MDI", ascending=False).round(3))
+</script>
+<script type="text/x-python" data-part="check">
+assert rf is not None and hasattr(rf, "oob_score_"), "fit rf with oob_score=True"
+assert abs(rf.oob_score_ - rf.score(X_te, y_te)) < 0.06, "OOB should be close to test accuracy"
+assert mdi["noise_id"] > 0.02, "MDI should give the noise ID non-trivial importance"
+assert perm["noise_id"] < 0.01, "permutation importance should expose noise_id as useless"
+print(f"noise_id — MDI: {mdi['noise_id']:.3f} vs permutation: {perm['noise_id']:.3f}")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="random-forest-7821fbb" data-l="1"><summary>How does a Random Forest work?</summary><div class="ans"><p>It trains many decision trees, each on a bootstrap sample of the rows, and at every split considers only a random subset of features. Predictions are averaged (regression) or majority-voted / probability-averaged (classification). Bootstrapping + feature subsampling decorrelate trees so averaging reduces variance.</p></div></details>
+<details class="qa" data-id="random-forest-8d66c52" data-l="2"><summary>Why does bagging reduce variance but not bias?</summary><div class="ans"><p>The average of B identically distributed estimators has the same expectation (so bias is unchanged) but variance ρσ² + (1−ρ)σ²/B, which is smaller than σ². Hence bagging helps high-variance, low-bias learners like deep trees, and does little for stable, high-bias models like linear regression.</p></div></details>
+<details class="qa" data-id="random-forest-fdb28c1" data-l="2"><summary>Why does RF use a random subset of features at each split?</summary><div class="ans"><p>To decorrelate the trees. Without it, strong predictors dominate the top splits of every tree, making them similar (high ρ), and averaging correlated trees removes little variance. Random subsets force diversity, lowering ρ and the ensemble variance.</p></div></details>
+<details class="qa" data-id="random-forest-af26503" data-l="1"><summary>Can a Random Forest overfit by adding more trees?</summary><div class="ans"><p>No — adding trees reduces the variance term and the generalisation error converges to a limit. Individual deep trees overfit, and the forest can still overfit via tree depth/leaf size on noisy data, but n_estimators itself isn't an overfitting knob (it's a compute knob).</p></div></details>
+<details class="qa" data-id="random-forest-f23f283" data-l="2"><summary>What is the out-of-bag error?</summary><div class="ans"><p>Each tree leaves out ~36.8% of rows. Predicting each row with only the trees that didn't train on it and scoring those predictions gives an internal, nearly unbiased estimate of test error — like CV for free. Invalid with time ordering or grouped data.</p></div></details>
+<details class="qa" data-id="random-forest-5e3aa9b" data-l="2"><summary>What are the most important RF hyperparameters?</summary><div class="ans"><p>max_features (controls decorrelation vs tree strength), n_estimators (enough to stabilise), and tree size controls (min_samples_leaf, max_depth). Also max_samples, class_weight for imbalance. RF is fairly insensitive compared with boosting.</p></div></details>
+<details class="qa" data-id="random-forest-3cc6a0a" data-l="2"><summary>Random Forest vs Gradient Boosting — when would you choose each?</summary><div class="ans"><p>RF: quick robust baseline, noisy labels, little tuning time, parallel training, lower risk of overfitting. Boosting (XGBoost/LightGBM/CatBoost): usually best accuracy on tabular data when tuned with early stopping, handles bias better, but sequential and more sensitive to hyperparameters and noise.</p></div></details>
+<details class="qa" data-id="random-forest-2d95780" data-l="3"><summary>Why is impurity-based feature importance unreliable?</summary><div class="ans"><p>It's computed on training data and rewards features offering many split points — continuous or high-cardinality columns (even random IDs) — and it splits credit arbitrarily among correlated features. Use permutation importance on validation data, drop-column importance, or SHAP.</p></div></details>
+<details class="qa" data-id="random-forest-874c4fe" data-l="2"><summary>Does Random Forest need feature scaling or handle missing values?</summary><div class="ans"><p>No scaling needed (tree splits are order-based). Missing values: sklearn's RF supports NaN since v1.4; otherwise impute (median + missing-indicator). Categoricals need encoding in sklearn.</p></div></details>
+<details class="qa" data-id="random-forest-0cdd8c6" data-l="3"><summary>How do you handle class imbalance in Random Forest?</summary><div class="ans"><p>class_weight="balanced" or "balanced_subsample" (weights recomputed per bootstrap), balanced random forest (undersample majority in each bootstrap — imblearn), threshold tuning on predict_proba, and evaluation with PR-AUC.</p></div></details>
+<details class="qa" data-id="random-forest-8fb60e7" data-l="2"><summary>How does a RF compute predicted probabilities?</summary><div class="ans"><p>sklearn averages each tree's leaf class proportions (soft voting). These tend to be under-confident near 0/1 (averaging pulls toward the middle); calibrate with isotonic/sigmoid if probabilities matter.</p></div></details>
+<details class="qa" data-id="random-forest-2513212" data-l="3"><summary>Why are fully grown trees used in RF?</summary><div class="ans"><p>Averaging fixes variance, not bias, so each base learner should have low bias. Deep trees are low-bias/high-variance — the ideal ingredient. Limiting depth would add bias that averaging can't remove (though min_samples_leaf can help on noisy targets).</p></div></details>
+<details class="qa" data-id="random-forest-5ad8d8e" data-l="2"><summary>What is ExtraTrees and how is it different?</summary><div class="ans"><p>Extremely Randomised Trees pick split thresholds at random (choosing the best among random candidates) and by default train on the full dataset (no bootstrap). More randomness → lower variance, faster, slightly more bias.</p></div></details>
+</div>
+</main>
+</body>
+</html>

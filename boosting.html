@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AdaBoost & Gradient Boosting · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="boosting">
+<main>
+<div class="eyebrow">Supervised · Ensemble · Boosting fundamentals</div>
+<h1>AdaBoost & Gradient Boosting</h1>
+<p class="lede">Boosting builds an ensemble sequentially: each weak learner focuses on what the previous ones got wrong. AdaBoost does it by re-weighting samples; Gradient Boosting does it by fitting the negative gradient of the loss (residuals for squared error). Understand this page and XGBoost/LightGBM/CatBoost are just engineering on top.</p>
+<div class="toc"><a href="#pitch">30-sec answer</a><a href="#idea">Core idea</a><a href="#ada">AdaBoost</a><a href="#gbm">Gradient boosting</a><a href="#demo">Step-by-step demo</a><a href="#losses">Losses</a><a href="#reg">Regularisation</a><a href="#hp">Hyperparameters</a><a href="#tuning">Tuning recipe</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“Boosting combines weak learners sequentially to reduce bias. AdaBoost reweights the training samples — misclassified points get more weight — and combines stumps with weights based on their error; it's equivalent to forward stagewise fitting of exponential loss. Gradient boosting generalises this to any differentiable loss: start with a constant, then at each step fit a small regression tree to the negative gradient (pseudo-residuals) of the loss with respect to the current predictions, and add it scaled by a learning rate. Key knobs are learning rate, number of trees (with early stopping), tree depth/leaves, subsampling and min samples per leaf. Unlike random forests, more trees can overfit.”</p></div>
+
+<h2 id="idea">The core idea</h2>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p>A student takes a mock test, then studies only the questions they got wrong, takes another test, studies those mistakes, and so on. Each round is a small, targeted improvement. The final knowledge is the sum of all the rounds — but study too long on the same mock paper and you just memorise its answers (overfitting).</p></div>
+<div class="callout math"><div class="tag">∑ Additive model built stage-wise</div>$$F_M(x)=F_0(x)+\sum_{m=1}^{M}\eta\,h_m(x)$$<p>Each \(h_m\) is a weak learner (shallow tree) chosen to most reduce the loss given \(F_{m-1}\); η is the learning rate (shrinkage).</p></div>
+
+<h2 id="ada">AdaBoost (classification)</h2>
+<ol>
+<li>Initialise sample weights \(w_i=1/n\); labels \(y_i\in\{-1,+1\}\).</li>
+<li>For m = 1…M: fit a weak learner \(h_m\) (usually a depth-1 stump) on the weighted data.</li>
+<li>Weighted error \(\varepsilon_m=\sum_i w_i\,\mathbb 1[h_m(x_i)\ne y_i]\).</li>
+<li>Learner weight \(\alpha_m=\tfrac12\ln\frac{1-\varepsilon_m}{\varepsilon_m}\) (better learners count more; ε = 0.5 → α = 0).</li>
+<li>Update \(w_i\leftarrow w_i\,e^{-\alpha_m y_i h_m(x_i)}\), then normalise — misclassified points get heavier.</li>
+<li>Final: \(H(x)=\operatorname{sign}\big(\sum_m\alpha_m h_m(x)\big)\).</li>
+</ol>
+<p>AdaBoost = gradient boosting with <b>exponential loss</b> \(e^{-yF(x)}\). That loss punishes misclassified points exponentially, so AdaBoost is <b>sensitive to label noise and outliers</b>.</p>
+
+<h2 id="gbm">Gradient boosting (Friedman)</h2>
+<div class="callout math"><div class="tag">∑ Algorithm</div>
+<ol>
+<li>\(F_0(x)=\arg\min_c\sum_iL(y_i,c)\) — the mean for squared error, the log-odds of the base rate for log-loss.</li>
+<li>For m = 1…M:
+<ul><li>Pseudo-residuals: \(r_{im}=-\Big[\frac{\partial L(y_i,F(x_i))}{\partial F(x_i)}\Big]_{F=F_{m-1}}\)</li>
+<li>Fit a regression tree \(h_m\) to \(\{(x_i,r_{im})\}\) → leaf regions \(R_{jm}\).</li>
+<li>Optimal leaf values: \(\gamma_{jm}=\arg\min_\gamma\sum_{x_i\in R_{jm}}L(y_i,F_{m-1}(x_i)+\gamma)\).</li>
+<li>Update \(F_m(x)=F_{m-1}(x)+\eta\sum_j\gamma_{jm}\mathbb 1[x\in R_{jm}]\).</li></ul></li>
+</ol>
+<p>For squared error \(L=\tfrac12(y-F)^2\) the negative gradient is exactly the residual \(y-F\): <b>“fit the residuals”</b>. For log-loss it's \(y-p\). Gradient boosting = gradient descent in <i>function space</i>.</p></div>
+
+<h2 id="demo">Watch it learn</h2>
+<div class="widget" data-demo="boost"><div class="widget-title">Gradient boosting, one tree at a time</div><div class="widget-sub">Add trees and watch the residuals shrink. Compare η = 1 (fast, jumpy) with η = 0.1 (slow, smooth).</div></div>
+
+<h2 id="losses">Common loss functions</h2>
+<div class="table-wrap"><table>
+<tr><th>Task</th><th>Loss</th><th>Negative gradient</th><th>Notes</th></tr>
+<tr><td>Regression</td><td>Squared error</td><td>\(y-F\)</td><td>Mean; outlier-sensitive</td></tr>
+<tr><td>Regression</td><td>Absolute error</td><td>\(\operatorname{sign}(y-F)\)</td><td>Median; robust</td></tr>
+<tr><td>Regression</td><td>Huber</td><td>residual, clipped at δ</td><td>Robust compromise</td></tr>
+<tr><td>Regression</td><td>Quantile (α)</td><td>α or α − 1</td><td>Prediction intervals</td></tr>
+<tr><td>Counts</td><td>Poisson / Tweedie / Gamma</td><td>—</td><td>Claims, demand, insurance</td></tr>
+<tr><td>Binary</td><td>Log-loss</td><td>\(y-p\)</td><td>Default classifier</td></tr>
+<tr><td>Binary</td><td>Exponential</td><td>\(ye^{-yF}\)</td><td>= AdaBoost</td></tr>
+<tr><td>Ranking</td><td>LambdaRank / LambdaMART</td><td>—</td><td>Search ranking (LightGBM/XGBoost)</td></tr>
+</table></div>
+
+<h2 id="reg">Regularising a booster</h2>
+<ul>
+<li><b>Shrinkage (learning rate η):</b> smaller steps → each tree corrects less → need more trees, but generalises better. η and n_estimators trade off — lower η, then use early stopping to find the tree count.</li>
+<li><b>Tree complexity:</b> max_depth (3–8) or max_leaf_nodes; min_samples_leaf. Depth d allows interactions of order d.</li>
+<li><b>Stochastic gradient boosting:</b> subsample rows (0.5–0.9) per tree, and columns (in XGBoost/LightGBM) — reduces variance and speeds up.</li>
+<li><b>Early stopping:</b> stop when validation loss hasn't improved for k rounds (n_iter_no_change / early_stopping_rounds).</li>
+<li><b>Penalties</b> on leaf weights/count (XGBoost λ, α, γ) — see next page.</li>
+</ul>
+
+<h2 id="hp">Hyperparameters (sklearn GradientBoosting / HistGradientBoosting)</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Parameter</th><th>Effect</th><th>Typical</th></tr>
+<tr><td>learning_rate</td><td>↓ → more trees needed, better generalisation</td><td>0.01–0.1 (0.05 good default)</td></tr>
+<tr><td>n_estimators / max_iter</td><td>Number of boosting rounds; too many → overfit</td><td>100–5000 with early stopping</td></tr>
+<tr><td>max_depth / max_leaf_nodes</td><td>Interaction depth / tree size</td><td>depth 3–8; leaves 15–255</td></tr>
+<tr><td>min_samples_leaf</td><td>Minimum leaf size; regularises</td><td>20+ for large data</td></tr>
+<tr><td>subsample</td><td>Row fraction per tree (stochastic GB)</td><td>0.5–0.9</td></tr>
+<tr><td>max_features</td><td>Column fraction per split</td><td>0.5–1.0</td></tr>
+<tr><td>loss</td><td>Objective</td><td>Match the business metric</td></tr>
+<tr><td>l2_regularization (HGB)</td><td>Penalty on leaf values</td><td>0–10</td></tr>
+<tr><td>early_stopping, validation_fraction, n_iter_no_change</td><td>Automatic round selection</td><td>10–50 rounds patience</td></tr>
+<tr><td>AdaBoost: n_estimators, learning_rate, estimator depth</td><td>Stumps by default</td><td>50–500; lr 0.1–1</td></tr>
+</table></div>
+
+<h2 id="tuning">A tuning recipe that works</h2>
+<ol>
+<li>Fix a moderate learning rate (0.05–0.1) and use early stopping to pick n_estimators.</li>
+<li>Tune tree structure: max_depth / num_leaves and min_samples_leaf (biggest impact).</li>
+<li>Tune randomness: subsample, colsample.</li>
+<li>Tune regularisation (λ, α, γ).</li>
+<li>Lower the learning rate (e.g. ÷5), raise the round budget, re-run early stopping for the final model.</li>
+</ol>
+<p>Use random search or Bayesian optimisation (Optuna) rather than full grids; always evaluate on a proper CV scheme.</p>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="gb-scratch" data-title="Gradient boosting for regression from scratch">
+<div class="lab-task"><p>Complete <code>fit_gb</code>: start from the mean, and for each round fit a <code>DecisionTreeRegressor(max_depth=depth)</code> to the residuals and add <code>lr * tree.predict(X)</code>. Return <code>F0</code> and the list of trees. <code>predict_gb</code> is provided.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.tree import DecisionTreeRegressor
+
+def fit_gb(X, y, n_trees=100, lr=0.1, depth=2):
+    F0 = y.mean()
+    F = np.full(len(y), F0)
+    trees = []
+    for _ in range(n_trees):
+        pass  # TODO: residuals, fit tree, update F, store tree
+    return F0, trees
+
+def predict_gb(X, F0, trees, lr=0.1):
+    return F0 + lr * sum(t.predict(X) for t in trees) if trees else np.full(len(X), F0)
+
+rng = np.random.default_rng(0)
+X = rng.uniform(0, 6, (300, 1)); y = np.sin(X[:, 0]) * 2 + 0.3 * X[:, 0] + rng.normal(scale=0.3, size=300)
+F0, trees = fit_gb(X, y)
+print("train MSE:", np.mean((predict_gb(X, F0, trees) - y) ** 2))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.tree import DecisionTreeRegressor
+
+def fit_gb(X, y, n_trees=100, lr=0.1, depth=2):
+    F0 = y.mean()
+    F = np.full(len(y), F0)
+    trees = []
+    for _ in range(n_trees):
+        r = y - F                                   # negative gradient of 1/2 (y-F)^2
+        t = DecisionTreeRegressor(max_depth=depth).fit(X, r)
+        F += lr * t.predict(X)
+        trees.append(t)
+    return F0, trees
+
+def predict_gb(X, F0, trees, lr=0.1):
+    return F0 + lr * sum(t.predict(X) for t in trees) if trees else np.full(len(X), F0)
+
+rng = np.random.default_rng(0)
+X = rng.uniform(0, 6, (300, 1)); y = np.sin(X[:, 0]) * 2 + 0.3 * X[:, 0] + rng.normal(scale=0.3, size=300)
+F0, trees = fit_gb(X, y)
+print("train MSE:", round(np.mean((predict_gb(X, F0, trees) - y) ** 2), 4))
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.ensemble import GradientBoostingRegressor
+F0c, tr = fit_gb(X, y, n_trees=60, lr=0.1, depth=2)
+assert len(tr) == 60, "should store one tree per round"
+mine = predict_gb(X, F0c, tr, lr=0.1)
+ref = GradientBoostingRegressor(n_estimators=60, learning_rate=0.1, max_depth=2, random_state=0).fit(X, y).predict(X)
+assert np.allclose(mine, ref, atol=1e-6), "predictions should match sklearn's GradientBoostingRegressor"
+print("Identical to sklearn — you just wrote gradient boosting.")
+</script>
+</div>
+
+<div class="lab" data-id="gb-early-stop" data-title="Learning rate vs trees + early stopping">
+<div class="lab-task"><p>Fit <code>HistGradientBoostingClassifier</code> with <code>early_stopping=True, validation_fraction=0.15, n_iter_no_change=20, max_iter=2000, random_state=0</code> for learning rates 0.3 and 0.03. Store the number of iterations actually used in a dict <code>iters</code> (key = learning rate, value = <code>model.n_iter_</code>) and test accuracies in <code>acc</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import HistGradientBoostingClassifier
+
+X, y = make_classification(n_samples=5000, n_features=20, n_informative=10, flip_y=0.03, random_state=0)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, random_state=0)
+iters, acc = {}, {}
+for lr in [0.3, 0.03]:
+    pass  # TODO
+print(iters, acc)
+</script>
+<script type="text/x-python" data-part="solution">
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import HistGradientBoostingClassifier
+
+X, y = make_classification(n_samples=5000, n_features=20, n_informative=10, flip_y=0.03, random_state=0)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, random_state=0)
+iters, acc = {}, {}
+for lr in [0.3, 0.03]:
+    m = HistGradientBoostingClassifier(learning_rate=lr, max_iter=2000, early_stopping=True,
+                                       validation_fraction=0.15, n_iter_no_change=20, random_state=0).fit(X_tr, y_tr)
+    iters[lr], acc[lr] = m.n_iter_, m.score(X_te, y_te)
+    print(f"lr={lr}: stopped after {m.n_iter_} trees, test acc {acc[lr]:.3f}")
+</script>
+<script type="text/x-python" data-part="check">
+assert set(iters) == {0.3, 0.03} and set(acc) == {0.3, 0.03}, "fill both learning rates"
+assert iters[0.03] > 2 * iters[0.3], "the smaller learning rate should need many more trees"
+assert acc[0.03] >= acc[0.3] - 0.01, "small lr should be at least as accurate"
+print("Lower learning rate → more trees, equal or better accuracy.")
+</script>
+</div>
+
+<div class="lab" data-id="gb-adaboost" data-title="AdaBoost weights by hand (one round)">
+<div class="lab-task"><p>Given labels and a stump's predictions with uniform initial weights, compute the weighted error <code>eps</code>, learner weight <code>alpha</code> = ½·ln((1−ε)/ε), and the normalised new weights <code>w_new</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+y    = np.array([ 1,  1, -1, -1,  1, -1,  1, -1, 1, 1])
+pred = np.array([ 1, -1, -1, -1,  1,  1,  1, -1, 1, 1])   # stump got 2 wrong
+w = np.full(10, 0.1)
+
+eps = None    # TODO
+alpha = None  # TODO
+w_new = None  # TODO
+print(eps, alpha, w_new)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+y    = np.array([ 1,  1, -1, -1,  1, -1,  1, -1, 1, 1])
+pred = np.array([ 1, -1, -1, -1,  1,  1,  1, -1, 1, 1])
+w = np.full(10, 0.1)
+
+eps = w[pred != y].sum()
+alpha = 0.5 * np.log((1 - eps) / eps)
+w_new = w * np.exp(-alpha * y * pred)
+w_new /= w_new.sum()
+print("eps", eps, "alpha", round(alpha, 4))
+print("misclassified weights:", w_new[pred != y].round(4), "correct:", w_new[pred == y][0].round(4))
+# misclassified points now carry 50% of the total weight
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert abs(eps - 0.2) < 1e-9, "eps should be 0.2"
+assert abs(alpha - 0.5 * np.log(4)) < 1e-9, "alpha = 0.5*ln(0.8/0.2)"
+assert abs(w_new.sum() - 1) < 1e-9, "normalise the weights"
+assert abs(w_new[pred != y].sum() - 0.5) < 1e-9, "after one AdaBoost round the mistakes hold exactly half the weight"
+print("Correct — the misclassified points now hold 50% of the weight.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="boosting-8466e49" data-l="1"><summary>What is boosting and how does it differ from bagging?</summary><div class="ans"><p>Boosting trains weak learners sequentially, each focusing on the errors of the current ensemble, and combines them with weights — mainly reducing bias. Bagging trains strong learners independently on bootstrap samples and averages them — mainly reducing variance. Boosting is sequential and can overfit with too many rounds; bagging is parallel and doesn't.</p></div></details>
+<details class="qa" data-id="boosting-cc0d226" data-l="2"><summary>Explain how gradient boosting works.</summary><div class="ans"><p>Initialise with a constant minimising the loss. Repeatedly compute pseudo-residuals = negative gradient of the loss w.r.t. current predictions, fit a small regression tree to them, set optimal leaf values, and add the tree scaled by the learning rate. It's gradient descent in function space; for squared error the pseudo-residuals are the ordinary residuals.</p></div></details>
+<details class="qa" data-id="boosting-a90dfca" data-l="2"><summary>Why “gradient” boosting? What is the gradient taken with respect to?</summary><div class="ans"><p>With respect to the model's predictions F(xᵢ) for each training point, not the tree parameters. The vector of negative gradients is the steepest-descent direction in prediction space; each tree approximates that direction as a function of x so it generalises to new points.</p></div></details>
+<details class="qa" data-id="boosting-4f5e149" data-l="2"><summary>How does AdaBoost work?</summary><div class="ans"><p>Start with uniform sample weights; fit a weak learner; compute its weighted error ε and weight α = ½ ln((1−ε)/ε); increase weights of misclassified samples by e^{α} and decrease the others, normalise; repeat. The final classifier is the sign of the α-weighted vote. It minimises exponential loss stage-wise.</p></div></details>
+<details class="qa" data-id="boosting-4c14803" data-l="2"><summary>Why is AdaBoost sensitive to outliers?</summary><div class="ans"><p>Exponential loss grows exponentially with the negative margin, so persistently misclassified points (mislabelled or outliers) get ever-larger weights and the ensemble contorts itself to fit them. Gradient boosting with log-loss or Huber loss is more robust.</p></div></details>
+<details class="qa" data-id="boosting-9f0c7b4" data-l="1"><summary>What is the role of the learning rate in boosting?</summary><div class="ans"><p>It scales each tree's contribution (shrinkage). Lower values make each step smaller, requiring more trees but reducing overfitting and usually improving test performance. Tune it together with the number of trees via early stopping.</p></div></details>
+<details class="qa" data-id="boosting-c4f67d0" data-l="2"><summary>Can gradient boosting overfit? How do you prevent it?</summary><div class="ans"><p>Yes — with too many rounds, deep trees or a large learning rate it fits noise. Prevent with early stopping on a validation set, lower learning rate, shallower trees / fewer leaves, min samples per leaf, row and column subsampling, and L1/L2 penalties on leaf weights.</p></div></details>
+<details class="qa" data-id="boosting-1726620" data-l="2"><summary>Why are shallow trees used as base learners in boosting?</summary><div class="ans"><p>Boosting reduces bias by adding many small corrections; each learner only needs to be slightly better than chance. Shallow trees are low variance, fast, and depth controls the maximum interaction order. Deep trees would overfit quickly and make the sequential correction noisy.</p></div></details>
+<details class="qa" data-id="boosting-da65d09" data-l="3"><summary>What is the initial prediction F₀ for regression and for binary classification?</summary><div class="ans"><p>The constant minimising the loss: the mean of y for squared error (median for absolute error) and the log-odds of the positive rate, log(p/(1−p)), for log-loss.</p></div></details>
+<details class="qa" data-id="boosting-1c330a6" data-l="3"><summary>What is stochastic gradient boosting?</summary><div class="ans"><p>Friedman's variant: each tree is fit on a random subsample of rows (without replacement, e.g. 50–80%). It injects randomness that reduces variance and correlation between trees, speeds training, and typically improves generalisation. Column subsampling extends the idea.</p></div></details>
+<details class="qa" data-id="boosting-ebc5d27" data-l="2"><summary>Gradient boosting vs Random Forest: which handles noisy data better and why?</summary><div class="ans"><p>Random Forest — averaging independent deep trees is robust, and adding trees doesn't overfit. Boosting keeps fitting residuals, which on noisy labels are largely noise, so it needs careful regularisation and early stopping.</p></div></details>
+<details class="qa" data-id="boosting-b89e9e9" data-l="2"><summary>How do you choose the number of trees?</summary><div class="ans"><p>Early stopping: monitor a validation metric each round and stop when it hasn't improved for k rounds (e.g. 50), keeping the best iteration. With CV, take the average best iteration across folds for the final refit on all data.</p></div></details>
+<details class="qa" data-id="boosting-23a05f1" data-l="3"><summary>How can boosting produce prediction intervals?</summary><div class="ans"><p>Train models with quantile loss at, say, α = 0.05 and 0.95 (GradientBoostingRegressor(loss="quantile"), LightGBM objective="quantile"), or use conformal prediction on top of any regressor for distribution-free coverage guarantees.</p></div></details>
+</div>
+</main>
+</body>
+</html>

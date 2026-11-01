@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Python playground · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="playground">
+<main>
+<div class="eyebrow">Practice · A notebook in your browser</div>
+<h1>Python playground</h1>
+<p class="lede">A mini-notebook: the cells below <b>share variables</b> (run them top to bottom, like Jupyter). Use it to experiment with any model from the site, rehearse a take-home, or test an idea during interview prep. Everything runs locally in your browser — nothing is uploaded.</p>
+<div class="callout layman"><div class="tag">🧰 What's available</div><p>NumPy, pandas, scikit-learn, SciPy, statsmodels, matplotlib, XGBoost and LightGBM load automatically when you import them. Built-in datasets: <code>load_iris</code>, <code>load_wine</code>, <code>load_breast_cancer</code>, <code>load_diabetes</code>, <code>load_digits</code>, plus generators like <code>make_classification</code>, <code>make_regression</code>, <code>make_blobs</code>, <code>make_moons</code>. Internet downloads (e.g. <code>fetch_openml</code>) don't work in-browser. Use <code>plt.show()</code> to display charts. If something hangs, press ⏹ Stop (this resets all variables).</p></div>
+
+<div class="lab" data-id="play-1" data-ns="play" data-kind="CELL" data-title="Load and inspect data">
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+from sklearn.datasets import load_breast_cancer
+
+data = load_breast_cancer(as_frame=True)
+df = data.frame
+print(df.shape)
+print(df["target"].value_counts(normalize=True).round(3))
+print(df.iloc[:, :6].describe().round(2))
+</script>
+</div>
+
+<div class="lab" data-id="play-2" data-ns="play" data-kind="CELL" data-title="Explore visually">
+<script type="text/x-python" data-part="starter">
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(1, 2, figsize=(9, 3.3))
+for t, name in [(0, "malignant"), (1, "benign")]:
+    ax[0].hist(df.loc[df.target == t, "mean radius"], bins=30, alpha=0.6, label=name)
+ax[0].set_title("mean radius by class"); ax[0].legend()
+corr = df.iloc[:, :10].corr()
+ax[1].imshow(corr, cmap="coolwarm", vmin=-1, vmax=1); ax[1].set_title("correlations (first 10 features)")
+plt.tight_layout(); plt.show()
+</script>
+</div>
+
+<div class="lab" data-id="play-3" data-ns="play" data-kind="CELL" data-title="Train & compare models">
+<script type="text/x-python" data-part="starter">
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
+
+X, y = df.drop(columns="target"), df["target"]
+cv = StratifiedKFold(5, shuffle=True, random_state=0)
+models = {
+    "logreg": make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000)),
+    "random forest": RandomForestClassifier(n_estimators=200, random_state=0),
+    "hist GBM": HistGradientBoostingClassifier(random_state=0),
+}
+for name, m in models.items():
+    s = cross_val_score(m, X, y, cv=cv, scoring="roc_auc")
+    print(f"{name:14s} ROC-AUC {s.mean():.4f} ± {s.std():.4f}")
+</script>
+</div>
+
+<div class="lab" data-id="play-4" data-ns="play" data-kind="CELL" data-title="Scratch cell — your turn">
+<script type="text/x-python" data-part="starter">
+# Variables from the cells above (df, X, y, models, cv) are available here.
+# Ideas: tune C for logreg, try XGBoost, plot a confusion matrix, compute SHAP-like
+# permutation importance, or paste a lab solution and modify it.
+print(X.shape, y.mean().round(3))
+</script>
+</div>
+</main>
+</body>
+</html>

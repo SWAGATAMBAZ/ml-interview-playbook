@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>k-Nearest Neighbours · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="knn">
+<main>
+<div class="eyebrow">Supervised · Instance-based · Classification & regression</div>
+<h1>k-Nearest Neighbours (kNN)</h1>
+<p class="lede">The “lazy learner”: no training, just memorise the data and, at prediction time, let the k closest points vote. Interviewers use kNN to test your grasp of distance metrics, scaling, the curse of dimensionality and the bias–variance effect of k.</p>
+<div class="toc"><a href="#pitch">30-sec answer</a><a href="#how">How it works</a><a href="#distance">Distances</a><a href="#demo">Decision boundary</a><a href="#k">Choosing k</a><a href="#curse">Curse of dimensionality</a><a href="#hp">Hyperparameters</a><a href="#speed">Scaling it up</a><a href="#procon">Pros/cons</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“kNN is a non-parametric, instance-based method: to predict a point, find the k nearest training points under a distance metric (usually Euclidean on standardised features) and take a majority vote (classification) or average (regression), optionally weighted by 1/distance. Training is O(1), prediction is O(n·d) per query unless we use KD-trees, ball trees or approximate nearest-neighbour indexes. Small k → low bias/high variance; large k → smoother, higher bias. It needs feature scaling, suffers from the curse of dimensionality and irrelevant features, and k is chosen by cross-validation.”</p></div>
+
+<h2 id="how">How it works</h2>
+<ol><li>Store the training set (that's “training”).</li><li>For a query x, compute distances to all stored points.</li><li>Take the k smallest.</li><li>Classification: majority (or distance-weighted) vote; class probabilities = vote shares. Regression: (weighted) mean of their targets.</li></ol>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p>To guess the price of a flat, look at the 5 most similar flats that sold recently (same area, size, floor) and average their prices. “Similar” is the distance metric — and it only works if the features are on comparable scales.</p></div>
+
+<h2 id="distance">Distance metrics</h2>
+<div class="callout math"><div class="tag">∑ Minkowski family</div>$$d_p(x,z)=\Big(\sum_{j=1}^d|x_j-z_j|^p\Big)^{1/p}\qquad p=1:\text{Manhattan},\ p=2:\text{Euclidean},\ p\to\infty:\text{Chebyshev}$$</div>
+<div class="table-wrap"><table><tr><th>Metric</th><th>Use for</th></tr>
+<tr><td>Euclidean (L2)</td><td>Default for continuous, scaled features</td></tr>
+<tr><td>Manhattan (L1)</td><td>High dimensions / grid-like data; less dominated by one large difference</td></tr>
+<tr><td>Cosine distance</td><td>Text embeddings, TF-IDF, when direction matters more than magnitude</td></tr>
+<tr><td>Hamming / Jaccard</td><td>Binary or categorical features, sets</td></tr>
+<tr><td>Mahalanobis</td><td>Correlated features (accounts for covariance)</td></tr>
+<tr><td>Gower</td><td>Mixed numeric + categorical data</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Scaling is mandatory</div><p>If income is in rupees (0–10,00,000) and age in years (18–80), Euclidean distance is almost entirely income. Standardise or min–max scale — inside a Pipeline.</p></div>
+
+<h2 id="demo">See k change the boundary</h2>
+<div class="widget" data-demo="knn"><div class="widget-title">kNN decision regions</div><div class="widget-sub">k = 1 memorises every point (training accuracy 100%, wiggly islands). Increase k and the boundary smooths out.</div></div>
+
+<h2 id="k">Choosing k (bias–variance)</h2>
+<ul>
+<li><b>k = 1:</b> zero training error, very high variance, sensitive to noise/outliers. Asymptotic error ≤ 2× the Bayes error (Cover & Hart).</li>
+<li><b>k = n:</b> always predicts the majority class / global mean → maximum bias.</li>
+<li>Use odd k for binary classification to avoid ties; a common starting point is \(k\approx\sqrt n\); tune by CV (plot validation error vs k).</li>
+<li><b>Distance weighting</b> (weights="distance") lets you use a larger k while keeping close points more influential.</li>
+</ul>
+
+<h2 id="curse">The curse of dimensionality</h2>
+<p>As dimensions grow, data become sparse and distances concentrate: the ratio between the nearest and farthest neighbour distances approaches 1, so “nearest” stops meaning “similar”. To capture a fixed fraction r of uniformly distributed data in a d-dimensional unit cube you need a neighbourhood with edge length \(r^{1/d}\) — for 10% of the data in 10-D that is 0.79 of each axis. <b>Fixes:</b> feature selection, PCA/embeddings before kNN, metric learning, or use a different model.</p>
+
+<h2 id="hp">Hyperparameters</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Parameter</th><th>Effect</th><th>Tip</th></tr>
+<tr><td>n_neighbors (k)</td><td>↑k → smoother boundary, more bias, less variance</td><td>Most important; CV over 1…50 (odd)</td></tr>
+<tr><td>weights</td><td>"uniform" or "distance" (1/d)</td><td>"distance" often helps with uneven density</td></tr>
+<tr><td>metric, p</td><td>Distance definition; p for Minkowski</td><td>Try p=1 and 2; cosine for embeddings</td></tr>
+<tr><td>algorithm</td><td>"brute", "kd_tree", "ball_tree", "auto"</td><td>KD-tree for low d (&lt; ~20); ball tree for higher d / other metrics; brute for sparse</td></tr>
+<tr><td>leaf_size</td><td>Tree leaf size: speed/memory trade-off</td><td>Rarely matters for accuracy</td></tr>
+<tr><td>radius (RadiusNeighbors)</td><td>Use all points within r instead of a fixed k</td><td>For varying density / outlier detection</td></tr>
+</table></div>
+
+<h2 id="speed">Making it fast & robust</h2>
+<ul>
+<li>Prediction cost: brute force O(n·d) per query. KD-trees/ball trees give ~O(log n) in low dimensions. At scale use approximate nearest neighbours: FAISS, HNSW (hnswlib), Annoy, ScaNN — the backbone of vector search and RAG retrieval.</li>
+<li>Reduce n: condensed / edited nearest neighbours, prototypes. Reduce d: PCA, feature selection.</li>
+<li>Imbalanced data: majority classes dominate votes — use distance weighting, resampling or class-aware thresholds.</li>
+<li>Missing values: KNNImputer uses the same idea to fill gaps.</li>
+</ul>
+
+<h2 id="procon">Pros, cons & when to use</h2>
+<div class="procon"><div class="pro"><h4>✅ Strengths</h4><ul><li>Simple, no training, naturally multiclass</li><li>Non-linear, flexible boundaries</li><li>Easy to update — just add data</li><li>Good for recommendation/similarity search, small low-dimensional data, imputation</li></ul></div>
+<div class="con"><h4>❌ Weaknesses</h4><ul><li>Slow, memory-heavy prediction</li><li>Needs scaling; sensitive to irrelevant features and noise</li><li>Curse of dimensionality</li><li>No model/coefficients to interpret globally</li></ul></div></div>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="knn-scratch" data-title="kNN classifier from scratch">
+<div class="lab-task"><p>Complete <code>knn_predict(X_train, y_train, X_test, k)</code> using Euclidean distance and majority vote (ties → smallest label, which <code>np.bincount(...).argmax()</code> gives you). Vectorise the distance computation if you can.</p></div>
+<div data-part="hint">Pairwise squared distances: <code>((X_test[:, None, :] - X_train[None, :, :]) ** 2).sum(-1)</code> → shape (n_test, n_train).</div>
+<div data-part="hint"><code>np.argsort(d, axis=1)[:, :k]</code> gives the k nearest indices per row.</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split
+
+def knn_predict(X_train, y_train, X_test, k=5):
+    # TODO
+    return None
+
+X, y = load_iris(return_X_y=True)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)
+pred = knn_predict(X_tr, y_tr, X_te, k=5)
+print("accuracy:", None if pred is None else (pred == y_te).mean())
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split
+
+def knn_predict(X_train, y_train, X_test, k=5):
+    d = ((X_test[:, None, :] - X_train[None, :, :]) ** 2).sum(-1)
+    idx = np.argsort(d, axis=1)[:, :k]
+    votes = y_train[idx]
+    return np.array([np.bincount(v).argmax() for v in votes])
+
+X, y = load_iris(return_X_y=True)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)
+pred = knn_predict(X_tr, y_tr, X_te, k=5)
+print("accuracy:", (pred == y_te).mean())
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.neighbors import KNeighborsClassifier
+for k in [1, 3, 7]:
+    mine = knn_predict(X_tr, y_tr, X_te, k)
+    ref = KNeighborsClassifier(n_neighbors=k).fit(X_tr, y_tr).predict(X_te)
+    assert mine is not None and len(mine) == len(X_te), "return one prediction per test row"
+    assert (np.asarray(mine) == ref).mean() >= 0.97, f"k={k}: predictions differ from sklearn too often"
+print("Your kNN agrees with sklearn.")
+</script>
+</div>
+
+<div class="lab" data-id="knn-scaling" data-title="Why scaling matters + tune k with CV">
+<div class="lab-task"><p>The wine dataset has features on wildly different scales. (1) Compute 5-fold CV accuracy of <code>KNeighborsClassifier()</code> without scaling → <code>acc_raw</code>. (2) Build <code>pipe</code> = StandardScaler → kNN and tune <code>n_neighbors</code> over 1…29 (odd) with <code>GridSearchCV(cv=5)</code> → store the fitted search in <code>search</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import load_wine
+from sklearn.model_selection import cross_val_score, GridSearchCV
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import KNeighborsClassifier
+
+X, y = load_wine(return_X_y=True)
+print("feature ranges:", X.min(0).round(1)[:5], "...", X.max(0).round(1)[:5])
+
+acc_raw = None   # TODO
+pipe = None      # TODO
+search = None    # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import load_wine
+from sklearn.model_selection import cross_val_score, GridSearchCV
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import KNeighborsClassifier
+
+X, y = load_wine(return_X_y=True)
+acc_raw = cross_val_score(KNeighborsClassifier(), X, y, cv=5).mean()
+pipe = Pipeline([("sc", StandardScaler()), ("knn", KNeighborsClassifier())])
+search = GridSearchCV(pipe, {"knn__n_neighbors": list(range(1, 30, 2)), "knn__weights": ["uniform", "distance"]}, cv=5).fit(X, y)
+print(f"unscaled CV acc: {acc_raw:.3f}")
+print(f"scaled + tuned : {search.best_score_:.3f} with {search.best_params_}")
+</script>
+<script type="text/x-python" data-part="check">
+assert acc_raw is not None and 0.5 < acc_raw < 0.8, "acc_raw should be the unscaled 5-fold CV accuracy (~0.69)"
+assert search is not None and hasattr(search, "best_score_"), "fit the GridSearchCV"
+assert "knn__n_neighbors" in search.best_params_, "tune knn__n_neighbors"
+assert search.best_score_ > 0.95, "scaled kNN should reach >95%"
+print(f"Scaling lifted accuracy from {acc_raw:.2f} to {search.best_score_:.2f}")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="knn-ec1522b" data-l="1"><summary>Why is kNN called a lazy learner?</summary><div class="ans"><p>It does no generalisation during training — it just stores the data. All computation (distance calculations, voting) happens at prediction time. Contrast with eager learners (e.g., logistic regression) that build a model up front and discard the training data.</p></div></details>
+<details class="qa" data-id="knn-a284d54" data-l="1"><summary>How does the choice of k affect the model?</summary><div class="ans"><p>Small k → flexible, low bias, high variance (overfits noise; k = 1 has zero training error). Large k → smoother, higher bias, lower variance; k = n predicts the majority class. Choose by cross-validation; prefer odd k for binary problems.</p></div></details>
+<details class="qa" data-id="knn-413d9e7" data-l="1"><summary>Why do you need feature scaling for kNN?</summary><div class="ans"><p>Distances are dominated by features with the largest ranges, so unscaled kNN effectively ignores small-range features. Standardisation or min–max scaling gives each feature comparable influence. Fit the scaler on training data only.</p></div></details>
+<details class="qa" data-id="knn-e1fa505" data-l="2"><summary>What is the curse of dimensionality and how does it affect kNN?</summary><div class="ans"><p>In high dimensions data become sparse and pairwise distances concentrate (nearest ≈ farthest), so neighbourhoods are no longer local and the vote is close to random; you need exponentially more data to keep the same density. Mitigate with feature selection, dimensionality reduction (PCA, embeddings) or metric learning.</p></div></details>
+<details class="qa" data-id="knn-e111371" data-l="2"><summary>What is the time and space complexity of kNN?</summary><div class="ans"><p>Training O(1) time (O(n·d) memory to store data). Brute-force prediction O(n·d) per query plus O(n log k) to select neighbours. KD-trees/ball trees cut queries to ~O(log n) in low dimensions but degrade toward brute force as d grows; approximate methods (HNSW, FAISS) trade exactness for speed.</p></div></details>
+<details class="qa" data-id="knn-8a557cc" data-l="2"><summary>How does kNN handle categorical features and missing values?</summary><div class="ans"><p>Categoricals need encoding (one-hot) or a suitable metric (Hamming, Gower for mixed types). Missing values must be imputed first (or use a distance that ignores missing coordinates, like sklearn's nan_euclidean used by KNNImputer).</p></div></details>
+<details class="qa" data-id="knn-d73349d" data-l="2"><summary>kNN for regression — how?</summary><div class="ans"><p>Predict the (optionally distance-weighted) mean of the k neighbours' targets. Predictions are piecewise constant and can't extrapolate beyond the range of training targets.</p></div></details>
+<details class="qa" data-id="knn-d781a77" data-l="2"><summary>How do you choose the distance metric?</summary><div class="ans"><p>By data type and CV: Euclidean for scaled continuous data, Manhattan for high-dimensional or outlier-prone data, cosine for text/embeddings, Hamming/Jaccard for binary/sets, Mahalanobis for correlated features, Gower for mixed data.</p></div></details>
+<details class="qa" data-id="knn-645ec3a" data-l="3"><summary>What is the asymptotic error of 1-NN?</summary><div class="ans"><p>Cover & Hart (1967): as n → ∞, the 1-NN error rate is at most twice the Bayes (optimal) error. With k → ∞ and k/n → 0, kNN is consistent (approaches Bayes error).</p></div></details>
+<details class="qa" data-id="knn-1426756" data-l="2"><summary>kNN vs K-Means?</summary><div class="ans"><p>Different problems: kNN is supervised (classification/regression) using k labelled neighbours; K-Means is unsupervised clustering into K groups by iteratively updating centroids. Both rely on distance and need scaling.</p></div></details>
+<details class="qa" data-id="knn-c292aef" data-l="2"><summary>Where is kNN used in practice today?</summary><div class="ans"><p>Similarity search and recommendations (“customers like you”), vector databases / RAG retrieval with approximate NN, imputation (KNNImputer), anomaly detection (distance to k-th neighbour, LOF), and as a quick baseline on small datasets.</p></div></details>
+<details class="qa" data-id="knn-b888656" data-l="2"><summary>How does kNN deal with imbalanced classes?</summary><div class="ans"><p>Poorly by default — the majority class tends to win the vote in overlap regions. Use distance weighting, resampling, class-weighted votes, or tune a threshold on the vote fraction (predict_proba).</p></div></details>
+</div>
+</main>
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PCA & dimensionality reduction · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="dim-reduction">
+<main>
+<div class="eyebrow">Unsupervised · Dimensionality reduction</div>
+<h1>PCA & dimensionality reduction</h1>
+<p class="lede">Compress many correlated features into a few informative directions. PCA is a staple interview topic — eigenvectors of the covariance matrix, explained variance, why standardise, PCA vs LDA, and when to reach for t-SNE or UMAP instead (visualisation only!).</p>
+<div class="toc"><a href="#pitch">30-sec answer</a><a href="#why">Why reduce dimensions</a><a href="#pca">PCA maths</a><a href="#demo">PCA demo</a><a href="#k">How many components</a><a href="#practice">Practical points</a><a href="#lda">LDA</a><a href="#tsne">t-SNE & UMAP</a><a href="#compare">Comparison</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“PCA finds orthogonal directions — principal components — that capture maximum variance. Mathematically they're the eigenvectors of the covariance matrix of the centred (usually standardised) data, ordered by eigenvalue; in practice computed by SVD of X. Projecting onto the top k components gives the best rank-k linear approximation in squared error. I choose k by cumulative explained variance (e.g. 95%) or by downstream CV performance. It's unsupervised and linear, components are hard to interpret, and it's sensitive to scale and outliers. For class separation there's LDA; for 2-D visualisation of non-linear structure, t-SNE or UMAP — but those aren't for feature engineering.”</p></div>
+
+<h2 id="why">Why reduce dimensionality?</h2>
+<ul><li>Curse of dimensionality: distance-based models degrade; data become sparse.</li><li>Remove multicollinearity (PCs are uncorrelated).</li><li>Speed and memory; noise reduction (drop low-variance directions).</li><li>Visualisation in 2-D/3-D.</li></ul>
+<p><b>Feature selection</b> keeps a subset of original features (interpretable); <b>feature extraction</b> (PCA, autoencoders) creates new combined features.</p>
+
+<h2 id="pca">PCA: the maths</h2>
+<div class="callout math"><div class="tag">∑ Two equivalent views</div>
+<p><b>Max variance:</b> first PC \(w_1=\arg\max_{\lVert w\rVert=1}\operatorname{Var}(Xw)=\arg\max w^T\Sigma w\) → solution: top eigenvector of \(\Sigma=\frac{1}{n-1}X^TX\) (X centred), and the variance captured equals its eigenvalue λ₁. Each next PC maximises variance subject to orthogonality.</p>
+<p><b>Min reconstruction error:</b> projecting onto the top-k eigenvectors minimises \(\lVert X-XW_kW_k^T\rVert_F^2\) (Eckart–Young).</p>
+$$X=U S V^T\ \Rightarrow\ \text{PCs}=V,\quad \lambda_j=\frac{s_j^2}{n-1},\quad \text{scores}=XV=US$$
+$$\text{explained variance ratio}_j=\frac{\lambda_j}{\sum_i\lambda_i}$$</div>
+<ol><li>Centre (and usually standardise) features.</li><li>Compute covariance matrix or SVD.</li><li>Sort eigenvectors by eigenvalue.</li><li>Keep top k; project: \(Z=XW_k\).</li><li>Reconstruct (approximately): \(\hat X=ZW_k^T\) + mean.</li></ol>
+
+<h2 id="demo">Interactive PCA</h2>
+<div class="widget" data-demo="pca"><div class="widget-title">Principal components of a 2-D cloud</div><div class="widget-sub">Increase correlation → PC1 explains more. Inflate x₂'s scale → PC1 follows the biggest-variance feature even with no correlation.</div></div>
+
+<h2 id="k">How many components?</h2>
+<ul><li><b>Cumulative explained variance</b> threshold (90–99%).</li><li><b>Scree plot</b> elbow.</li><li><b>Kaiser rule</b> (eigenvalue &gt; 1 on standardised data) — crude.</li><li><b>Downstream CV</b>: treat n_components as a hyperparameter in a Pipeline — best for predictive use.</li><li>sklearn: <code>PCA(n_components=0.95)</code> picks k automatically.</li></ul>
+
+<h2 id="practice">Practical points & pitfalls</h2>
+<ul>
+<li><b>Standardise</b> unless features share units and their variance is meaningful — otherwise the largest-unit feature dominates PC1.</li>
+<li><b>Fit PCA on training data only</b> (inside a Pipeline) — fitting on all data leaks.</li>
+<li><b>Sensitive to outliers</b> (variance-based) — robust PCA alternatives exist.</li>
+<li><b>Linear only</b> — Kernel PCA for non-linear manifolds.</li>
+<li><b>Unsupervised</b> — high-variance directions aren't necessarily predictive; a low-variance direction can carry the signal. PCA before a classifier can hurt.</li>
+<li><b>Interpretation:</b> loadings show each feature's weight per component; sign of a PC is arbitrary.</li>
+<li>Variants: IncrementalPCA (big data in batches), randomized SVD (fast), SparsePCA (interpretable), TruncatedSVD (sparse text matrices — LSA, no centring).</li>
+</ul>
+
+<h2 id="lda">Linear Discriminant Analysis (LDA)</h2>
+<p>Supervised projection that maximises between-class scatter relative to within-class scatter (Fisher's criterion \(\frac{w^TS_Bw}{w^TS_Ww}\)). At most C − 1 components for C classes. Also a classifier assuming Gaussian classes with shared covariance (linear boundary; QDA allows different covariances). Use when you have labels and want class separability; PCA when you don't.</p>
+
+<h2 id="tsne">t-SNE and UMAP</h2>
+<div class="grid two">
+<div class="card"><div class="kicker">t-SNE</div><h4>Preserves local neighbourhoods</h4><p>Converts distances to neighbour probabilities (Gaussian in high-D, heavy-tailed Student-t in low-D to avoid crowding) and minimises KL divergence. Key parameter: <b>perplexity</b> (≈ effective neighbours, 5–50). Non-deterministic, O(n²) (Barnes–Hut O(n log n)), no transform for new points. <b>Cluster sizes and between-cluster distances are not meaningful.</b></p></div>
+<div class="card"><div class="kicker">UMAP</div><h4>Faster, more global structure</h4><p>Builds a fuzzy k-NN graph and optimises a low-D layout with cross-entropy. Parameters: <b>n_neighbors</b> (local vs global balance) and <b>min_dist</b> (packing). Faster, scales better, preserves more global structure than t-SNE, can transform new points; usable (carefully) as features.</p></div>
+</div>
+
+<h2 id="compare">Comparison</h2>
+<div class="table-wrap"><table>
+<tr><th>Method</th><th>Linear?</th><th>Supervised?</th><th>Preserves</th><th>New points</th><th>Main use</th></tr>
+<tr><td>PCA</td><td>Yes</td><td>No</td><td>Global variance</td><td>Yes</td><td>Compression, decorrelation, preprocessing</td></tr>
+<tr><td>Kernel PCA</td><td>No</td><td>No</td><td>Variance in kernel space</td><td>Yes</td><td>Non-linear manifolds</td></tr>
+<tr><td>LDA</td><td>Yes</td><td>Yes</td><td>Class separability</td><td>Yes</td><td>Supervised reduction/classifier</td></tr>
+<tr><td>TruncatedSVD</td><td>Yes</td><td>No</td><td>Variance (uncentred)</td><td>Yes</td><td>Sparse text (LSA)</td></tr>
+<tr><td>t-SNE</td><td>No</td><td>No</td><td>Local neighbourhoods</td><td>No</td><td>2-D visualisation</td></tr>
+<tr><td>UMAP</td><td>No</td><td>Optional</td><td>Local + some global</td><td>Yes</td><td>Visualisation, embeddings</td></tr>
+<tr><td>Autoencoder</td><td>No</td><td>No</td><td>Reconstruction</td><td>Yes</td><td>Complex data, anomaly detection</td></tr>
+</table></div>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="pca-scratch" data-title="PCA from scratch via eigendecomposition">
+<div class="lab-task"><p>Standardise X, compute the covariance matrix, eigendecompose it with <code>np.linalg.eigh</code>, sort eigenvalues descending, and store <code>explained_ratio</code> (array of ratios) and <code>Z</code> = projection onto the top 2 components.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import load_wine
+X = load_wine().data
+Xs = (X - X.mean(0)) / X.std(0)
+
+explained_ratio = None  # TODO
+Z = None                # TODO (n x 2)
+print(explained_ratio)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import load_wine
+X = load_wine().data
+Xs = (X - X.mean(0)) / X.std(0)
+
+cov = np.cov(Xs, rowvar=False)
+vals, vecs = np.linalg.eigh(cov)            # ascending for symmetric matrices
+order = np.argsort(vals)[::-1]
+vals, vecs = vals[order], vecs[:, order]
+explained_ratio = vals / vals.sum()
+Z = Xs @ vecs[:, :2]
+print("explained ratio:", explained_ratio.round(3)[:5], "cumulative 2:", explained_ratio[:2].sum().round(3))
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.decomposition import PCA
+p = PCA().fit(Xs)
+assert explained_ratio is not None and np.allclose(explained_ratio, p.explained_variance_ratio_, atol=1e-8), "explained ratios differ from sklearn"
+Zs = PCA(2).fit_transform(Xs)
+assert Z is not None and Z.shape == (len(Xs), 2), "Z should be n x 2"
+assert np.allclose(np.abs(Z), np.abs(Zs), atol=1e-6), "projections differ (up to sign) from sklearn"
+print("Your PCA = sklearn's PCA (signs of components are arbitrary).")
+</script>
+</div>
+
+<div class="lab" data-id="pca-pipeline" data-title="Choose n_components by cross-validation">
+<div class="lab-task"><p>On the digits dataset (64 features), build <code>pipe</code> = StandardScaler → PCA → LogisticRegression(max_iter=2000) and grid-search <code>pca__n_components</code> ∈ {5, 10, 20, 30, 40} with 5-fold CV → <code>search</code>. Also report how many components keep 95% of variance (<code>k95</code>).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import load_digits
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV
+
+X, y = load_digits(return_X_y=True)
+pipe = None    # TODO
+search = None  # TODO
+k95 = None     # TODO: PCA(n_components=0.95) on standardised X → n_components_
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import load_digits
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV
+
+X, y = load_digits(return_X_y=True)
+pipe = Pipeline([("sc", StandardScaler()), ("pca", PCA()), ("lr", LogisticRegression(max_iter=2000))])
+search = GridSearchCV(pipe, {"pca__n_components": [5, 10, 20, 30, 40]}, cv=5).fit(X, y)
+for k, s in zip(search.cv_results_["param_pca__n_components"], search.cv_results_["mean_test_score"]):
+    print(f"{k:3d} components → CV acc {s:.3f}")
+k95 = PCA(n_components=0.95).fit(StandardScaler().fit_transform(X)).n_components_
+print("components for 95% variance:", k95)
+</script>
+<script type="text/x-python" data-part="check">
+assert search is not None and "pca__n_components" in search.best_params_, "grid-search pca__n_components"
+assert search.best_params_["pca__n_components"] >= 20, "too few components underfit here"
+assert k95 is not None and 35 <= k95 <= 45, f"k95 should be about 40, got {k95}"
+print("Best:", search.best_params_, "| 95% variance needs", k95, "components")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="dim-reduction-3412d52" data-l="1"><summary>What is PCA and how does it work?</summary><div class="ans"><p>An unsupervised linear transformation to new orthogonal axes (principal components) ordered by the variance they capture. Centre/standardise the data, compute the covariance matrix (or SVD), take eigenvectors sorted by eigenvalue, and project onto the top k to reduce dimensions while retaining most variance.</p></div></details>
+<details class="qa" data-id="dim-reduction-171ccbf" data-l="1"><summary>Why do we standardise data before PCA?</summary><div class="ans"><p>PCA maximises variance, which depends on units. A feature measured in large units dominates PC1 regardless of its information content. Standardising gives every feature unit variance (PCA on the correlation matrix). Skip only when features share units and their raw variance matters.</p></div></details>
+<details class="qa" data-id="dim-reduction-db89f03" data-l="2"><summary>What do eigenvalues and eigenvectors represent in PCA?</summary><div class="ans"><p>Eigenvectors of the covariance matrix are the principal directions (loadings); eigenvalues are the variances of the data along those directions. Eigenvalue / sum of eigenvalues = explained variance ratio.</p></div></details>
+<details class="qa" data-id="dim-reduction-0a121f2" data-l="2"><summary>How is PCA related to SVD?</summary><div class="ans"><p>For centred X = USVᵀ, the columns of V are the principal directions, eigenvalues λ = s²/(n−1), and the PC scores are US. Libraries use SVD because it's more numerically stable than forming XᵀX, and randomized SVD scales to big data.</p></div></details>
+<details class="qa" data-id="dim-reduction-2f2f740" data-l="2"><summary>How do you choose the number of principal components?</summary><div class="ans"><p>Cumulative explained variance threshold (e.g. 95%), scree-plot elbow, Kaiser criterion, or — for predictive tasks — cross-validate n_components inside a pipeline with the downstream model.</p></div></details>
+<details class="qa" data-id="dim-reduction-bad5238" data-l="2"><summary>Are principal components correlated? Interpretable?</summary><div class="ans"><p>Scores of different PCs are uncorrelated (orthogonal directions, diagonal covariance). Interpretation is hard because each PC mixes all original features; inspect loadings, or use sparse PCA / factor analysis with rotation for interpretability.</p></div></details>
+<details class="qa" data-id="dim-reduction-aae924c" data-l="2"><summary>Can PCA hurt model performance?</summary><div class="ans"><p>Yes. PCA ignores the target, so it may discard low-variance directions that are highly predictive; it also loses interpretability. Tree models rarely benefit. Validate with CV rather than assuming.</p></div></details>
+<details class="qa" data-id="dim-reduction-ea588e4" data-l="2"><summary>PCA vs LDA?</summary><div class="ans"><p>PCA: unsupervised, maximises total variance, up to d components. LDA: supervised, maximises between-class vs within-class variance ratio, up to C − 1 components, assumes Gaussian classes with shared covariance. Use LDA when the goal is class separation.</p></div></details>
+<details class="qa" data-id="dim-reduction-3cdd80e" data-l="2"><summary>t-SNE vs PCA — when do you use each?</summary><div class="ans"><p>PCA: linear, deterministic, preserves global variance, fast, can transform new data — preprocessing and compression. t-SNE: non-linear, stochastic, preserves local neighbourhoods, slow, no out-of-sample transform — 2-D visualisation only. Don't read distances between t-SNE clusters or their sizes.</p></div></details>
+<details class="qa" data-id="dim-reduction-0d8d911" data-l="3"><summary>What is the perplexity in t-SNE?</summary><div class="ans"><p>A smooth measure of the effective number of neighbours each point considers (2^entropy of its neighbour distribution). Low perplexity emphasises very local structure (many small clumps); high perplexity considers broader neighbourhoods. Typical 5–50; try several values.</p></div></details>
+<details class="qa" data-id="dim-reduction-c5b479a" data-l="3"><summary>How is PCA related to linear autoencoders?</summary><div class="ans"><p>A linear autoencoder with a k-unit bottleneck trained on squared reconstruction error learns a subspace equal to the span of the top-k principal components (though not necessarily the orthogonal PC basis). Non-linear autoencoders generalise PCA.</p></div></details>
+<details class="qa" data-id="dim-reduction-36b6c47" data-l="2"><summary>Does PCA help with multicollinearity in regression?</summary><div class="ans"><p>Yes — principal component regression uses uncorrelated PCs as predictors, removing collinearity, at the cost of interpretability and possibly dropping predictive low-variance directions. Ridge regression is a soft version that shrinks low-variance directions most.</p></div></details>
+</div>
+</main>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Naive Bayes · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="naive-bayes">
+<main>
+<div class="eyebrow">Supervised · Probabilistic · Generative classifier</div>
+<h1>Naive Bayes</h1>
+<p class="lede">Apply Bayes' theorem with the “naive” assumption that features are conditionally independent given the class. Absurdly simple, extremely fast, and still a strong baseline for text classification and spam filtering. Interviewers love asking why it works despite the wrong assumption, and what Laplace smoothing is.</p>
+<div class="toc"><a href="#pitch">30-sec answer</a><a href="#bayes">Bayes' theorem</a><a href="#math">The NB model</a><a href="#variants">Variants</a><a href="#smoothing">Laplace smoothing</a><a href="#example">Worked example</a><a href="#hp">Hyperparameters</a><a href="#procon">Pros/cons</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“Naive Bayes is a generative classifier: it estimates the prior P(y) and the class-conditional likelihood P(x|y), then uses Bayes' rule to get P(y|x). The naive assumption — features independent given the class — factorises the likelihood into \(\prod_j P(x_j\mid y)\), so it needs very little data and trains in one pass. Gaussian NB for continuous features, Multinomial for counts like word frequencies, Bernoulli for binary presence. Laplace smoothing prevents zero probabilities for unseen feature values; we sum log-probabilities to avoid underflow. Its rankings are often good even though its probabilities are poorly calibrated.”</p></div>
+
+<h2 id="bayes">Bayes' theorem</h2>
+<div class="callout math"><div class="tag">∑ Posterior ∝ likelihood × prior</div>$$P(y\mid x)=\frac{P(x\mid y)\,P(y)}{P(x)}\ \propto\ P(x\mid y)\,P(y)$$</div>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p>An email contains “free”, “winner” and “click”. How likely is spam? Start from how common spam is (prior), then for each word multiply by how much more often it appears in spam than in normal mail (likelihood). The “naive” part: treat each word's evidence as if it were independent of the others.</p></div>
+
+<h2 id="math">The Naive Bayes model</h2>
+<div class="callout math"><div class="tag">∑ Decision rule (in log space)</div>$$\hat y=\arg\max_k\ \Big[\log P(y=k)+\sum_{j=1}^d\log P(x_j\mid y=k)\Big]$$
+<p>Logs turn a product of many small numbers (underflow risk) into a sum. P(x) is the same for every class, so it's dropped for classification.</p></div>
+<ul>
+<li><b>Training</b> = counting/averaging: class frequencies, and per-class feature distributions. O(n·d) single pass, trivially parallel and supports online updates (partial_fit).</li>
+<li>Multinomial and Bernoulli NB are <b>linear classifiers</b> in log space (log-odds is linear in feature counts).</li>
+</ul>
+
+<h2 id="variants">Variants</h2>
+<div class="table-wrap"><table>
+<tr><th>Variant</th><th>P(x_j | y) model</th><th>Use for</th></tr>
+<tr><td>GaussianNB</td><td>\(\mathcal N(\mu_{jk},\sigma^2_{jk})\) per feature & class</td><td>Continuous features (roughly normal)</td></tr>
+<tr><td>MultinomialNB</td><td>\(\hat\theta_{jk}=\frac{N_{jk}+\alpha}{N_k+\alpha d}\) word counts</td><td>Text with counts / TF-IDF</td></tr>
+<tr><td>BernoulliNB</td><td>Binary presence/absence, penalises absent words too</td><td>Short texts, binary features</td></tr>
+<tr><td>ComplementNB</td><td>Estimates from the complement of each class</td><td>Imbalanced text classification (often beats MNB)</td></tr>
+<tr><td>CategoricalNB</td><td>Category frequencies per class</td><td>Categorical features</td></tr>
+</table></div>
+
+<h2 id="smoothing">Laplace (additive) smoothing</h2>
+<p>If the word “crypto” never appeared in a non-spam training email, \(P(\text{crypto}\mid\text{ham})=0\), and one occurrence would zero out the whole product — no matter how strong the other evidence. Add α (α = 1 Laplace, α &lt; 1 Lidstone) to every count:</p>
+<div class="callout math"><div class="tag">∑ Smoothed estimate</div>$$P(x_j\mid y=k)=\frac{\text{count}(x_j,k)+\alpha}{\text{count}(k)+\alpha\cdot V}$$<p>V = number of possible values (vocabulary size). GaussianNB uses var_smoothing instead: adds a fraction of the largest feature variance to all variances for numerical stability.</p></div>
+
+<h2 id="example">Worked example</h2>
+<p>Prior: P(spam) = 0.4. Likelihoods: P(“free”|spam) = 0.3, P(“free”|ham) = 0.02; P(“meeting”|spam) = 0.01, P(“meeting”|ham) = 0.1. Email contains both words:</p>
+<p>spam score ∝ 0.4 × 0.3 × 0.01 = 0.0012; ham score ∝ 0.6 × 0.02 × 0.1 = 0.0012 → a tie, so P(spam | email) = 0.5. Remove “meeting” and spam wins 0.12 vs 0.012 → P(spam) ≈ 0.91.</p>
+
+<h2 id="hp">Hyperparameters</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Parameter</th><th>Effect</th><th>Tip</th></tr>
+<tr><td>alpha</td><td>Additive smoothing for Multinomial/Bernoulli/Complement/Categorical NB. ↑α → stronger smoothing (more bias)</td><td>Tune on log grid 1e-3…10</td></tr>
+<tr><td>var_smoothing</td><td>GaussianNB variance stabiliser (default 1e-9)</td><td>Log grid 1e-12…1e-2</td></tr>
+<tr><td>priors / class_prior</td><td>Fix class priors instead of estimating</td><td>Set when training distribution ≠ deployment distribution</td></tr>
+<tr><td>fit_prior</td><td>If False, uniform priors</td><td>Helps with skewed training data</td></tr>
+<tr><td>binarize (Bernoulli)</td><td>Threshold to turn features into 0/1</td><td>None if already binary</td></tr>
+<tr><td>Vectoriser settings</td><td>ngram_range, min_df, max_df, stop words, TF-IDF vs counts</td><td>Often matter more than alpha for text</td></tr>
+</table></div>
+
+<h2 id="procon">Pros, cons & when to use</h2>
+<div class="procon"><div class="pro"><h4>✅ Strengths</h4><ul><li>Very fast to train & predict; scales to huge vocabularies</li><li>Works with little training data; few parameters</li><li>Handles many features & multiclass naturally; online learning</li><li>Strong baseline for text: spam, sentiment, topic, intent</li></ul></div>
+<div class="con"><h4>❌ Weaknesses</h4><ul><li>Independence assumption rarely true → can't model interactions</li><li>Poorly calibrated, overconfident probabilities (correlated features double-count evidence)</li><li>GaussianNB assumes normal features</li><li>Usually beaten by logistic regression / boosting with enough data</li></ul></div></div>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="nb-gaussian-scratch" data-title="Gaussian Naive Bayes from scratch">
+<div class="lab-task"><p>Complete the class: <code>fit</code> stores per-class priors, means and variances (add <code>1e-9 * X.var(0).max()</code> to variances like sklearn); <code>predict</code> returns the class with the highest log-posterior \(\log P(y)+\sum_j\log\mathcal N(x_j;\mu,\sigma^2)\).</p></div>
+<div data-part="hint">log N(x; μ, σ²) = −½·log(2πσ²) − (x − μ)²/(2σ²). Use broadcasting: for class k, <code>-0.5*np.sum(np.log(2*np.pi*var[k]) + (X-mu[k])**2/var[k], axis=1)</code>.</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import load_iris
+
+class MyGaussianNB:
+    def fit(self, X, y):
+        self.classes_ = np.unique(y)
+        eps = 1e-9 * X.var(0).max()
+        # TODO: self.prior_, self.mu_, self.var_  (arrays indexed by class position)
+        return self
+
+    def predict(self, X):
+        # TODO: compute log-posterior for each class, return argmax class
+        return None
+
+X, y = load_iris(return_X_y=True)
+print(MyGaussianNB().fit(X, y).predict(X[:5]))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import load_iris
+
+class MyGaussianNB:
+    def fit(self, X, y):
+        self.classes_ = np.unique(y)
+        eps = 1e-9 * X.var(0).max()
+        self.prior_ = np.array([(y == c).mean() for c in self.classes_])
+        self.mu_ = np.array([X[y == c].mean(0) for c in self.classes_])
+        self.var_ = np.array([X[y == c].var(0) + eps for c in self.classes_])
+        return self
+
+    def predict(self, X):
+        logp = []
+        for k in range(len(self.classes_)):
+            ll = -0.5 * np.sum(np.log(2 * np.pi * self.var_[k]) + (X - self.mu_[k]) ** 2 / self.var_[k], axis=1)
+            logp.append(np.log(self.prior_[k]) + ll)
+        return self.classes_[np.argmax(np.array(logp), axis=0)]
+
+X, y = load_iris(return_X_y=True)
+m = MyGaussianNB().fit(X, y)
+print("train accuracy:", (m.predict(X) == y).mean())
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from sklearn.naive_bayes import GaussianNB
+from sklearn.datasets import load_wine
+for loader in [load_iris, load_wine]:
+    Xd, yd = loader(return_X_y=True)
+    mine = MyGaussianNB().fit(Xd, yd).predict(Xd)
+    ref = GaussianNB().fit(Xd, yd).predict(Xd)
+    assert mine is not None and (mine == ref).all(), f"predictions differ from sklearn on {loader.__name__}"
+print("Identical to sklearn's GaussianNB on iris and wine.")
+</script>
+</div>
+
+<div class="lab" data-id="nb-text" data-title="Spam-style text classifier with MultinomialNB">
+<div class="lab-task"><p>Build <code>clf</code> = <code>make_pipeline(CountVectorizer(), MultinomialNB(alpha=1.0))</code>, fit it on the tiny corpus and store the predicted probability that <code>"claim your free prize now"</code> is spam in <code>p_spam</code>. Then look at <code>feature_log_prob_</code> to find the most “spammy” word.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.pipeline import make_pipeline
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.naive_bayes import MultinomialNB
+
+texts = ["win a free prize now", "free cash claim now", "urgent claim your reward",
+         "meeting moved to monday", "lunch tomorrow with the team", "project update attached",
+         "free tickets for the team lunch", "your prize is waiting click now"]
+labels = np.array([1, 1, 1, 0, 0, 0, 0, 1])   # 1 = spam
+
+clf = None     # TODO
+p_spam = None  # TODO
+print(p_spam)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.pipeline import make_pipeline
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.naive_bayes import MultinomialNB
+
+texts = ["win a free prize now", "free cash claim now", "urgent claim your reward",
+         "meeting moved to monday", "lunch tomorrow with the team", "project update attached",
+         "free tickets for the team lunch", "your prize is waiting click now"]
+labels = np.array([1, 1, 1, 0, 0, 0, 0, 1])   # 1 = spam
+
+clf = make_pipeline(CountVectorizer(), MultinomialNB(alpha=1.0)).fit(texts, labels)
+p_spam = clf.predict_proba(["claim your free prize now"])[0, 1]
+print("P(spam):", round(p_spam, 3))
+
+vocab = clf[0].get_feature_names_out()
+nb = clf[-1]
+ratio = nb.feature_log_prob_[1] - nb.feature_log_prob_[0]   # log P(w|spam) - log P(w|ham)
+print("most spammy words:", vocab[np.argsort(ratio)[::-1][:4]])
+</script>
+<script type="text/x-python" data-part="check">
+assert clf is not None, "build the pipeline"
+assert p_spam is not None and p_spam > 0.9, f"P(spam) should be > 0.9, got {p_spam}"
+assert clf.predict(["team meeting on monday"])[0] == 0, "a work message should be ham"
+print("Spam filter works.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="naive-bayes-f2e9817" data-l="1"><summary>Why is Naive Bayes called “naive”?</summary><div class="ans"><p>Because it assumes all features are conditionally independent given the class, so P(x₁,…,x_d | y) = ∏ P(x_j | y). This is rarely true (words like “New” and “York” co-occur), but it makes the model tractable with little data.</p></div></details>
+<details class="qa" data-id="naive-bayes-366b865" data-l="2"><summary>Why does Naive Bayes work well even though the independence assumption is violated?</summary><div class="ans"><p>Classification only needs the correct class to have the highest score, not accurate probabilities. Dependencies often affect all classes similarly or cancel out, so the argmax is still right even if the probabilities are badly miscalibrated (Domingos & Pazzani). Its low variance also helps on small/high-dimensional data.</p></div></details>
+<details class="qa" data-id="naive-bayes-05632c4" data-l="1"><summary>What is Laplace smoothing and why is it needed?</summary><div class="ans"><p>Adding a pseudo-count α (1 for Laplace) to each feature-class count so no conditional probability is zero. Without it, a single unseen word in a test document makes the whole class likelihood zero regardless of all other evidence.</p></div></details>
+<details class="qa" data-id="naive-bayes-9c0d22d" data-l="2"><summary>Difference between Multinomial, Bernoulli and Gaussian NB?</summary><div class="ans"><p>Multinomial models counts/frequencies (how many times each word appears). Bernoulli models binary presence/absence and explicitly penalises absent features — good for short texts. Gaussian models continuous features with a per-class normal distribution.</p></div></details>
+<details class="qa" data-id="naive-bayes-df1793e" data-l="2"><summary>Is Naive Bayes generative or discriminative? What does that mean?</summary><div class="ans"><p>Generative: it models the joint distribution via P(x|y)P(y) and could in principle generate data. Discriminative models (logistic regression, SVM) model P(y|x) or the boundary directly. Generative models need less data and handle missing features naturally; discriminative ones usually win with lots of data.</p></div></details>
+<details class="qa" data-id="naive-bayes-bfa5a15" data-l="2"><summary>Why do we use log probabilities?</summary><div class="ans"><p>Multiplying hundreds of probabilities &lt; 1 underflows to 0 in floating point. Log turns products into sums, is monotonic (argmax unchanged), and is numerically stable; normalise with log-sum-exp when you need actual probabilities.</p></div></details>
+<details class="qa" data-id="naive-bayes-6ef5cae" data-l="2"><summary>Are Naive Bayes probabilities reliable?</summary><div class="ans"><p>Not usually — correlated features are counted as independent evidence, pushing probabilities toward 0 or 1. Use NB for ranking/classification; if you need probabilities, calibrate (CalibratedClassifierCV with isotonic or sigmoid).</p></div></details>
+<details class="qa" data-id="naive-bayes-db41a7e" data-l="2"><summary>How does Naive Bayes handle continuous and missing features?</summary><div class="ans"><p>Continuous: GaussianNB, or discretise into bins and use categorical/multinomial NB, or kernel density estimates. Missing: simply drop that feature's term from the sum for that sample (a generative advantage) — though sklearn requires imputation.</p></div></details>
+<details class="qa" data-id="naive-bayes-c60af7b" data-l="3"><summary>Show that Multinomial NB is a linear classifier.</summary><div class="ans"><p>log P(y=1|x) − log P(y=0|x) = log(π₁/π₀) + Σ_j x_j·log(θ_{j1}/θ_{j0}). This is b + wᵀx with w_j = log(θ_{j1}/θ_{j0}), linear in the counts x — the same functional form as logistic regression but with weights estimated generatively rather than by maximising conditional likelihood.</p></div></details>
+<details class="qa" data-id="naive-bayes-b4d3637" data-l="2"><summary>When would you use Naive Bayes over logistic regression?</summary><div class="ans"><p>Very small training sets, extremely high-dimensional sparse text, need for millisecond training/online updates, or as a quick baseline. With ample data and correlated features, logistic regression or boosting typically perform better.</p></div></details>
+<details class="qa" data-id="naive-bayes-a4160a2" data-l="2"><summary>Compute P(spam | “free”) given P(spam)=0.2, P(free|spam)=0.5, P(free|ham)=0.05.</summary><div class="ans"><p>Numerator 0.2 × 0.5 = 0.10; evidence = 0.10 + 0.8 × 0.05 = 0.14; posterior = 0.10 / 0.14 ≈ 0.714.</p></div></details>
+</div>
+</main>
+</body>
+</html>

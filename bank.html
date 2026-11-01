@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Question bank & mock interview · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/qbank.js"></script>
+</head>
+<body data-page="bank">
+<main>
+<div class="eyebrow">Practice · Every interview question on the site, in one place</div>
+<h1>Question bank & mock interview</h1>
+<p class="lede">All questions from every topic page, with model answers. Filter by topic, difficulty and whether you already know it; drill with flashcards; or run a timed mock interview that favours the questions you haven't mastered yet. “Known” ticks sync with the topic pages.</p>
+<div class="statrow" id="stats"></div>
+
+<div data-tabs id="modes">
+<div class="tabs"><button class="on">📋 Browse</button><button>🃏 Flashcards</button><button>⏱️ Mock interview</button></div>
+
+<div class="bank-filters">
+<select id="fTopic"><option value="">All topics</option></select>
+<select id="fLevel"><option value="">All levels</option><option value="1">Basic</option><option value="2">Core</option><option value="3">Advanced</option></select>
+<select id="fStatus"><option value="">Known + unknown</option><option value="unknown">Not yet known</option><option value="known">Known</option></select>
+<input type="search" id="fText" placeholder="Search questions & answers…">
+<span class="small" id="fCount"></span>
+</div>
+
+<div class="tab-panel on">
+<div class="qa-tools"><button class="btn small" id="expandAll">Expand all</button><button class="btn small" id="collapseAll">Collapse all</button></div>
+<div id="list"></div>
+<div style="text-align:center;margin:16px 0"><button class="btn" id="more" style="display:none">Show more</button></div>
+</div>
+
+<div class="tab-panel">
+<div class="flash">
+<div class="small" id="fcProgress" style="text-align:center;margin-bottom:8px"></div>
+<div class="flash-card" id="fcCard"><div class="meta" id="fcMeta"></div><div class="front" id="fcFront"></div><div class="small" style="margin-top:14px" id="fcHint">Click the card (or press Space) to reveal the answer.</div><div class="back" id="fcBack"></div></div>
+<div class="flash-nav"><button class="btn" id="fcPrev">← Prev</button><button class="btn" id="fcAgain">✗ Review again</button><button class="btn primary" id="fcKnew">✓ Knew it</button><button class="btn" id="fcNext">Next →</button><button class="btn" id="fcShuffle">🔀 Shuffle</button></div>
+<p class="small" style="text-align:center">Keys: Space = flip · → next · ← prev · K = knew it · R = review again. The deck uses the filters above.</p>
+</div>
+</div>
+
+<div class="tab-panel">
+<div id="mockSetup">
+<p>Simulates a technical screen: questions are drawn from your current filters, weighted toward ones you haven't marked as known. Answer <b>out loud</b> before revealing the model answer, then grade yourself honestly.</p>
+<div class="controls">
+<div class="control"><label>Questions</label><select id="mN"><option>5</option><option selected>8</option><option>12</option><option>20</option></select></div>
+<div class="control"><label>Minutes per question</label><select id="mT"><option>1</option><option selected>2</option><option>3</option><option>5</option></select></div>
+</div>
+<button class="btn primary" id="mStart">Start mock interview</button>
+</div>
+<div id="mockRun" style="display:none">
+<div class="flash">
+<div class="small" id="mProg" style="text-align:center"></div>
+<div class="timer" id="mTimer">2:00</div>
+<div class="flash-card" style="cursor:default"><div class="meta" id="mMeta"></div><div class="front" id="mQ"></div><div class="back" id="mA"></div></div>
+<div class="flash-nav" id="mReveal"><button class="btn primary" id="mShow">Reveal model answer</button></div>
+<div class="flash-nav" id="mGrade" style="display:none"><button class="btn" data-g="0">😬 Missed it</button><button class="btn" data-g="1">🙂 Partially</button><button class="btn primary" data-g="2">💪 Nailed it</button></div>
+</div>
+</div>
+<div id="mockDone" style="display:none"></div>
+</div>
+</div>
+
+<script>
+(function () {
+  const Q = window.MLP_QBANK || [], S = window.MLP_STORE, esc = window.MLP_esc;
+  const LV = { 1: "basic", 2: "core", 3: "advanced" };
+  const known = () => S.get("mlp-known", {});
+  const setKnown = (id, v) => { const k = known(); k[id] = v; S.set("mlp-known", k); window.MLP_updateProgress && window.MLP_updateProgress(); stats(); };
+  const strip = h => h.replace(/<[^>]+>/g, " ").toLowerCase();
+  // topics
+  const sel = document.getElementById("fTopic"); const seen = new Set(); let grp = null, og = null;
+  Q.forEach(q => { if (seen.has(q.p)) return; seen.add(q.p); if (q.grp !== grp) { grp = q.grp; og = document.createElement("optgroup"); og.label = grp; sel.appendChild(og); } const o = document.createElement("option"); o.value = q.p; o.textContent = q.g; og.appendChild(o); });
+  const params = new URLSearchParams(location.search); if (params.get("topic")) sel.value = params.get("topic");
+
+  function filtered() {
+    const t = sel.value, l = document.getElementById("fLevel").value, st = document.getElementById("fStatus").value, txt = document.getElementById("fText").value.trim().toLowerCase();
+    const k = known();
+    return Q.filter(q => (!t || q.p === t) && (!l || String(q.l) === l) && (!st || (st === "known") === !!k[q.id]) && (!txt || txt.split(/\s+/).every(w => (strip(q.q) + " " + strip(q.a)).includes(w))));
+  }
+  function stats() {
+    const k = known(), n = Q.filter(q => k[q.id]).length;
+    const by = l => Q.filter(q => q.l === l).length;
+    document.getElementById("stats").innerHTML = `<div class="stat"><b>${Q.length}</b><span>questions</span></div><div class="stat"><b>${n}</b><span>marked known</span></div><div class="stat"><b>${Q.length ? Math.round(100 * n / Q.length) : 0}%</b><span>mastery</span></div><div class="stat"><b>${by(1)} / ${by(2)} / ${by(3)}</b><span>basic / core / advanced</span></div>`;
+  }
+
+  // ---- browse
+  let shown = 0, cur = [];
+  function renderList(reset) {
+    if (reset) { cur = filtered(); shown = 0; document.getElementById("list").innerHTML = ""; }
+    const box = document.getElementById("list"), k = known(), chunk = cur.slice(shown, shown + 50);
+    const frag = document.createElement("div");
+    frag.innerHTML = chunk.map(q => `<details class="qa ${k[q.id] ? "is-known" : ""}" data-id="${q.id}"><summary><span class="qtext">${q.q}</span><span class="lvl l${q.l}">${LV[q.l]}</span></summary><div class="ans">${q.a}<p class="small">From <a href="${q.p}#q-${q.id}">${esc(q.g)}</a></p><label class="known"><input type="checkbox" ${k[q.id] ? "checked" : ""}> I can answer this confidently</label></div></details>`).join("");
+    frag.querySelectorAll("details").forEach(d => d.querySelector("input").addEventListener("change", e => { setKnown(d.dataset.id, e.target.checked); d.classList.toggle("is-known", e.target.checked); }));
+    while (frag.firstChild) box.appendChild(frag.firstChild);
+    shown += chunk.length;
+    document.getElementById("more").style.display = shown < cur.length ? "" : "none";
+    document.getElementById("fCount").textContent = `${cur.length} matching`;
+    window.MLP_renderMath(box);
+  }
+  document.getElementById("more").addEventListener("click", () => renderList(false));
+  document.getElementById("expandAll").addEventListener("click", () => document.querySelectorAll("#list details").forEach(d => d.open = true));
+  document.getElementById("collapseAll").addEventListener("click", () => document.querySelectorAll("#list details").forEach(d => d.open = false));
+
+  // ---- flashcards
+  let deck = [], i = 0;
+  function newDeck(shuffle) { deck = filtered(); if (shuffle) deck.sort(() => Math.random() - 0.5); i = 0; showCard(); }
+  function showCard() {
+    const card = document.getElementById("fcCard"); card.classList.remove("flipped");
+    if (!deck.length) { document.getElementById("fcFront").textContent = "No questions match the filters."; document.getElementById("fcBack").innerHTML = ""; document.getElementById("fcMeta").textContent = ""; document.getElementById("fcProgress").textContent = ""; return; }
+    const q = deck[i];
+    document.getElementById("fcMeta").innerHTML = `${esc(q.g)} · ${LV[q.l]} ${known()[q.id] ? "· ✓ known" : ""}`;
+    document.getElementById("fcFront").innerHTML = q.q;
+    document.getElementById("fcBack").innerHTML = q.a + `<p class="small"><a href="${q.p}#q-${q.id}">Open on topic page →</a></p>`;
+    document.getElementById("fcProgress").textContent = `Card ${i + 1} of ${deck.length}`;
+    window.MLP_renderMath(card);
+  }
+  const flip = () => document.getElementById("fcCard").classList.toggle("flipped");
+  const step = d => { if (!deck.length) return; i = (i + d + deck.length) % deck.length; showCard(); };
+  document.getElementById("fcCard").addEventListener("click", e => { if (e.target.tagName !== "A") flip(); });
+  document.getElementById("fcNext").addEventListener("click", () => step(1));
+  document.getElementById("fcPrev").addEventListener("click", () => step(-1));
+  document.getElementById("fcShuffle").addEventListener("click", () => newDeck(true));
+  document.getElementById("fcKnew").addEventListener("click", () => { if (deck[i]) setKnown(deck[i].id, true); step(1); });
+  document.getElementById("fcAgain").addEventListener("click", () => { if (deck[i]) { setKnown(deck[i].id, false); deck.push(deck[i]); } step(1); });
+  document.addEventListener("keydown", e => {
+    const fcOn = document.querySelectorAll("#modes > .tab-panel")[1].classList.contains("on");
+    if (!fcOn || /input|select|textarea/i.test(e.target.tagName)) return;
+    if (e.key === " ") { e.preventDefault(); flip(); } else if (e.key === "ArrowRight") step(1); else if (e.key === "ArrowLeft") step(-1);
+    else if (e.key.toLowerCase() === "k") document.getElementById("fcKnew").click(); else if (e.key.toLowerCase() === "r") document.getElementById("fcAgain").click();
+  });
+
+  // ---- mock interview
+  let mq = [], mi = 0, grades = [], timer = null, left = 0;
+  function pickMock(n) {
+    const pool = filtered(), k = known();
+    const w = pool.map(q => [q, Math.random() * (k[q.id] ? 1 : 3) * (q.l === 3 ? 1.2 : 1)]);
+    return w.sort((a, b) => b[1] - a[1]).slice(0, n).map(x => x[0]);
+  }
+  function tick() { left--; const m = Math.max(0, left); document.getElementById("mTimer").textContent = `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`; document.getElementById("mTimer").style.color = left <= 15 ? "var(--coral)" : "var(--accent)"; if (left <= 0) reveal(); }
+  function showMock() {
+    const q = mq[mi]; clearInterval(timer); left = +document.getElementById("mT").value * 60 + 1; tick(); timer = setInterval(tick, 1000);
+    document.getElementById("mProg").textContent = `Question ${mi + 1} of ${mq.length}`;
+    document.getElementById("mMeta").innerHTML = `${esc(q.g)} · ${LV[q.l]}`;
+    document.getElementById("mQ").innerHTML = q.q; document.getElementById("mA").innerHTML = q.a; document.getElementById("mA").style.display = "none";
+    document.getElementById("mReveal").style.display = ""; document.getElementById("mGrade").style.display = "none";
+    window.MLP_renderMath(document.getElementById("mockRun"));
+  }
+  function reveal() { clearInterval(timer); document.getElementById("mA").style.display = "block"; document.getElementById("mReveal").style.display = "none"; document.getElementById("mGrade").style.display = ""; }
+  document.getElementById("mShow").addEventListener("click", reveal);
+  document.getElementById("mGrade").addEventListener("click", e => {
+    const g = e.target.dataset.g; if (g === undefined) return;
+    grades.push(+g); if (+g === 2) setKnown(mq[mi].id, true); if (+g === 0) setKnown(mq[mi].id, false);
+    mi++; if (mi < mq.length) showMock(); else finish();
+  });
+  document.getElementById("mStart").addEventListener("click", () => {
+    mq = pickMock(+document.getElementById("mN").value); if (!mq.length) { alert("No questions match the filters."); return; }
+    mi = 0; grades = []; document.getElementById("mockSetup").style.display = "none"; document.getElementById("mockDone").style.display = "none"; document.getElementById("mockRun").style.display = ""; showMock();
+  });
+  function finish() {
+    clearInterval(timer);
+    const score = grades.reduce((a, b) => a + b, 0), max = grades.length * 2, pct = Math.round(100 * score / max);
+    const verdict = pct >= 80 ? "Strong — you'd likely pass this screen." : pct >= 55 ? "Borderline — revise the weak ones below and retry." : "Needs work — study the linked sections, then try again.";
+    const weak = mq.filter((_, j) => grades[j] < 2);
+    document.getElementById("mockRun").style.display = "none";
+    const d = document.getElementById("mockDone"); d.style.display = "";
+    d.innerHTML = `<div class="statrow"><div class="stat"><b>${pct}%</b><span>score</span></div><div class="stat"><b>${grades.filter(g => g === 2).length}</b><span>nailed</span></div><div class="stat"><b>${grades.filter(g => g === 1).length}</b><span>partial</span></div><div class="stat"><b>${grades.filter(g => g === 0).length}</b><span>missed</span></div></div><p><b>${verdict}</b></p>` +
+      (weak.length ? `<h3>Revise these</h3><ul>${weak.map(q => `<li><a href="${q.p}#q-${q.id}">${q.q}</a> <span class="small">(${esc(q.g)})</span></li>`).join("")}</ul>` : "") +
+      `<button class="btn primary" id="mAgain">New mock interview</button>`;
+    window.MLP_renderMath(d);
+    document.getElementById("mAgain").addEventListener("click", () => { d.style.display = "none"; document.getElementById("mockSetup").style.display = ""; });
+  }
+
+  ["fTopic", "fLevel", "fStatus"].forEach(id => document.getElementById(id).addEventListener("change", () => { renderList(true); newDeck(false); }));
+  let tt; document.getElementById("fText").addEventListener("input", () => { clearTimeout(tt); tt = setTimeout(() => { renderList(true); newDeck(false); }, 200); });
+  document.addEventListener("DOMContentLoaded", () => { stats(); renderList(true); newDeck(false); });
+})();
+</script>
+</main>
+</body>
+</html>

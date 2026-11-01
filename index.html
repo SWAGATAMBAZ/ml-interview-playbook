@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ML Interview Playbook — models, maths, Q&A and live Python labs</title>
+<meta name="description" content="An interactive machine-learning interview prep site: every core ML model with intuition, maths, assumptions, hyperparameters, interview questions and in-browser Python labs, plus MLOps, statistics and system design.">
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/qbank.js"></script><script src="assets/labs-index.js"></script>
+</head>
+<body data-page="index">
+<main>
+<div class="hero">
+<div>
+<div class="eyebrow">Data Scientist · ML Engineer · Applied Scientist interviews</div>
+<h1>The ML Interview Playbook</h1>
+<p class="lede">One place to learn, revise and <b>practise</b> machine learning for interviews: every core model with the intuition, maths, assumptions and hyperparameters you're expected to explain, hundreds of interview questions with model answers, and auto-graded Python labs that run right in your browser.</p>
+<div style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn primary" href="fundamentals.html">Start learning →</a><a class="btn" href="bank.html">Mock interview</a><a class="btn" href="labs.html">Coding drills</a><a class="btn" href="cheatsheet.html">Cheat sheet</a></div>
+<div class="statrow" id="homeStats"></div>
+</div>
+<svg viewBox="0 0 320 260" aria-hidden="true">
+<defs><linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#0e7490"/><stop offset="1" stop-color="#e2554f"/></linearGradient></defs>
+<rect x="10" y="10" width="300" height="240" rx="22" fill="none" stroke="url(#g1)" stroke-width="2" opacity=".5"/>
+<g fill="#0e7490" opacity=".8"><circle cx="60" cy="190" r="5"/><circle cx="85" cy="170" r="5"/><circle cx="105" cy="178" r="5"/><circle cx="130" cy="150" r="5"/><circle cx="150" cy="140" r="5"/><circle cx="175" cy="118" r="5"/><circle cx="200" cy="110" r="5"/><circle cx="225" cy="88" r="5"/><circle cx="250" cy="80" r="5"/><circle cx="270" cy="62" r="5"/></g>
+<path d="M45 200 L285 55" stroke="#e2554f" stroke-width="3"/>
+<g font-family="ui-monospace,monospace" font-size="13" fill="#5d5b66"><text x="40" y="44">ŷ = β₀ + β₁x</text><text x="168" y="226">min Σ(y − ŷ)²</text></g>
+<g fill="#15803d"><rect x="230" y="150" width="14" height="40" rx="3"/><rect x="250" y="130" width="14" height="60" rx="3"/><rect x="270" y="165" width="14" height="25" rx="3"/></g>
+</svg>
+</div>
+
+<h2 id="what">What's inside</h2>
+<div class="grid">
+<a class="card" href="fundamentals.html"><div class="kicker">foundations</div><h4>Concepts that frame every answer</h4><p>Bias–variance, loss functions, data prep, leakage, metrics, cross-validation, tuning, explainability, statistics & A/B tests.</p></a>
+<a class="card" href="linear-regression.html"><div class="kicker">13 model deep-dives</div><h4>Each model, interview-depth</h4><p>30-second pitch → intuition → maths → assumptions → interactive demo → hyperparameters → how to improve → Q&A → labs.</p></a>
+<a class="card" href="labs.html"><div class="kicker">live python</div><h4>Auto-graded coding labs</h4><p>Implement models from scratch and build real scikit-learn / XGBoost workflows. Runs in-browser via WebAssembly — nothing to install.</p></a>
+<a class="card" href="bank.html"><div class="kicker">practice</div><h4>Question bank & mock interviews</h4><p>Filter by topic and level, flip flashcards, or run a timed mock interview that adapts to what you don't know yet.</p></a>
+<a class="card" href="mlops.html"><div class="kicker">production</div><h4>MLOps & system design</h4><p>Deployment patterns, monitoring, drift (with a PSI demo), retraining, CI/CD/CT, plus four worked system-design case studies.</p></a>
+<a class="card" href="cheatsheet.html"><div class="kicker">revision</div><h4>Cheat sheet & model chooser</h4><p>All assumptions, hyperparameters and formulas on one printable page, plus an interactive “which model?” tool.</p></a>
+</div>
+
+<h2 id="format">How ML / DS interviews are structured</h2>
+<p>Most loops test the same five areas — statistics & probability, machine learning, coding (Python/SQL), product/business sense and behavioural — and ML-engineering loops add system design and production questions. Monitoring and drift come up in almost every MLOps screen. This playbook covers the ML, statistics, Python-coding and production parts; for SQL and DSA use the sister sites linked in the sidebar.</p>
+<div class="table-wrap"><table>
+<tr><th>Round</th><th>What they probe</th><th>Where to prepare here</th></tr>
+<tr><td>ML concepts / theory</td><td>How models work, assumptions, trade-offs, metrics, validation</td><td>Foundations + model pages + <a href="bank.html">question bank</a></td></tr>
+<tr><td>Statistics & experimentation</td><td>Hypothesis tests, p-values, power, A/B design and pitfalls</td><td><a href="statistics.html">Statistics & A/B testing</a></td></tr>
+<tr><td>Coding (Python)</td><td>NumPy/pandas fluency, implement an algorithm or metric, sklearn workflow</td><td><a href="labs.html">Coding drills</a> + labs on every page</td></tr>
+<tr><td>Case study / ML system design</td><td>Framing, metrics, features, model choice, serving, monitoring</td><td><a href="system-design.html">ML system design</a></td></tr>
+<tr><td>Production / MLOps</td><td>Deployment, monitoring, drift, retraining, incidents</td><td><a href="mlops.html">MLOps</a></td></tr>
+<tr><td>Behavioural / project deep-dive</td><td>Impact, decisions, failures, trade-offs (STAR)</td><td><a href="cheatsheet.html#day">Interview-day checklist</a></td></tr>
+</table></div>
+
+<h2 id="answer">How to answer any “explain model X” question</h2>
+<div class="grid">
+<div class="card"><div class="kicker">1</div><h4>Definition & intuition</h4><p>One sentence on what it does, one plain-English analogy.</p></div>
+<div class="card"><div class="kicker">2</div><h4>How it learns</h4><p>Objective/loss and the optimisation or algorithm (one formula).</p></div>
+<div class="card"><div class="kicker">3</div><h4>Assumptions & failure modes</h4><p>When it breaks and how you'd detect it.</p></div>
+<div class="card"><div class="kicker">4</div><h4>Knobs</h4><p>The 2–3 hyperparameters that matter and their effect on bias/variance.</p></div>
+<div class="card"><div class="kicker">5</div><h4>Practice</h4><p>A real use case, how you'd evaluate it, and what you'd compare it against.</p></div>
+</div>
+
+<h2 id="plans">Study plans</h2>
+<div data-tabs>
+<div class="tabs"><button class="on">⚡ 2-week sprint</button><button>📚 6-week deep prep</button><button>🔁 Night before</button></div>
+<div class="tab-panel on">
+<div class="table-wrap"><table>
+<tr><th>Days</th><th>Focus</th></tr>
+<tr><td>1–2</td><td>Fundamentals, data prep & leakage, metrics</td></tr>
+<tr><td>3</td><td>Cross-validation & tuning, improving models</td></tr>
+<tr><td>4–5</td><td>Linear & logistic regression, regularisation (all labs)</td></tr>
+<tr><td>6</td><td>Trees, Random Forest</td></tr>
+<tr><td>7</td><td>Boosting, XGBoost/LightGBM/CatBoost</td></tr>
+<tr><td>8</td><td>kNN, Naive Bayes, SVM</td></tr>
+<tr><td>9</td><td>K-means, clustering & anomalies, PCA</td></tr>
+<tr><td>10</td><td>Statistics & A/B testing; time series</td></tr>
+<tr><td>11</td><td>MLOps & system design (rehearse 2 case studies out loud)</td></tr>
+<tr><td>12</td><td>Coding drills + capstone under a 30-minute timer</td></tr>
+<tr><td>13</td><td>Two mock interviews (20 questions each); revise weak topics</td></tr>
+<tr><td>14</td><td>Cheat sheet, project stories, light review</td></tr>
+</table></div>
+</div>
+<div class="tab-panel">
+<p><b>Weeks 1–2:</b> foundations pages + statistics; do every lab; mark questions known only when you can say the answer aloud. <b>Weeks 3–4:</b> all model pages, two per day, with labs and Q&A; redo failed labs after 3 days. <b>Week 5:</b> MLOps, system design, time series; write one end-to-end project write-up using the system-design framework. <b>Week 6:</b> daily mock interview (filter “not yet known”), daily 2 coding drills against the clock, final cheat-sheet pass.</p>
+</div>
+<div class="tab-panel">
+<p>Read the <a href="cheatsheet.html">cheat sheet</a>; run one <a href="bank.html">mock interview</a> with 12 mixed questions; re-read the “Say this in the interview” box on each model page; rehearse your project stories; sleep.</p>
+</div>
+</div>
+
+<h2 id="roadmap">Roadmap</h2>
+<p class="small">Ticks come from “Mark this topic as done” at the bottom of each page.</p>
+<div class="roadmap" id="roadmapList"></div>
+
+<h2 id="labs-note">About the in-browser Python</h2>
+<p>Labs use <a href="https://pyodide.org/">Pyodide</a> (CPython compiled to WebAssembly) running in a background worker, so the page stays responsive. The first run downloads the runtime and packages (~20–30 MB, then cached by your browser). NumPy, pandas, scikit-learn, SciPy, statsmodels, matplotlib, XGBoost and LightGBM are available. Your code and progress are saved locally in this browser only.</p>
+
+<h2 id="sources">Sources & further reading</h2>
+<ul class="small">
+<li><a href="https://www.datacamp.com/blog/data-scientist-interview-questions">DataCamp — Top Data Scientist Interview Questions (2026)</a></li>
+<li><a href="https://www.tryexponent.com/blog/top-machine-learning-interview-questions">Exponent — Machine Learning Interview Questions & Answers (2026)</a></li>
+<li><a href="https://www.datacamp.com/blog/mlops-interview-questions">DataCamp — Top 30 MLOps Interview Questions (2026)</a></li>
+<li><a href="https://hyring.com/jobseeker-toolkit/interview-questions/technical/mlops">Hyring — MLOps interview questions</a></li>
+<li><a href="https://pyodide.org/en/stable/usage/packages-in-pyodide.html">Pyodide — packages built in Pyodide</a></li>
+<li>Hastie, Tibshirani & Friedman — <i>The Elements of Statistical Learning</i>; Géron — <i>Hands-On Machine Learning</i>; scikit-learn User Guide; Chen & Guestrin (2016) XGBoost; Ke et al. (2017) LightGBM; Prokhorenkova et al. (2018) CatBoost; Sculley et al. (2015) Hidden Technical Debt in ML Systems.</li>
+</ul>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const Q = window.MLP_QBANK || [], L = window.MLP_LABS || [], P = window.MLP_PAGES;
+  const known = Object.values(window.MLP_STORE.get("mlp-known", {})).filter(Boolean).length;
+  const passed = Object.values(window.MLP_STORE.get("mlp-labs", {})).filter(Boolean).length;
+  document.getElementById("homeStats").innerHTML = `<div class="stat"><b>${P.length - 1}</b><span>topics</span></div><div class="stat"><b>${Q.length}</b><span>interview questions</span></div><div class="stat"><b>${L.length}</b><span>runnable labs</span></div><div class="stat"><b>${passed}/${known}</b><span>labs passed / Qs known</span></div>`;
+  const qc = {}, lc = {}; Q.forEach(q => qc[q.p] = (qc[q.p] || 0) + 1); L.forEach(l => lc[l.p] = (lc[l.p] || 0) + 1);
+  let html = "", g = "";
+  P.slice(1).forEach(p => {
+    if (p.group !== g) { g = p.group; html += `<div class="nav-group" style="margin-left:0">${g}</div>`; }
+    html += `<div class="step" data-step="${p.id}"><a class="card" href="${p.file}"><h4>${p.title}</h4><p>${qc[p.file] ? qc[p.file] + " questions" : ""}${qc[p.file] && lc[p.file] ? " · " : ""}${lc[p.file] ? lc[p.file] + " labs" : ""}</p></a></div>`;
+  });
+  document.getElementById("roadmapList").innerHTML = html;
+  window.MLP_updateProgress();
+});
+</script>
+</main>
+</body>
+</html>

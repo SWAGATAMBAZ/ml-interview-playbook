@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Statistics & A/B testing · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="statistics">
+<main>
+<div class="eyebrow">Foundations · The statistics round of a DS interview</div>
+<h1>Statistics & A/B testing</h1>
+<p class="lede">Data scientist loops almost always include a statistics/experimentation round: distributions, CLT, hypothesis tests, p-values, confidence intervals, Type I/II errors, power and sample size, and designing and reading A/B tests — including the pitfalls (peeking, multiple testing, SRM, novelty effects).</p>
+<div class="toc"><a href="#desc">Descriptive stats</a><a href="#dist">Distributions</a><a href="#clt">CLT</a><a href="#ht">Hypothesis testing</a><a href="#tests">Which test?</a><a href="#ci">Confidence intervals</a><a href="#power">Power & sample size</a><a href="#ab">A/B test design</a><a href="#pitfalls">Pitfalls</a><a href="#bayes">Bayes & probability</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<h2 id="desc">Descriptive statistics</h2>
+<ul><li><b>Centre:</b> mean (outlier-sensitive), median (robust), mode.</li><li><b>Spread:</b> variance, standard deviation, IQR, MAD. Sample variance divides by n − 1 (Bessel's correction: unbiased because we estimated the mean).</li><li><b>Shape:</b> skewness (right-skewed: mean &gt; median, e.g. income), kurtosis (tail heaviness).</li><li><b>Relationship:</b> covariance, Pearson correlation (linear), Spearman (rank/monotonic), Kendall's τ. Correlation ≠ causation; watch confounders and Simpson's paradox.</li></ul>
+
+<h2 id="dist">Distributions to know</h2>
+<div class="table-wrap"><table>
+<tr><th>Distribution</th><th>Models</th><th>Mean / variance</th></tr>
+<tr><td>Bernoulli(p)</td><td>One yes/no trial (click)</td><td>p / p(1−p)</td></tr>
+<tr><td>Binomial(n, p)</td><td># successes in n trials</td><td>np / np(1−p)</td></tr>
+<tr><td>Poisson(λ)</td><td>Counts per interval (calls/hour)</td><td>λ / λ</td></tr>
+<tr><td>Geometric(p)</td><td>Trials until first success</td><td>1/p / (1−p)/p²</td></tr>
+<tr><td>Exponential(λ)</td><td>Waiting time between Poisson events; memoryless</td><td>1/λ / 1/λ²</td></tr>
+<tr><td>Normal(μ, σ²)</td><td>Sums/averages (CLT), measurement error</td><td>μ / σ²; 68–95–99.7 rule</td></tr>
+<tr><td>Uniform(a, b)</td><td>Equal likelihood</td><td>(a+b)/2 / (b−a)²/12</td></tr>
+<tr><td>Log-normal</td><td>Incomes, prices, durations (log is normal)</td><td>right-skewed</td></tr>
+<tr><td>t, χ², F</td><td>Sampling distributions for tests</td><td>t → normal as df grows</td></tr>
+<tr><td>Beta(α, β)</td><td>Distribution of a probability (Bayesian conversion rate)</td><td>α/(α+β)</td></tr>
+</table></div>
+
+<h2 id="clt">Central Limit Theorem & law of large numbers</h2>
+<p><b>LLN:</b> the sample mean converges to the population mean as n grows. <b>CLT:</b> for i.i.d. samples with finite variance, the sampling distribution of the mean is approximately normal, \(\bar X\approx\mathcal N(\mu,\sigma^2/n)\), regardless of the population's shape (n ≳ 30 rule of thumb; more for heavy skew). Standard error \(=\sigma/\sqrt n\). This is why z/t-tests and normal-based CIs work on non-normal metrics like revenue per user (with enough data).</p>
+
+<h2 id="ht">Hypothesis testing</h2>
+<ol><li>State H₀ (no effect) and H₁ (effect; one- or two-sided).</li><li>Choose α (significance level, usually 0.05) and the test.</li><li>Compute the test statistic from data, e.g. \(z=\frac{\hat p_B-\hat p_A}{\sqrt{\hat p(1-\hat p)(1/n_A+1/n_B)}}\).</li><li>p-value = P(statistic at least this extreme | H₀ true).</li><li>Reject H₀ if p &lt; α; report effect size and CI, not just significance.</li></ol>
+<div class="table-wrap"><table>
+<tr><th></th><th>H₀ true</th><th>H₀ false</th></tr>
+<tr><td><b>Reject H₀</b></td><td>Type I error (false positive), rate α</td><td>Correct — power = 1 − β</td></tr>
+<tr><td><b>Fail to reject</b></td><td>Correct</td><td>Type II error (false negative), rate β</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ What a p-value is NOT</div><p>Not the probability that H₀ is true, not the probability the result is due to chance, not the size or importance of the effect. “Fail to reject” ≠ “accept H₀” (absence of evidence isn't evidence of absence — maybe the test was underpowered).</p></div>
+
+<h2 id="tests">Which test?</h2>
+<div class="table-wrap"><table>
+<tr><th>Situation</th><th>Test</th></tr>
+<tr><td>Compare two means, large n or known σ</td><td>z-test</td></tr>
+<tr><td>Compare two means, unknown σ</td><td>Two-sample t-test (Welch's if unequal variances — safe default)</td></tr>
+<tr><td>Same subjects before/after</td><td>Paired t-test</td></tr>
+<tr><td>Compare two proportions (conversion)</td><td>Two-proportion z-test / χ² test</td></tr>
+<tr><td>Association between two categoricals</td><td>χ² test of independence (Fisher's exact for small counts)</td></tr>
+<tr><td>Three+ group means</td><td>ANOVA (F-test), then post-hoc tests (Tukey)</td></tr>
+<tr><td>Non-normal / ordinal, small samples</td><td>Mann–Whitney U, Wilcoxon signed-rank, Kruskal–Wallis</td></tr>
+<tr><td>Normality check</td><td>Shapiro–Wilk, Q-Q plot; Kolmogorov–Smirnov for distribution equality</td></tr>
+<tr><td>Ratio metrics, complex statistics</td><td>Bootstrap, delta method</td></tr>
+<tr><td>Correlation significance</td><td>t-test on r; permutation test</td></tr>
+</table></div>
+
+<h2 id="ci">Confidence intervals</h2>
+<p>A 95% CI: if we repeated the experiment many times, 95% of the intervals constructed this way would contain the true parameter. (Not “95% probability the true value is in this interval” — that's a Bayesian credible interval.) For a mean: \(\bar x\pm t_{0.975,n-1}\,s/\sqrt n\); for a proportion: \(\hat p\pm1.96\sqrt{\hat p(1-\hat p)/n}\). A CI excluding 0 for a difference ⇔ p &lt; 0.05 (two-sided). Bootstrap CIs for anything without a formula.</p>
+
+<h2 id="power">Power and sample size</h2>
+<p>Power = P(detect an effect | it truly exists), conventionally 80%. It increases with sample size, effect size and α, and decreases with variance. For two proportions:</p>
+<div class="callout math"><div class="tag">∑ Sample size per group (approx.)</div>$$n\approx\frac{(z_{1-\alpha/2}+z_{1-\beta})^2\,\big[p_1(1-p_1)+p_2(1-p_2)\big]}{(p_2-p_1)^2}\qquad\text{rule of thumb: } n\approx\frac{16\,\sigma^2}{\delta^2}$$</div>
+<div class="widget" data-demo="power"><div class="widget-title">A/B test sample-size calculator</div><div class="widget-sub">Feel how baseline rate, minimum detectable effect, α and power change the required traffic.</div></div>
+
+<h2 id="ab">Designing an A/B test (interview template)</h2>
+<ol>
+<li><b>Goal & hypothesis:</b> “New checkout flow increases purchase conversion.”</li>
+<li><b>Metrics:</b> primary (conversion), secondary (revenue/user, AOV), <b>guardrails</b> (latency, refunds, unsubscribes).</li>
+<li><b>Unit of randomisation:</b> user (not session/page view) to avoid inconsistent experience; cluster randomisation when there's interference (marketplaces, social networks).</li>
+<li><b>Sample size & duration:</b> from baseline, MDE, α, power; run whole weeks (weekly seasonality), usually ≥ 1–2 weeks.</li>
+<li><b>Launch checks:</b> A/A test, sample ratio mismatch (SRM) χ² check, logging sanity.</li>
+<li><b>Analysis:</b> pre-registered test, effect size + CI, segment analysis as exploratory, variance reduction (CUPED).</li>
+<li><b>Decision:</b> statistical + practical significance, guardrails OK, cost of change; ramp up gradually.</li>
+</ol>
+
+<h2 id="pitfalls">Experimentation pitfalls</h2>
+<ul class="two-col">
+<li><b>Peeking / early stopping</b> inflates false positives — fix n in advance or use sequential tests (alpha spending, mSPRT)</li>
+<li><b>Multiple comparisons</b> (many metrics/variants/segments) — Bonferroni (α/m) or Benjamini–Hochberg (FDR)</li>
+<li><b>Sample ratio mismatch</b> — assignment/logging bug; results untrustworthy</li>
+<li><b>Novelty & primacy effects</b> — run longer, look at cohorts over time</li>
+<li><b>Network effects / interference</b> — cluster or switchback designs</li>
+<li><b>Simpson's paradox</b> — aggregated vs segmented results disagree due to mix shifts</li>
+<li><b>Underpowered tests</b> — “no significant difference” is inconclusive</li>
+<li><b>Heavy-tailed metrics</b> (revenue) — winsorise, log, bootstrap, CUPED</li>
+<li><b>Ratio metrics</b> (CTR per session) — delta method or bootstrap; unit mismatch with randomisation unit</li>
+</ul>
+
+<h2 id="bayes">Probability & Bayes quick hits</h2>
+<ul><li>Bayes: \(P(A\mid B)=\frac{P(B\mid A)P(A)}{P(B)}\). Classic: a 99%-accurate test for a 1-in-1000 disease → P(disease | positive) ≈ 9% (base-rate fallacy).</li><li>Independence: P(A∩B) = P(A)P(B). Conditional independence underpins Naive Bayes.</li><li>Expected value & variance rules: Var(aX + b) = a²Var(X); Var(X + Y) = Var X + Var Y + 2Cov(X, Y).</li><li>Bayesian A/B testing: Beta priors on conversion rates → posterior P(B &gt; A), expected loss; intuitive but needs prior choices.</li></ul>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="stat-ab-ztest" data-title="Analyse an A/B test (two-proportion z-test)">
+<div class="lab-task"><p>Control: 1,200 conversions out of 24,000. Treatment: 1,320 out of 24,000. Compute the pooled two-proportion z statistic <code>z</code>, two-sided <code>p_value</code>, and the 95% CI of the difference (B − A) using the <b>unpooled</b> standard error → <code>ci</code> (tuple). Decide whether to ship.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from scipy.stats import norm
+xA, nA, xB, nB = 1200, 24000, 1320, 24000
+
+z = None        # TODO
+p_value = None  # TODO
+ci = None       # TODO
+print(z, p_value, ci)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from scipy.stats import norm
+xA, nA, xB, nB = 1200, 24000, 1320, 24000
+
+pA, pB = xA / nA, xB / nB
+p_pool = (xA + xB) / (nA + nB)
+se_pool = np.sqrt(p_pool * (1 - p_pool) * (1 / nA + 1 / nB))
+z = (pB - pA) / se_pool
+p_value = 2 * (1 - norm.cdf(abs(z)))
+se = np.sqrt(pA * (1 - pA) / nA + pB * (1 - pB) / nB)
+ci = (pB - pA - 1.96 * se, pB - pA + 1.96 * se)
+print(f"pA={pA:.4f} pB={pB:.4f} lift={(pB/pA-1)*100:.1f}%  z={z:.2f}  p={p_value:.4f}")
+print(f"95% CI for difference: [{ci[0]*100:.2f}, {ci[1]*100:.2f}] pp")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+from statsmodels.stats.proportion import proportions_ztest
+zr, pr = proportions_ztest([xB, xA], [nB, nA])
+assert z is not None and abs(z - zr) < 1e-6, f"z should be {zr:.4f}"
+assert p_value is not None and abs(p_value - pr) < 1e-6, "p-value is off"
+assert ci is not None and ci[0] > 0 and abs((ci[0] + ci[1]) / 2 - 0.005) < 1e-9, "CI should be centred on +0.5pp and exclude 0"
+print(f"Significant (p={p_value:.3f}); the CI excludes 0 → ship, if guardrails are fine.")
+</script>
+</div>
+
+<div class="lab" data-id="stat-peeking" data-title="Simulate the peeking problem">
+<div class="lab-task"><p>Simulate 2,000 A/A tests (no real difference, p = 0.1 in both arms, 5,000 users per arm). For each, check the p-value after every 500 users per arm (10 looks) and declare a “win” if any look has p &lt; 0.05. Store the false-positive rate with peeking in <code>fpr_peek</code> and with a single final look in <code>fpr_final</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from scipy.stats import norm
+rng = np.random.default_rng(0)
+sims, n, looks, p = 2000, 5000, 10, 0.1
+
+def pval(xa, xb, na, nb):
+    pp = (xa + xb) / (na + nb)
+    se = np.sqrt(pp * (1 - pp) * (1 / na + 1 / nb))
+    return 2 * (1 - norm.cdf(np.abs((xb / nb - xa / na) / se)))
+
+fpr_peek = None   # TODO
+fpr_final = None  # TODO
+print(fpr_peek, fpr_final)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from scipy.stats import norm
+rng = np.random.default_rng(0)
+sims, n, looks, p = 2000, 5000, 10, 0.1
+
+def pval(xa, xb, na, nb):
+    pp = (xa + xb) / (na + nb)
+    se = np.sqrt(pp * (1 - pp) * (1 / na + 1 / nb))
+    return 2 * (1 - norm.cdf(np.abs((xb / nb - xa / na) / se)))
+
+A = rng.random((sims, n)) < p
+B = rng.random((sims, n)) < p
+cA, cB = A.cumsum(1), B.cumsum(1)
+checkpoints = np.arange(n // looks, n + 1, n // looks)
+P = np.stack([pval(cA[:, k - 1], cB[:, k - 1], k, k) for k in checkpoints], axis=1)
+fpr_peek = (P < 0.05).any(1).mean()
+fpr_final = (P[:, -1] < 0.05).mean()
+print(f"false-positive rate with 10 peeks: {fpr_peek:.3f} | single final look: {fpr_final:.3f}")
+</script>
+<script type="text/x-python" data-part="check">
+assert fpr_peek is not None and fpr_final is not None, "compute both rates"
+assert 0.03 < fpr_final < 0.07, "a single look should give ≈5% false positives"
+assert fpr_peek > 0.12, "peeking should inflate the false-positive rate well above 5%"
+print(f"Peeking turned a 5% error rate into {fpr_peek:.0%}.")
+</script>
+</div>
+
+<div class="lab" data-id="stat-bootstrap" data-title="Bootstrap a CI for median revenue">
+<div class="lab-task"><p>Revenue per user is heavily skewed. Compute a 95% percentile bootstrap CI for the difference in <b>medians</b> (B − A) with 3,000 resamples (resample each group with replacement) → <code>ci</code> as a tuple <code>(low, high)</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+rng = np.random.default_rng(1)
+A = rng.lognormal(3.0, 1.0, 2000)
+B = rng.lognormal(3.1, 1.0, 2000)
+ci = None  # TODO
+print(ci)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+rng = np.random.default_rng(1)
+A = rng.lognormal(3.0, 1.0, 2000)
+B = rng.lognormal(3.1, 1.0, 2000)
+diffs = np.array([np.median(rng.choice(B, len(B))) - np.median(rng.choice(A, len(A))) for _ in range(3000)])
+ci = tuple(np.percentile(diffs, [2.5, 97.5]))
+print(f"observed median diff: {np.median(B) - np.median(A):.2f}; 95% bootstrap CI: [{ci[0]:.2f}, {ci[1]:.2f}]")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert ci is not None and len(ci) == 2 and ci[0] < ci[1], "ci should be (low, high)"
+obs = np.median(B) - np.median(A)
+assert ci[0] < obs < ci[1], "CI should contain the observed difference"
+assert 0.5 < ci[1] - ci[0] < 6, "CI width looks off"
+print("Bootstrap CI computed:", np.round(ci, 2))
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="statistics-e870e88" data-l="1"><summary>Explain a p-value to a non-technical person.</summary><div class="ans"><p>“If the new design truly made no difference, how surprising would results like ours be?” A p-value of 0.01 means results this extreme would happen only 1% of the time by random chance alone — so we doubt the “no difference” assumption. It doesn't tell us how big or important the effect is.</p></div></details>
+<details class="qa" data-id="statistics-f38ec0e" data-l="1"><summary>What is the Central Limit Theorem and why does it matter?</summary><div class="ans"><p>The distribution of the sample mean of i.i.d. variables with finite variance approaches a normal distribution as n grows, with standard error σ/√n, regardless of the original distribution. It justifies normal-based CIs and z/t-tests on averages of non-normal metrics in A/B tests.</p></div></details>
+<details class="qa" data-id="statistics-dcf88ce" data-l="1"><summary>Type I vs Type II error — which is worse?</summary><div class="ans"><p>Type I: false positive (ship a change that doesn't work), controlled by α. Type II: false negative (miss a real improvement), rate β; power = 1 − β. Which is worse depends on costs: in drug approval Type I is worse; in early-stage product exploration a Type II error (killing a good idea) may cost more.</p></div></details>
+<details class="qa" data-id="statistics-49ac996" data-l="2"><summary>How do you determine the sample size for an A/B test?</summary><div class="ans"><p>Specify baseline metric value and variance, the minimum detectable effect worth acting on, α (0.05) and power (0.8); use the power formula (n ≈ 16σ²/δ² per group for α=0.05, power 0.8) or a calculator. Convert to duration with traffic, rounding up to full weeks.</p></div></details>
+<details class="qa" data-id="statistics-f2857e2" data-l="2"><summary>What is statistical power and how can you increase it?</summary><div class="ans"><p>The probability of detecting a true effect of a given size. Increase it with more samples, larger effects (bolder changes), lower variance (CUPED/covariate adjustment, better metrics, stratification, trimming outliers), higher α, or one-sided tests when justified.</p></div></details>
+<details class="qa" data-id="statistics-356b3ab" data-l="2"><summary>Why is peeking at A/B test results a problem?</summary><div class="ans"><p>Each look is another chance to cross the significance threshold by luck, so stopping as soon as p &lt; 0.05 inflates the false-positive rate far above 5%. Pre-commit to a sample size, or use sequential methods (group sequential designs with alpha spending, always-valid p-values).</p></div></details>
+<details class="qa" data-id="statistics-5661eed" data-l="2"><summary>How do you handle multiple testing?</summary><div class="ans"><p>Pre-specify one primary metric; correct for many comparisons with Bonferroni (α/m, conservative, controls family-wise error) or Benjamini–Hochberg (controls false discovery rate, more power). Treat segment findings as hypotheses for follow-up tests.</p></div></details>
+<details class="qa" data-id="statistics-dc459bc" data-l="2"><summary>What is sample ratio mismatch?</summary><div class="ans"><p>When the observed split of users between variants differs significantly from the designed split (e.g. 50.8/49.2 with millions of users, χ² p &lt; 0.001). It signals bugs in randomisation, assignment, redirects or logging, and invalidates the results until fixed.</p></div></details>
+<details class="qa" data-id="statistics-eb85d00" data-l="2"><summary>What would you do if your A/B test is significant for one metric but a guardrail metric got worse?</summary><div class="ans"><p>Quantify both effects with CIs and translate to business value; check whether the guardrail drop is real (SRM, novelty, segments); discuss the trade-off with stakeholders; consider iterating on the design to keep the gain without the harm; don't ship blindly on the primary metric.</p></div></details>
+<details class="qa" data-id="statistics-27575e3" data-l="2"><summary>What is Simpson's paradox?</summary><div class="ans"><p>A trend in aggregated data reverses within every subgroup because of a confounding variable that changes the mix (e.g. treatment looks worse overall but better within each severity level because sicker patients got it more often). Look at stratified results and think causally.</p></div></details>
+<details class="qa" data-id="statistics-2754ef0" data-l="2"><summary>t-test vs z-test vs chi-square test?</summary><div class="ans"><p>z-test: means/proportions with known variance or large samples. t-test: means with estimated variance (small/moderate n); Welch's version for unequal variances. χ² test: categorical counts — goodness of fit or independence (e.g. conversion vs variant), equivalent to the two-proportion z-test for 2×2 tables.</p></div></details>
+<details class="qa" data-id="statistics-2b8e72c" data-l="3"><summary>What is CUPED?</summary><div class="ans"><p>Controlled-experiment Using Pre-Experiment Data: adjust the metric with a pre-period covariate, Y' = Y − θ(X − mean X), θ = Cov(X, Y)/Var(X). It keeps the estimate unbiased (randomisation makes X balanced) while reducing variance by a factor (1 − ρ²), shortening experiments.</p></div></details>
+<details class="qa" data-id="statistics-f74f78e" data-l="2"><summary>What is a confidence interval? Interpret a 95% CI of [1.2%, 3.5%] lift.</summary><div class="ans"><p>The procedure produces intervals that contain the true lift 95% of the time across repeated experiments. Here: the data are consistent with a true lift between 1.2% and 3.5%; since 0 is excluded the effect is significant at α=0.05, and even the low end may or may not clear the practical-significance bar.</p></div></details>
+<details class="qa" data-id="statistics-41d48fc" data-l="2"><summary>A test with 99% sensitivity and 99% specificity for a disease with 0.1% prevalence — P(disease | positive)?</summary><div class="ans"><p>Per 100,000 people: 100 sick → 99 true positives; 99,900 healthy → 999 false positives. P = 99 / (99 + 999) ≈ 9%. The base rate dominates — the base-rate fallacy.</p></div></details>
+<details class="qa" data-id="statistics-a40962e" data-l="3"><summary>When can't you run an A/B test, and what then?</summary><div class="ans"><p>Ethical/legal constraints, network effects you can't isolate, one-off launches, too little traffic, or long-term outcomes. Use quasi-experiments: difference-in-differences, synthetic control, regression discontinuity, instrumental variables, propensity score matching, interrupted time series — with careful assumption checks.</p></div></details>
+</div>
+</main>
+</body>
+</html>

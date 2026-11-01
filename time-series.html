@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Time-series forecasting · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="time-series">
+<main>
+<div class="eyebrow">Applied · Forecasting · Classical + ML</div>
+<h1>Time-series forecasting</h1>
+<p class="lede">Demand, sales, traffic, sensor readings: data scientists forecast constantly, and interviews probe stationarity, ACF/PACF, ARIMA orders, seasonality, time-aware validation, lag features for ML models, and the leakage traps unique to time.</p>
+<div class="toc"><a href="#pitch">30-sec answer</a><a href="#components">Components</a><a href="#stationarity">Stationarity</a><a href="#acf">ACF & PACF</a><a href="#arima">ARIMA family</a><a href="#ets">Smoothing & Prophet</a><a href="#ml">ML approach</a><a href="#validation">Validation</a><a href="#metrics">Metrics</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“I start with decomposition into trend, seasonality and residual, and a naive / seasonal-naive baseline. Classical models like ARIMA need a stationary series — constant mean and variance, autocovariance depending only on lag — which I check with ADF/KPSS and achieve by differencing or log transforms; p and q come from PACF and ACF cut-offs, or AIC search, and SARIMA adds seasonal terms. For many related series or rich covariates I use gradient boosting on lag, rolling-window and calendar features, being careful that every feature only uses information available at prediction time. Validation is always time-ordered — rolling-origin / TimeSeriesSplit with a gap — never shuffled K-fold. Metrics: MAE, RMSE, MAPE/sMAPE or MASE relative to the naive forecast.”</p></div>
+
+<h2 id="components">Components</h2>
+<ul><li><b>Trend:</b> long-run increase/decrease.</li><li><b>Seasonality:</b> fixed-period patterns (weekly, yearly).</li><li><b>Cycles:</b> irregular-period fluctuations (business cycles).</li><li><b>Noise/residual.</b></li></ul>
+<p>Additive \(y_t=T_t+S_t+R_t\) when seasonal amplitude is constant; multiplicative \(y_t=T_t\times S_t\times R_t\) when it grows with the level (log turns it additive). Tools: classical decomposition, <b>STL</b> (robust, flexible).</p>
+
+<h2 id="stationarity">Stationarity</h2>
+<p>A (weakly) stationary series has constant mean, constant variance, and autocovariance that depends only on the lag. Most classical models assume it.</p>
+<div class="table-wrap"><table>
+<tr><th>Test</th><th>H₀</th><th>Reading</th></tr>
+<tr><td>ADF (Augmented Dickey–Fuller)</td><td>Unit root (non-stationary)</td><td>p &lt; 0.05 → reject → stationary</td></tr>
+<tr><td>KPSS</td><td>Stationary</td><td>p &lt; 0.05 → reject → non-stationary</td></tr>
+</table></div>
+<p>Use both (they have opposite nulls). <b>Fixes:</b> differencing \(y_t-y_{t-1}\) (trend), seasonal differencing \(y_t-y_{t-s}\), log / Box-Cox (variance), detrending.</p>
+
+<h2 id="acf">ACF and PACF</h2>
+<ul><li><b>ACF:</b> correlation of the series with its lag k (includes indirect effects through intermediate lags).</li><li><b>PACF:</b> correlation with lag k after removing the effect of lags 1…k−1.</li></ul>
+<div class="table-wrap"><table><tr><th>Process</th><th>ACF</th><th>PACF</th></tr>
+<tr><td>AR(p)</td><td>Tails off gradually</td><td>Cuts off after lag p</td></tr>
+<tr><td>MA(q)</td><td>Cuts off after lag q</td><td>Tails off</td></tr>
+<tr><td>ARMA(p, q)</td><td>Tails off</td><td>Tails off</td></tr></table></div>
+
+<h2 id="arima">The ARIMA family</h2>
+<div class="callout math"><div class="tag">∑ ARIMA(p, d, q)</div>
+$$\text{AR}(p):\ y_t=c+\phi_1y_{t-1}+\dots+\phi_py_{t-p}+\varepsilon_t\qquad \text{MA}(q):\ y_t=\mu+\varepsilon_t+\theta_1\varepsilon_{t-1}+\dots+\theta_q\varepsilon_{t-q}$$
+<p>ARIMA applies ARMA(p, q) to the series differenced d times. <b>SARIMA(p,d,q)(P,D,Q)ₛ</b> adds seasonal AR/MA/differencing at period s. <b>SARIMAX</b> adds exogenous regressors (price, promotions, holidays).</p></div>
+<ul><li>Box–Jenkins: identify (stationarity, ACF/PACF) → estimate (MLE) → diagnose (residuals ≈ white noise: Ljung–Box test) → forecast.</li><li>Order selection by AIC/BIC (auto_arima).</li><li>Limits: one series at a time, linear, struggles with multiple seasonalities and many covariates.</li></ul>
+
+<h2 id="ets">Exponential smoothing, Prophet & others</h2>
+<ul>
+<li><b>Simple exponential smoothing:</b> \(\hat y_{t+1}=\alpha y_t+(1-\alpha)\hat y_t\) — level only.</li>
+<li><b>Holt</b> adds trend (optionally damped); <b>Holt–Winters</b> adds seasonality (additive/multiplicative). ETS = state-space formulation with error, trend, seasonal components.</li>
+<li><b>Prophet:</b> additive model y = trend (piecewise linear/logistic with changepoints) + Fourier seasonalities + holidays; robust to missing data, easy for business series.</li>
+<li><b>Croston / TSB</b> for intermittent demand (many zeros).</li>
+<li><b>Global ML / DL models:</b> LightGBM on lags across thousands of SKUs; N-BEATS, TFT, DeepAR; foundation models (e.g. TimesFM, Chronos) for zero-shot baselines.</li>
+</ul>
+
+<h2 id="ml">Forecasting with ML (feature engineering)</h2>
+<div class="table-wrap"><table>
+<tr><th>Feature type</th><th>Examples</th></tr>
+<tr><td>Lags</td><td>y(t−1), y(t−7), y(t−364) — choose by ACF and horizon</td></tr>
+<tr><td>Rolling/expanding stats</td><td>7/28-day mean, std, min, max — <b>shifted</b> so they end before t</td></tr>
+<tr><td>Calendar</td><td>day of week, month, week of year, holidays, paydays, Fourier terms</td></tr>
+<tr><td>Exogenous</td><td>price, promotions, weather, marketing spend (known in future or forecasted)</td></tr>
+<tr><td>Entity</td><td>store/SKU IDs as categoricals, hierarchy level aggregates</td></tr>
+<tr><td>Trend handling</td><td>model differences or ratios to recent level — trees can't extrapolate</td></tr>
+</table></div>
+<p><b>Multi-step strategies:</b> recursive (feed predictions back in — errors accumulate), direct (one model per horizon), multi-output. <b>Leakage traps:</b> rolling windows that include the current value, target-encoded features computed on the whole series, scaling fitted on future data, random train/test splits.</p>
+
+<h2 id="validation">Validation</h2>
+<div class="widget" data-demo="cvsplit"><div class="widget-title">Cross-validation schemes</div><div class="widget-sub">Click TimeSeriesSplit: training always precedes validation.</div></div>
+<ul><li>Rolling-origin (expanding or sliding window) backtests mimic production retraining.</li><li>Add a <b>gap</b> equal to the feature look-back / label delay.</li><li>Match the validation horizon to the business horizon (next 7 days, next quarter).</li><li>Compare against naive (last value) and seasonal-naive baselines.</li></ul>
+
+<h2 id="metrics">Forecast metrics</h2>
+<div class="table-wrap"><table>
+<tr><th>Metric</th><th>Formula idea</th><th>Notes</th></tr>
+<tr><td>MAE</td><td>mean |e|</td><td>Robust, same units</td></tr>
+<tr><td>RMSE</td><td>√mean e²</td><td>Penalises big misses</td></tr>
+<tr><td>MAPE</td><td>mean |e / y|</td><td>Undefined at y = 0; asymmetric (penalises over-forecasts more)</td></tr>
+<tr><td>sMAPE</td><td>mean 2|e| / (|y| + |ŷ|)</td><td>Bounded but still odd near 0</td></tr>
+<tr><td>WAPE / WMAPE</td><td>Σ|e| / Σ|y|</td><td>Retail favourite; robust to small values</td></tr>
+<tr><td>MASE</td><td>MAE / MAE of naive (seasonal) forecast</td><td>Scale-free; &lt; 1 beats naive</td></tr>
+<tr><td>Pinball / quantile loss</td><td>For prediction intervals</td><td>Probabilistic forecasts</td></tr>
+</table></div>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="ts-stationarity" data-title="Test stationarity and difference">
+<div class="lab-task"><p>Run ADF (<code>statsmodels.tsa.stattools.adfuller</code>) on the trending series <code>y</code> and on its first difference. Store the two p-values in <code>p_raw</code> and <code>p_diff</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+from statsmodels.tsa.stattools import adfuller
+rng = np.random.default_rng(0)
+t = np.arange(300)
+y = pd.Series(0.5 * t + 10 * np.sin(2 * np.pi * t / 12) + np.cumsum(rng.normal(size=300)))
+
+p_raw = None   # TODO
+p_diff = None  # TODO
+print(p_raw, p_diff)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, pandas as pd
+from statsmodels.tsa.stattools import adfuller
+rng = np.random.default_rng(0)
+t = np.arange(300)
+y = pd.Series(0.5 * t + 10 * np.sin(2 * np.pi * t / 12) + np.cumsum(rng.normal(size=300)))
+
+p_raw = adfuller(y)[1]
+p_diff = adfuller(y.diff().dropna())[1]
+print(f"ADF p-value raw: {p_raw:.3f} (can't reject unit root) | differenced: {p_diff:.2e} (stationary)")
+</script>
+<script type="text/x-python" data-part="check">
+assert p_raw is not None and p_raw > 0.05, "raw trending series should NOT look stationary"
+assert p_diff is not None and p_diff < 0.01, "differenced series should be stationary"
+print("Differencing removed the stochastic trend.")
+</script>
+</div>
+
+<div class="lab" data-id="ts-lag-features" data-title="Leak-free lag features + time-series CV">
+<div class="lab-task"><p>Create features from the daily series <code>df.sales</code>: <code>lag_1</code>, <code>lag_7</code>, <code>roll_mean_7</code> (7-day mean <b>ending yesterday</b>: shift by 1 before rolling), and <code>dow</code> (day of week). Drop NaN rows into <code>data</code>. Then evaluate with <code>TimeSeriesSplit(n_splits=5)</code> and MAE: (a) the seasonal-naive forecast (value 7 days ago) → <code>mae_naive</code>; (b) a <code>GradientBoostingRegressor(random_state=0)</code> trained on the raw target → <code>mae_raw</code>; (c) the same model trained on the <b>ratio</b> target <code>sales / roll_mean_7</code>, with predictions multiplied back by <code>roll_mean_7</code> → <code>mae_model</code>. The level drifts like a random walk, so watch what happens to (b) — trees can't extrapolate.</p></div>
+<div data-part="hint"><code>df.sales.shift(1).rolling(7).mean()</code> — rolling first and shifting after would include today's value (leakage).</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.metrics import mean_absolute_error
+
+rng = np.random.default_rng(3)
+idx = pd.date_range("2024-01-01", periods=730, freq="D")
+weekly = np.array([0.8, 0.9, 1.0, 1.0, 1.2, 1.5, 1.3])[idx.dayofweek]
+level = 100 + np.cumsum(rng.normal(0, 1.0, 730))
+df = pd.DataFrame({"sales": level * weekly + rng.normal(0, 4, 730)}, index=idx)
+
+# TODO: features
+data = None
+mae_naive, mae_raw, mae_model = None, None, None
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, pandas as pd
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.metrics import mean_absolute_error
+
+rng = np.random.default_rng(3)
+idx = pd.date_range("2024-01-01", periods=730, freq="D")
+weekly = np.array([0.8, 0.9, 1.0, 1.0, 1.2, 1.5, 1.3])[idx.dayofweek]
+level = 100 + np.cumsum(rng.normal(0, 1.0, 730))
+df = pd.DataFrame({"sales": level * weekly + rng.normal(0, 4, 730)}, index=idx)
+
+df["lag_1"] = df.sales.shift(1)
+df["lag_7"] = df.sales.shift(7)
+df["roll_mean_7"] = df.sales.shift(1).rolling(7).mean()
+df["dow"] = df.index.dayofweek
+data = df.dropna()
+feats = ["lag_1", "lag_7", "roll_mean_7", "dow"]
+X, y = data[feats], data.sales
+
+ratio = y / X.roll_mean_7                     # scale-free target: today vs recent level
+m_naive, m_raw, m_model = [], [], []
+for tr, va in TimeSeriesSplit(n_splits=5).split(X):
+    m_naive.append(mean_absolute_error(y.iloc[va], X.lag_7.iloc[va]))
+    raw = GradientBoostingRegressor(random_state=0).fit(X.iloc[tr], y.iloc[tr])
+    m_raw.append(mean_absolute_error(y.iloc[va], raw.predict(X.iloc[va])))
+    rel = GradientBoostingRegressor(random_state=0).fit(X.iloc[tr], ratio.iloc[tr])
+    m_model.append(mean_absolute_error(y.iloc[va], rel.predict(X.iloc[va]) * X.roll_mean_7.iloc[va]))
+mae_naive, mae_raw, mae_model = np.mean(m_naive), np.mean(m_raw), np.mean(m_model)
+print(f"seasonal-naive MAE {mae_naive:.2f} | GBR raw target {mae_raw:.2f} | GBR ratio target {mae_model:.2f}")
+print("Raw-target trees lose to naive: the level drifts outside the range seen in training.")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert data is not None and {"lag_1", "lag_7", "roll_mean_7", "dow"} <= set(data.columns), "create all four features"
+expected = df.sales.shift(1).rolling(7).mean().dropna()
+common = data.index.intersection(expected.index)
+assert np.allclose(data.loc[common, "roll_mean_7"], expected.loc[common]), "roll_mean_7 must end yesterday (shift BEFORE rolling)"
+assert data.isna().sum().sum() == 0, "drop NaN rows"
+assert None not in (mae_naive, mae_raw, mae_model), "compute mae_naive, mae_raw and mae_model"
+assert mae_raw > mae_model, "the ratio target should beat the raw target"
+assert mae_model < mae_naive, "the ratio-target model should beat seasonal-naive"
+print("Leak-free features, time-ordered CV, and you beat the baseline.")
+</script>
+</div>
+
+<div class="lab" data-id="ts-arima" data-title="Fit an ARIMA and forecast">
+<div class="lab-task"><p>The series is a simulated AR(2). Fit <code>ARIMA(y_train, order=(2, 0, 0))</code> from <code>statsmodels.tsa.arima.model</code> as <code>res</code>, forecast the next 20 points into <code>fc</code>, and check that the estimated AR coefficients are close to 0.6 and −0.3.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from statsmodels.tsa.arima.model import ARIMA
+rng = np.random.default_rng(5)
+y = np.zeros(520)
+for t in range(2, 520):
+    y[t] = 0.6 * y[t-1] - 0.3 * y[t-2] + rng.normal()
+y_train, y_test = y[:500], y[500:]
+
+res = None  # TODO
+fc = None   # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from statsmodels.tsa.arima.model import ARIMA
+rng = np.random.default_rng(5)
+y = np.zeros(520)
+for t in range(2, 520):
+    y[t] = 0.6 * y[t-1] - 0.3 * y[t-2] + rng.normal()
+y_train, y_test = y[:500], y[500:]
+
+res = ARIMA(y_train, order=(2, 0, 0)).fit()
+fc = res.forecast(steps=20)
+print(res.params.round(3))   # const, ar.L1, ar.L2, sigma2
+print("AIC:", round(res.aic, 1), "| forecast MAE:", round(np.mean(np.abs(fc - y_test)), 3))
+# Note: AR forecasts decay quickly toward the mean — long horizons ≈ unconditional mean.
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert res is not None and fc is not None and len(fc) == 20, "fit res and forecast 20 steps"
+ar = res.arparams
+assert abs(ar[0] - 0.6) < 0.12 and abs(ar[1] + 0.3) < 0.12, f"AR estimates {ar.round(2)} far from (0.6, -0.3)"
+print("Recovered AR(2) coefficients:", ar.round(3))
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="time-series-6ccaaca" data-l="1"><summary>What is stationarity and why does it matter?</summary><div class="ans"><p>A weakly stationary series has constant mean and variance over time and autocovariance that depends only on lag. Models like ARMA assume it so that patterns learned from the past apply to the future; non-stationary series can produce spurious correlations and unreliable forecasts. Check with plots, ADF and KPSS; fix with differencing or transforms.</p></div></details>
+<details class="qa" data-id="time-series-f02a434" data-l="2"><summary>How do you choose p, d, q for ARIMA?</summary><div class="ans"><p>d: number of differences needed for stationarity (ADF/KPSS). p: lag where the PACF cuts off (AR order). q: lag where the ACF cuts off (MA order). Refine by AIC/BIC grid search (auto_arima) and verify residuals are white noise (Ljung–Box).</p></div></details>
+<details class="qa" data-id="time-series-fb71d12" data-l="1"><summary>Why can't you use regular K-fold cross-validation for time series?</summary><div class="ans"><p>Shuffling puts future observations in training and past ones in validation, leaking future information and producing over-optimistic scores; autocorrelated neighbours also leak. Use time-ordered splits (expanding/sliding window, TimeSeriesSplit), with a gap for look-back features.</p></div></details>
+<details class="qa" data-id="time-series-058a053" data-l="2"><summary>ACF vs PACF?</summary><div class="ans"><p>ACF at lag k is the correlation between y_t and y_{t−k}, including indirect effects through intermediate lags. PACF at lag k is the correlation after controlling for lags 1…k−1 — the direct effect. AR(p) shows PACF cut-off at p; MA(q) shows ACF cut-off at q.</p></div></details>
+<details class="qa" data-id="time-series-3788dda" data-l="2"><summary>How would you forecast sales for 10,000 products?</summary><div class="ans"><p>A global model (LightGBM) trained across all series with lag/rolling/calendar/price/promo features and product/store categoricals, predicting scaled or differenced targets; hierarchical reconciliation if forecasts must sum across levels; special handling for intermittent and new (cold-start) products; rolling-origin backtests; WAPE/MASE metrics; baselines per series.</p></div></details>
+<details class="qa" data-id="time-series-4e434d0" data-l="2"><summary>What are the pitfalls of MAPE?</summary><div class="ans"><p>Undefined/infinite when actuals are zero, explodes for small actuals, asymmetric (over-forecasts can be penalised without bound while under-forecasts cap at 100%), and it favours models that under-forecast. Alternatives: WAPE, sMAPE, MASE.</p></div></details>
+<details class="qa" data-id="time-series-b46e92f" data-l="2"><summary>Recursive vs direct multi-step forecasting?</summary><div class="ans"><p>Recursive: one 1-step model, feed predictions back as inputs — simple but errors compound. Direct: separate model per horizon — no compounding but more models and ignores dependencies between horizons. Hybrids and multi-output models sit in between.</p></div></details>
+<details class="qa" data-id="time-series-f5b95c3" data-l="2"><summary>How do tree models handle trend in time series?</summary><div class="ans"><p>Poorly — they can't extrapolate beyond the training target range. Remove trend first (differencing, ratio to a rolling mean, detrending with a linear model) and let the trees model the stationary remainder, or combine a linear trend component with tree residual models.</p></div></details>
+<details class="qa" data-id="time-series-db50571" data-l="3"><summary>What is a unit root?</summary><div class="ans"><p>In y_t = ρ y_{t−1} + ε_t, ρ = 1 is a unit root: a random walk whose shocks persist forever and variance grows with time — non-stationary. ADF tests H₀: unit root. First differencing turns a random walk into stationary white noise.</p></div></details>
+<details class="qa" data-id="time-series-386fa8c" data-l="2"><summary>How do you handle multiple seasonalities?</summary><div class="ans"><p>Fourier terms for each period as regressors (e.g. daily + weekly + yearly), TBATS, Prophet (multiple seasonal components), MSTL decomposition, or calendar features in ML models.</p></div></details>
+<details class="qa" data-id="time-series-38b2fd7" data-l="2"><summary>How do you produce prediction intervals?</summary><div class="ans"><p>From model-based standard errors (ARIMA/ETS), quantile regression (LightGBM quantile objective / pinball loss), bootstrapped residual simulation, or conformal prediction with time-aware calibration. Evaluate with coverage and interval width.</p></div></details>
+</div>
+</main>
+</body>
+</html>
