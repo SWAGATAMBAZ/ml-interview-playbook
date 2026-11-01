@@ -2,7 +2,7 @@
 const PYODIDE_VERSION = "0.29.5";
 const LOCAL = /^(localhost|127\.0\.0\.1)$/.test(self.location.hostname);
 const BASE = (LOCAL && self.location.search.match(/[?&]pybase=([^&]+)/) ? decodeURIComponent(self.location.search.match(/[?&]pybase=([^&]+)/)[1]) : `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`);
-let py = null, curId = null;
+let py = null, curId = null, quiet = false;
 const keep = {}; // persistent namespaces (playground)
 
 const SETUP = `
@@ -10,6 +10,7 @@ import os, sys, warnings
 os.environ["MPLBACKEND"] = "AGG"
 warnings.filterwarnings("ignore", message=".*non-interactive.*")
 warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 def __mlp_figs():
     if "matplotlib.pyplot" not in sys.modules:
         return []
@@ -29,7 +30,7 @@ async function init() {
   importScripts(BASE + "pyodide.js");
   py = await loadPyodide({ indexURL: BASE });
   py.setStdout({ batched: s => postMessage({ type: "out", id: curId, text: s }) });
-  py.setStderr({ batched: s => postMessage({ type: "err", id: curId, text: s }) });
+  py.setStderr({ batched: s => { if (!quiet) postMessage({ type: "err", id: curId, text: s }); } });
   await py.runPythonAsync(SETUP);
   postMessage({ type: "ready" });
 }
@@ -44,7 +45,9 @@ function cleanTrace(msg) {
 }
 
 async function runChunk(code, ns) {
-  await py.loadPackagesFromImports(code, { messageCallback: m => postMessage({ type: "sys", id: curId, text: m }) });
+  quiet = true;   // hide runtime-internal warnings printed while packages load
+  try { await py.loadPackagesFromImports(code, { messageCallback: m => postMessage({ type: "sys", id: curId, text: m }) }); }
+  finally { quiet = false; }
   await py.runPythonAsync(code, { globals: ns });
 }
 
