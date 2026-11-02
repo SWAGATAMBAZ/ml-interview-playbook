@@ -9,38 +9,72 @@
 <main>
 <div class="eyebrow">Supervised · Regression · The model every interview starts with</div>
 <h1>Linear regression</h1>
-<p class="lede">Predict a continuous target as a weighted sum of features. It is simple, but interviewers use it to probe whether you really understand loss functions, optimisation, assumptions, diagnostics, multicollinearity and inference. Know this page cold.</p>
-<div class="toc"><a href="#pitch">30-sec answer</a><a href="#intuition">Intuition</a><a href="#math">Maths</a><a href="#assumptions">Assumptions</a><a href="#demo">Assumption demo</a><a href="#diagnostics">Diagnostics & fixes</a><a href="#inference">Coefficients & inference</a><a href="#metrics">R² vs adjusted R²</a><a href="#hp">Parameters</a><a href="#improve">Improving it</a><a href="#procon">Pros/cons</a><a href="#code">sklearn & statsmodels</a><a href="#labs">Labs</a><a href="#qa">Interview Q&A</a></div>
+<p class="lede">Predict a number, like price or demand, as a weighted sum of features. It's the simplest model, which is exactly why interviewers use it: to check you understand loss, assumptions, multicollinearity and how to read coefficients.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#assumptions">Assumptions</a><a href="#demo">See each violation</a><a href="#diagnostics">Diagnostics & fixes cheat-table</a><a href="#inference">Interpreting coefficients & inference</a><a href="#metrics">R², adjusted R² and error metrics</a><a href="#hp">Hyperparameters</a><a href="#improve">How to improve a linear model</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#code">Code</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>Plot house size against price and you get a cloud of dots. Linear regression draws the <b>one straight line that sits closest to all the dots</b>. “Closest” means the gaps between dots and line, squared and added up, are as small as possible.</p>
+<p>Each feature gets a <b>weight</b> (coefficient) that answers: “if this feature goes up by 1 and everything else stays the same, how much does the prediction change?” For example, every extra square foot adds ₹4,000. That readability is its superpower.</p></div>
+
+<h2 id="steps">How it works, step by step (no maths)</h2>
+<ol class="steps">
+<li><b>Guess a line</b>: a starting value (intercept) plus one weight per feature.</li>
+<li><b>Measure the misses</b> (residuals): actual minus predicted for every row.</li>
+<li><b>Square and add them up.</b> Squaring makes misses in both directions count and punishes big misses much more.</li>
+<li><b>Find the weights with the smallest total.</b> There's an exact one-shot formula (the normal equation), or you can walk downhill step by step (gradient descent) when data is huge.</li>
+<li><b>Check the assumptions</b> with residual plots. If they're badly broken, the coefficients and p-values can't be trusted.</li>
+</ol>
 
 <div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
-<p>“Linear regression models the target as \(\hat y = \beta_0 + \beta_1x_1 + \dots + \beta_px_p\). We choose the coefficients that minimise the sum of squared residuals (OLS), which has a closed-form solution \(\hat\beta = (X^TX)^{-1}X^Ty\) or can be found by gradient descent. Under the Gauss–Markov assumptions — linearity, independent errors, constant error variance, no perfect multicollinearity, and errors with zero mean — OLS is the best linear unbiased estimator; adding normal errors gives valid t-tests and confidence intervals. I check the assumptions with residual plots, Q-Q plots, VIF, Breusch–Pagan and Durbin–Watson, and I regularise with Ridge or Lasso when there are many or correlated features.”</p></div>
+<p>“Linear regression models the target as an intercept plus a weighted sum of the features. It picks the weights that minimise the sum of squared errors, which is ordinary least squares. That has a closed-form solution, or it can be solved by gradient descent at scale. If the assumptions hold (a linear relationship, independent errors, constant error variance, no perfect multicollinearity and roughly normal errors), the coefficients are unbiased and their confidence intervals and p-values are valid. I check this with residual plots, handle multicollinearity with VIF or Ridge, and judge the fit with RMSE or MAE on held-out data rather than R² alone.”</p></div>
 
-<h2 id="intuition">Intuition</h2>
-<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Plot house size against price and draw the straight line that sits “closest” to all the dots. “Closest” means the vertical gaps (residuals) between dots and line, squared and added up, are as small as possible. The slope tells you how many rupees each extra square foot adds, holding everything else fixed.</p></div>
-<div class="grid">
-<div class="card"><div class="kicker">model</div><h4>Linear in parameters</h4><p>“Linear” refers to the coefficients, not the features. \(y=\beta_0+\beta_1x+\beta_2x^2\) is still linear regression.</p></div>
-<div class="card"><div class="kicker">loss</div><h4>Squared error</h4><p>Squaring makes the loss smooth and convex (one global minimum) and equals maximum likelihood under Gaussian noise — but it also makes OLS sensitive to outliers.</p></div>
-<div class="card"><div class="kicker">output</div><h4>Conditional mean</h4><p>OLS estimates \(E[y\mid x]\). If you need the median or a quantile, use MAE / quantile regression instead.</p></div>
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>“Linear” means linear in the weights, not the features.</b> Adding x², log(x) or interactions is still linear regression.</li>
+<li><b>Coefficient meaning:</b> the change in the target for a one-unit increase in that feature, <i>holding the others fixed</i>. Units matter, so standardise features to compare their importance.</li>
+<li><b>Assumptions, “LINE”:</b> Linearity, Independence of errors, Normality of errors (only needed for p-values and intervals), Equal variance (homoscedasticity). Add <b>M</b>: no severe Multicollinearity.</li>
+<li><b>Multicollinearity</b> (correlated features) doesn't hurt predictions much, but it makes individual coefficients unstable and their signs untrustworthy. Detect it with VIF &gt; 5–10 and fix it by dropping or combining features, or with Ridge.</li>
+<li><b>Outliers hurt</b> because squaring magnifies big errors. Use robust losses (Huber), MAE or transformations.</li>
+<li><b>R² always rises when you add features</b>, even useless ones. Use adjusted R² or, better, a validation-set RMSE/MAE.</li>
+<li><b>It predicts the average</b> (conditional mean). For medians or percentiles use quantile regression.</li>
+<li><b>Scaling</b> matters for gradient descent and regularisation, but not for the exact OLS solution.</li>
+<li><b>Correlation ≠ causation.</b> A coefficient is only causal if confounders are controlled for.</li>
+</ul>
+
+<h2 id="deeper">Going deeper: advanced intuition</h2>
+<div class="grid two">
+<div class="card"><div class="kicker">geometry</div><h4>Prediction = shadow</h4><p>OLS finds the point closest to your target among everything the features can express, like dropping a shadow onto the floor. That's why residuals are uncorrelated with every feature and, with an intercept, sum to zero.</p></div>
+<div class="card"><div class="kicker">probability view</div><h4>Why squared error?</h4><p>If the noise is bell-shaped (Gaussian), minimising squared error is the same as picking the most likely line (maximum likelihood). If the noise has heavy tails, absolute or Huber loss is the better match.</p></div>
+<div class="card"><div class="kicker">heteroscedasticity</div><h4>When the spread fans out</h4><p>Errors that grow with the prediction (common with prices or income) leave coefficients unbiased but make the standard errors wrong. Fix it with a log target, weighted least squares or robust (HC) standard errors.</p></div>
+<div class="card"><div class="kicker">omitted variables</div><h4>The missing confounder</h4><p>Leave out a feature that drives both X and y, and X's coefficient absorbs its effect and becomes biased. This is the classic trap when someone reads coefficients as causal.</p></div>
+<div class="card"><div class="kicker">bias–variance</div><h4>High bias, low variance</h4><p>A straight line is stable: small data changes barely move it. But it underfits curved patterns. Add features to reduce bias, or regularise when there are many features.</p></div>
+<div class="card"><div class="kicker">scale</div><h4>Closed form vs gradient descent</h4><p>The exact solution gets expensive as the number of features grows. With millions of rows or features, or streaming data, use (stochastic) gradient descent, and scale the features first.</p></div>
 </div>
 
-<h2 id="math">The maths you need to explain</h2>
-<h3>1 · Model and loss</h3>
-<div class="callout math"><div class="tag">∑ Formulation</div>
-$$\hat y = X\beta,\qquad X\in\mathbb R^{n\times(p+1)}\ \text{(first column of 1s for the intercept)}$$
-$$J(\beta)=\frac1n\sum_{i=1}^n (y_i-\hat y_i)^2 = \frac1n\lVert y-X\beta\rVert^2$$</div>
-<h3>2 · Closed form (normal equation)</h3>
-<p>Set the gradient to zero: \(\nabla_\beta J = -\tfrac2n X^T(y-X\beta)=0 \Rightarrow X^TX\beta = X^Ty\), so</p>
-<div class="callout math"><div class="tag">∑ Normal equation</div>$$\hat\beta=(X^TX)^{-1}X^Ty$$
-<p>Geometrically, \(X\hat\beta\) is the orthogonal projection of \(y\) onto the column space of \(X\): residuals are perpendicular to every feature (\(X^Te=0\)). Consequences: residuals sum to zero (with an intercept) and the fitted line passes through \((\bar x,\bar y)\).</p></div>
-<p><b>Cost:</b> forming \(X^TX\) is \(O(np^2)\) and inverting it \(O(p^3)\). Fine for \(p\) up to a few thousand; for huge \(p\) or streaming data use (stochastic) gradient descent. In practice libraries solve via QR or SVD (more numerically stable than inverting), and if \(X^TX\) is singular (perfect collinearity or \(p>n\)) the pseudo-inverse or Ridge is used.</p>
-<h3>3 · Gradient descent</h3>
-<div class="callout math"><div class="tag">∑ Update rule</div>$$\beta \leftarrow \beta - \eta\,\nabla J = \beta + \frac{2\eta}{n}X^T(y-X\beta)$$
-<p>Batch GD uses all rows per step; SGD one row; mini-batch a few dozen to a few hundred. Feature scaling matters a lot for GD (elongated loss contours → zig-zagging), but not for the closed form.</p></div>
-<div class="widget" data-demo="gd"><div class="widget-title">Gradient descent on a 1-D loss</div><div class="widget-sub">Too small η crawls, too large η oscillates or diverges. For this quadratic, η &gt; 1 diverges because each step multiplies the error by (1 − 2η).</div></div>
-<h3>4 · Why squared error = maximum likelihood</h3>
-<p>If \(y_i = x_i^T\beta + \varepsilon_i\) with \(\varepsilon_i\sim\mathcal N(0,\sigma^2)\) i.i.d., the log-likelihood is \(-\tfrac{n}{2}\log(2\pi\sigma^2)-\tfrac1{2\sigma^2}\sum(y_i-x_i^T\beta)^2\). Maximising it over \(\beta\) is exactly minimising the sum of squared errors. (Laplace noise → MAE; this is a favourite follow-up.)</p>
-<h3>5 · Variance of the estimates</h3>
-<p>\(\operatorname{Var}(\hat\beta)=\sigma^2(X^TX)^{-1}\), estimated with \(\hat\sigma^2=\tfrac{\text{RSS}}{n-p-1}\). Standard errors are the square roots of the diagonal. When features are highly correlated, \(X^TX\) is near-singular, its inverse explodes and so do the standard errors — that is multicollinearity in one line.</p>
+<h2 id="when">When linear regression wins (and when it doesn't)</h2>
+<div class="callout win"><div class="tag">🏆 Pick linear regression when…</div>
+<ul>
+<li>You need to <b>explain the drivers</b>, not just predict: “each extra ₹1 of ad spend brings ₹3.2 in sales”. Typical uses are pricing, marketing-mix and economics.</li>
+<li>The <b>data is small</b> (tens to a few thousand rows). Fewer parameters means less overfitting.</li>
+<li>The <b>relationship is roughly linear</b>, possibly after log or polynomial features.</li>
+<li>You must <b>extrapolate</b> beyond the training range (trends). Tree models can't.</li>
+<li>You need a <b>fast, tiny, auditable model</b> or a <b>baseline</b> to beat.</li>
+</ul></div>
+<div class="table-wrap"><table class="vs">
+<tr><th>Compared with</th><th>Choose linear regression when…</th><th>Choose the other when…</th></tr>
+<tr><td><a href="regularization.html">Ridge / Lasso</a></td><td>There are few features compared with rows, and you need unbiased coefficients and p-values.</td><td>There are many or correlated features, or you need feature selection.</td></tr>
+<tr><td><a href="xgboost.html">XGBoost</a> / <a href="random-forest.html">Random Forest</a></td><td>Interpretability, small data or extrapolation matters.</td><td>Relationships are non-linear with interactions, and accuracy is king.</td></tr>
+<tr><td><a href="time-series.html">ARIMA / time-series models</a></td><td>The target is driven by explanatory features.</td><td>The target depends mostly on its own past values.</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Avoid it when…</div>
+<ul>
+<li>The relationship is <b>strongly non-linear</b> with many interactions you can't hand-craft.</li>
+<li>There are <b>many correlated features</b> or more features than rows. Plain OLS becomes unstable, so use Ridge or Lasso.</li>
+<li>There are <b>big outliers in the target</b> and you can't clean them. Use Huber or quantile regression.</li>
+<li>The target is a <b>class or a count</b>. Use logistic or Poisson regression.</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>Marketing-mix model:</b> weekly sales against TV, digital and print spend over 3 years (156 rows). There's too little data for boosting, and leadership wants “₹ of sales per ₹ of spend” for each channel. Log-transform the spend to capture diminishing returns, check VIF because TV and digital campaigns run together, and report coefficients with confidence intervals.</p></div>
 
 <h2 id="assumptions">Assumptions (memorise “LINE + M”)</h2>
 <div class="table-wrap"><table>
@@ -117,6 +151,27 @@ $$R^2 = 1-\frac{\text{RSS}}{\text{TSS}} = 1-\frac{\sum (y_i-\hat y_i)^2}{\sum (y
 <div class="procon"><div class="pro"><h4>✅ Strengths</h4><ul><li>Fast, closed-form, scales well</li><li>Highly interpretable coefficients, inference (CIs, p-values)</li><li>Strong baseline; good extrapolation when the relationship really is linear</li><li>Low variance with enough data</li></ul></div>
 <div class="con"><h4>❌ Weaknesses</h4><ul><li>High bias for non-linear relationships unless you engineer features</li><li>Sensitive to outliers and multicollinearity</li><li>Needs encoding of categoricals, no automatic interactions</li><li>Assumptions needed for valid inference</li></ul></div></div>
 <p><b>Use when</b> you need explainability (pricing, econometrics, regulated settings), a baseline, or the signal is roughly additive. <b>Avoid</b> for complex interactions or when only raw predictive accuracy on tabular data matters (try gradient boosting).</p>
+
+<details class="deep" id="maths"><summary>Optional maths — only if the interviewer goes deep<span class="small">click to expand</span></summary>
+<h3 id="math">The maths you need to explain</h3>
+<h4>1 · Model and loss</h4>
+<div class="callout math"><div class="tag">∑ Formulation</div>
+$$\hat y = X\beta,\qquad X\in\mathbb R^{n\times(p+1)}\ \text{(first column of 1s for the intercept)}$$
+$$J(\beta)=\frac1n\sum_{i=1}^n (y_i-\hat y_i)^2 = \frac1n\lVert y-X\beta\rVert^2$$</div>
+<h4>2 · Closed form (normal equation)</h4>
+<p>Set the gradient to zero: \(\nabla_\beta J = -\tfrac2n X^T(y-X\beta)=0 \Rightarrow X^TX\beta = X^Ty\), so</p>
+<div class="callout math"><div class="tag">∑ Normal equation</div>$$\hat\beta=(X^TX)^{-1}X^Ty$$
+<p>Geometrically, \(X\hat\beta\) is the orthogonal projection of \(y\) onto the column space of \(X\): residuals are perpendicular to every feature (\(X^Te=0\)). Consequences: residuals sum to zero (with an intercept) and the fitted line passes through \((\bar x,\bar y)\).</p></div>
+<p><b>Cost:</b> forming \(X^TX\) is \(O(np^2)\) and inverting it \(O(p^3)\). Fine for \(p\) up to a few thousand; for huge \(p\) or streaming data use (stochastic) gradient descent. In practice libraries solve via QR or SVD (more numerically stable than inverting), and if \(X^TX\) is singular (perfect collinearity or \(p>n\)) the pseudo-inverse or Ridge is used.</p>
+<h4>3 · Gradient descent</h4>
+<div class="callout math"><div class="tag">∑ Update rule</div>$$\beta \leftarrow \beta - \eta\,\nabla J = \beta + \frac{2\eta}{n}X^T(y-X\beta)$$
+<p>Batch GD uses all rows per step; SGD one row; mini-batch a few dozen to a few hundred. Feature scaling matters a lot for GD (elongated loss contours → zig-zagging), but not for the closed form.</p></div>
+<div class="widget" data-demo="gd"><div class="widget-title">Gradient descent on a 1-D loss</div><div class="widget-sub">Too small η crawls, too large η oscillates or diverges. For this quadratic, η &gt; 1 diverges because each step multiplies the error by (1 − 2η).</div></div>
+<h4>4 · Why squared error = maximum likelihood</h4>
+<p>If \(y_i = x_i^T\beta + \varepsilon_i\) with \(\varepsilon_i\sim\mathcal N(0,\sigma^2)\) i.i.d., the log-likelihood is \(-\tfrac{n}{2}\log(2\pi\sigma^2)-\tfrac1{2\sigma^2}\sum(y_i-x_i^T\beta)^2\). Maximising it over \(\beta\) is exactly minimising the sum of squared errors. (Laplace noise → MAE; this is a favourite follow-up.)</p>
+<h4>5 · Variance of the estimates</h4>
+<p>\(\operatorname{Var}(\hat\beta)=\sigma^2(X^TX)^{-1}\), estimated with \(\hat\sigma^2=\tfrac{\text{RSS}}{n-p-1}\). Standard errors are the square roots of the diagonal. When features are highly correlated, \(X^TX\) is near-singular, its inverse explodes and so do the standard errors — that is multicollinearity in one line.</p>
+</details>
 
 <h2 id="code">Code you should be able to write from memory</h2>
 <script type="text/plain" class="snippet" data-title="scikit-learn: pipeline + CV">

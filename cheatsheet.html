@@ -34,7 +34,10 @@
 <tr><td><a href="svm.html">SVM</a></td><td>Max-margin</td><td>Yes!</td><td>Yes (kernels)</td><td>Low (kernel)</td><td>Slow on big n / medium</td><td>Medium</td><td>High-d small/medium data</td></tr>
 <tr><td><a href="decision-trees.html">Decision tree</a></td><td>Non-parametric</td><td>No</td><td>Yes</td><td>High (shallow)</td><td>Fast / very fast</td><td>Low (features)</td><td>Rules, explanation, ensemble base</td></tr>
 <tr><td><a href="random-forest.html">Random Forest</a></td><td>Bagging</td><td>No</td><td>Yes</td><td>Medium (importance, SHAP)</td><td>Medium (parallel) / medium</td><td>Low</td><td>Robust tabular baseline</td></tr>
-<tr><td><a href="boosting.html">GBM / XGBoost / LightGBM / CatBoost</a></td><td>Boosting</td><td>No</td><td>Yes</td><td>Medium (SHAP)</td><td>Medium / fast</td><td>Medium</td><td>Best accuracy on tabular data</td></tr>
+<tr><td><a href="boosting.html">AdaBoost / GBM</a></td><td>Boosting</td><td>No</td><td>Yes</td><td>Medium (SHAP)</td><td>Medium</td><td>Medium</td><td>Clean tabular data, sklearn-only stacks, custom losses</td></tr>
+<tr><td><a href="xgboost.html">XGBoost</a></td><td>Boosting</td><td>No</td><td>Yes</td><td>Medium (SHAP)</td><td>Medium / fast</td><td>Medium</td><td>Small–medium tabular data, missing values, monotonic constraints</td></tr>
+<tr><td><a href="lightgbm.html">LightGBM</a></td><td>Boosting</td><td>No</td><td>Yes</td><td>Medium (SHAP)</td><td>Fastest</td><td>Medium</td><td>Millions of rows, sparse features, ranking, frequent retraining</td></tr>
+<tr><td><a href="catboost.html">CatBoost</a></td><td>Boosting</td><td>No</td><td>Yes</td><td>Medium (SHAP)</td><td>Slower train, very fast predict</td><td>Low (good defaults)</td><td>Many high-cardinality categorical columns, little tuning time</td></tr>
 <tr><td><a href="kmeans.html">K-means</a></td><td>Clustering</td><td>Yes</td><td>Convex clusters only</td><td>High (centroids)</td><td>Fast</td><td>High</td><td>Segmentation</td></tr>
 <tr><td><a href="clustering.html">DBSCAN / GMM / hierarchical</a></td><td>Clustering</td><td>Yes</td><td>Yes / elliptical / depends</td><td>Medium</td><td>Medium / medium / slow</td><td>Low / medium / varies</td><td>Arbitrary shapes, soft clusters, taxonomy</td></tr>
 <tr><td><a href="dim-reduction.html">PCA</a></td><td>Linear projection</td><td>Yes</td><td>No (kernel PCA: yes)</td><td>Low–medium</td><td>Fast</td><td>High</td><td>Compression, decorrelation</td></tr>
@@ -106,7 +109,7 @@
 <li><a href="random-forest.html#math">Why random forests reduce variance</a></li>
 <li><a href="boosting.html#gbm">How gradient boosting works</a></li>
 <li><a href="random-forest.html#vs">Bagging vs boosting; RF vs GBM</a></li>
-<li><a href="xgboost.html#xgb">What makes XGBoost/LightGBM/CatBoost special</a></li>
+<li><a href="xgboost.html#when">XGBoost vs LightGBM vs CatBoost: when each wins</a></li>
 <li><a href="kmeans.html#choosek">K-means: choosing K & limitations</a></li>
 <li><a href="dim-reduction.html#pca">PCA intuition & why standardise</a></li>
 <li><a href="metrics.html#cls">Precision vs recall; when to use which</a></li>

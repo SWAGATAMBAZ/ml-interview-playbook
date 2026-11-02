@@ -9,31 +9,72 @@
 <main>
 <div class="eyebrow">Supervised · Classification · The default baseline classifier</div>
 <h1>Logistic regression</h1>
-<p class="lede">Despite the name, it's a classifier: a linear model of the <b>log-odds</b>, squashed through a sigmoid into a probability and trained by maximising likelihood (minimising log-loss). Expect questions on why not MSE, how to interpret coefficients as odds ratios, its assumptions, multiclass extensions and imbalanced data.</p>
-<div class="toc"><a href="#pitch">30-sec answer</a><a href="#intuition">Intuition</a><a href="#math">Maths</a><a href="#demo">Sigmoid demo</a><a href="#interpret">Odds ratios</a><a href="#assumptions">Assumptions</a><a href="#multiclass">Multiclass</a><a href="#hp">Hyperparameters</a><a href="#improve">Improving it</a><a href="#procon">Pros/cons</a><a href="#code">Code</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<p class="lede">Despite the name, it's a <b>classification</b> model: it predicts the <i>probability</i> of yes/no outcomes like churn, fraud or click. It's the default baseline for binary problems and the model regulators like most, because every coefficient has a clear meaning.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#interpret">Interpreting coefficients</a><a href="#assumptions">Assumptions</a><a href="#multiclass">Multiclass</a><a href="#hp">Hyperparameters</a><a href="#improve">Improving performance</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#code">Code</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
-<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“Logistic regression models \(P(y=1\mid x)=\sigma(w^Tx+b)\) where σ is the sigmoid; equivalently the log-odds are linear in x, so the decision boundary is a hyperplane. It's trained by maximum likelihood, which is the binary cross-entropy (log-loss) — convex, so gradient methods find the global optimum; there's no closed form. Coefficients are log-odds ratios: \(e^{w_j}\) is the multiplicative change in odds per unit of \(x_j\). It needs independent observations, little multicollinearity and linearity in the logit, outputs reasonably calibrated probabilities, and is regularised with L2 by default (C = 1/λ). For multiclass we use one-vs-rest or softmax.”</p></div>
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>Logistic regression first adds up evidence like linear regression does: “+2 points for a month-to-month contract, +1.5 for many complaints, −3 for a long tenure”. The total score can be any number, but a probability must sit between 0 and 1. So it passes the score through an <b>S-shaped curve</b> (the sigmoid): a very negative score gives about 0%, zero gives 50%, and a very positive score gives about 100%.</p>
+<p>Finally you choose a <b>cut-off</b>: above 50% (or whatever threshold suits the business) means “will churn”.</p></div>
 
-<h2 id="intuition">Intuition</h2>
-<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Linear regression gives any number from −∞ to +∞, but a probability must sit between 0 and 1. Logistic regression computes the same weighted score, then passes it through an S-shaped curve: very negative scores → close to 0, very positive → close to 1, score 0 → exactly 0.5. Then you pick a threshold (often 0.5) to decide the class.</p></div>
+<h2 id="steps">How it works, step by step (no maths)</h2>
+<ol class="steps">
+<li><b>Score each row</b>: intercept plus a weight × each feature, exactly like linear regression.</li>
+<li><b>Squash the score into a probability</b> with the S-curve.</li>
+<li><b>Judge the fit with log-loss.</b> Being confidently wrong (saying 99% when the answer is no) is punished very heavily, and being unsure is punished mildly.</li>
+<li><b>Adjust the weights by gradient descent</b> to minimise the log-loss. There's no closed-form answer, but the loss is bowl-shaped, so there's one best solution.</li>
+<li><b>Pick a decision threshold</b> using precision/recall and business costs, not automatically 0.5.</li>
+</ol>
 
-<h2 id="math">The maths</h2>
-<div class="callout math"><div class="tag">∑ Model</div>
-$$z = w^Tx+b,\qquad \hat p=\sigma(z)=\frac{1}{1+e^{-z}},\qquad \log\frac{\hat p}{1-\hat p}=w^Tx+b$$</div>
-<h3>Loss: negative log-likelihood = binary cross-entropy</h3>
-<div class="callout math"><div class="tag">∑ Log-loss and its gradient</div>
-$$L(w)=-\frac1n\sum_{i=1}^n\Big[y_i\log\hat p_i+(1-y_i)\log(1-\hat p_i)\Big]$$
-$$\nabla_w L=\frac1n X^T(\hat p-y)\qquad(\text{same form as linear regression!})$$
-<p>Uses \(\sigma'(z)=\sigma(z)(1-\sigma(z))\). The Hessian \(X^TSX\) with \(S=\operatorname{diag}(\hat p_i(1-\hat p_i))\) is positive semi-definite → convex. Solvers: lbfgs (default), newton-cg / IRLS (Newton's method), liblinear (coordinate descent), sag/saga (stochastic average gradient, large data, supports L1).</p></div>
-<h3>Why not mean squared error?</h3>
-<ul>
-<li>MSE composed with a sigmoid is <b>non-convex</b> in w → local minima.</li>
-<li>Gradient of MSE contains \(\sigma'(z)\), which vanishes when the model is confidently wrong → learning stalls. Log-loss's gradient is simply \((\hat p-y)\), large when wrong.</li>
-<li>Log-loss is the correct likelihood for Bernoulli outcomes, and it heavily penalises confident mistakes.</li>
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“Logistic regression models the log-odds of the positive class as a linear function of the features, and the sigmoid turns that into a probability. It's trained by maximum likelihood, which is the same as minimising log-loss (cross-entropy). That loss is convex, so gradient-based solvers find the global optimum. Each coefficient is the change in log-odds per unit of the feature, and exponentiating it gives an odds ratio. The decision boundary is linear, so non-linearity needs feature engineering. I use L2 or L1 regularisation, choose the threshold from precision–recall trade-offs, and handle imbalance with class weights.”</p></div>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>It's classification</b>, called “regression” because it regresses the <i>log-odds</i>.</li>
+<li><b>Odds ratio:</b> exp(coefficient). Example: coefficient 0.7 → exp(0.7) ≈ 2, so each unit <i>doubles the odds</i> (not the probability).</li>
+<li><b>Linear decision boundary.</b> To capture curves, add interactions, polynomials or bins, or use trees.</li>
+<li><b>Log-loss, not squared error.</b> Squared error with a sigmoid isn't convex and gives weak gradients.</li>
+<li><b>Outputs are well-calibrated probabilities</b> by default. That's a big plus for risk scoring and expected-value decisions.</li>
+<li><b>Threshold ≠ 0.5 by default.</b> Tune it for the business cost of false positives vs false negatives.</li>
+<li><b>Imbalanced data:</b> use <code>class_weight="balanced"</code> or resampling, and evaluate with PR-AUC, recall and F1, not accuracy.</li>
+<li><b>Regularised by default in sklearn</b> (L2, C=1). <b>Smaller C = stronger penalty.</b> Scale the features.</li>
+<li><b>Perfect separation</b> makes coefficients run off to infinity, and regularisation fixes it.</li>
+<li><b>Multiclass:</b> one-vs-rest or softmax (multinomial).</li>
 </ul>
-<h3>Perfect separation</h3>
-<p>If classes are perfectly separable, the MLE doesn't exist: pushing ‖w‖ → ∞ keeps decreasing the loss. Unregularised solvers diverge / warn. Regularisation (the default L2) fixes this.</p>
-<div class="widget" id="demo" data-demo="sigmoid"><div class="widget-title">Fit a sigmoid by hand</div><div class="widget-sub">Move w and b to minimise the mean log-loss. Notice the boundary is where w·x + b = 0.</div></div>
+
+<h2 id="deeper">Going deeper: advanced intuition</h2>
+<div class="grid two">
+<div class="card"><div class="kicker">why log-odds</div><h4>Evidence adds up</h4><p>Log-odds turns “multiplying odds” into “adding points”, so independent clues simply add. That's why the model is a scorecard, and why banks have used logistic scorecards for decades.</p></div>
+<div class="card"><div class="kicker">the loss</div><h4>Confident and wrong = disaster</h4><p>Log-loss grows without limit as you approach 100% confidence in the wrong answer. That forces the model to stay humble, which is why its probabilities are usually trustworthy.</p></div>
+<div class="card"><div class="kicker">vs Naive Bayes</div><h4>Discriminative vs generative</h4><p>Logistic regression learns the boundary directly. Naive Bayes models how each class generates the data. With little data, NB often wins. With more data, logistic usually wins because it doesn't assume features are independent.</p></div>
+<div class="card"><div class="kicker">it's a neuron</div><h4>Logistic = one-neuron network</h4><p>A single neuron with a sigmoid activation and cross-entropy loss <i>is</i> logistic regression. Neural networks stack many of them.</p></div>
+<div class="card"><div class="kicker">interpretation trap</div><h4>Odds are not probabilities</h4><p>Doubling the odds moves a probability from 1% to about 2%, but from 50% to about 67%. The effect on probability depends on where you start.</p></div>
+<div class="card"><div class="kicker">calibration</div><h4>Rebalancing breaks it</h4><p>Class weights or oversampling shift the predicted probabilities upward. If you need true probabilities afterwards, recalibrate on untouched validation data.</p></div>
+</div>
+
+<h2 id="when">When logistic regression wins (and when it doesn't)</h2>
+<div class="callout win"><div class="tag">🏆 Pick logistic regression when…</div>
+<ul>
+<li>You need <b>interpretable, auditable</b> decisions: credit scorecards, medical risk, insurance (regulated industries).</li>
+<li>You need <b>well-calibrated probabilities</b> to feed expected-value or pricing decisions.</li>
+<li>The data is <b>high-dimensional and sparse</b>, like text with TF-IDF or one-hot IDs. Linear models are fast and strong there.</li>
+<li>You want a <b>fast baseline</b> or need <b>very low-latency</b> scoring (a dot product).</li>
+<li>The data is small to medium and the signal is roughly additive.</li>
+</ul></div>
+<div class="table-wrap"><table class="vs">
+<tr><th>Compared with</th><th>Choose logistic when…</th><th>Choose the other when…</th></tr>
+<tr><td><a href="xgboost.html">XGBoost / LightGBM</a></td><td>Interpretability, calibration or very sparse text features matter.</td><td>Relationships are non-linear with interactions on tabular data.</td></tr>
+<tr><td><a href="naive-bayes.html">Naive Bayes</a></td><td>You have a decent amount of data and features are correlated.</td><td>Data is tiny, or you need instant training on text.</td></tr>
+<tr><td><a href="svm.html">SVM</a></td><td>You need probabilities and coefficient explanations.</td><td>You want the maximum-margin boundary or kernels on medium-size data.</td></tr>
+<tr><td><a href="decision-trees.html">Decision tree</a></td><td>The effects are additive and smooth.</td><td>You need simple if-then rules or the effects are threshold-like.</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Avoid it when…</div><ul>
+<li>The class boundary is <b>clearly non-linear</b> and you can't engineer features for it.</li>
+<li>There are <b>complex interactions</b> between many features (tree ensembles capture these automatically).</li>
+<li>Features are <b>highly collinear</b> and you need to interpret individual coefficients (or regularise and interpret with care).</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>Loan approval scorecard:</b> a regulator requires the bank to explain every rejection. Logistic regression on binned features (WoE encoding) gives points per attribute, and odds ratios explain the decision. Its calibrated probability of default feeds directly into interest-rate pricing. Gradient boosting might add 1–2% AUC, but the explainability requirement wins.</p></div>
 
 <h2 id="interpret">Interpreting coefficients</h2>
 <ul>
@@ -88,6 +129,26 @@ $$\nabla_w L=\frac1n X^T(\hat p-y)\qquad(\text{same form as linear regression!})
 <h2 id="procon">Pros, cons & when to use</h2>
 <div class="procon"><div class="pro"><h4>✅ Strengths</h4><ul><li>Fast, scalable, few hyperparameters</li><li>Probabilities, generally well calibrated</li><li>Interpretable (odds ratios), regulatory-friendly (credit scoring)</li><li>Strong baseline; works well with high-dimensional sparse data (text, TF-IDF)</li></ul></div>
 <div class="con"><h4>❌ Weaknesses</h4><ul><li>Linear decision boundary unless you engineer features</li><li>Struggles with complex interactions</li><li>Sensitive to outliers, multicollinearity, perfect separation</li><li>Needs scaling & encoding</li></ul></div></div>
+
+<details class="deep" id="maths"><summary>Optional maths — only if the interviewer goes deep<span class="small">click to expand</span></summary>
+<h3 id="math">The maths</h3>
+<div class="callout math"><div class="tag">∑ Model</div>
+$$z = w^Tx+b,\qquad \hat p=\sigma(z)=\frac{1}{1+e^{-z}},\qquad \log\frac{\hat p}{1-\hat p}=w^Tx+b$$</div>
+<h4>Loss: negative log-likelihood = binary cross-entropy</h4>
+<div class="callout math"><div class="tag">∑ Log-loss and its gradient</div>
+$$L(w)=-\frac1n\sum_{i=1}^n\Big[y_i\log\hat p_i+(1-y_i)\log(1-\hat p_i)\Big]$$
+$$\nabla_w L=\frac1n X^T(\hat p-y)\qquad(\text{same form as linear regression!})$$
+<p>Uses \(\sigma'(z)=\sigma(z)(1-\sigma(z))\). The Hessian \(X^TSX\) with \(S=\operatorname{diag}(\hat p_i(1-\hat p_i))\) is positive semi-definite → convex. Solvers: lbfgs (default), newton-cg / IRLS (Newton's method), liblinear (coordinate descent), sag/saga (stochastic average gradient, large data, supports L1).</p></div>
+<h4>Why not mean squared error?</h4>
+<ul>
+<li>MSE composed with a sigmoid is <b>non-convex</b> in w → local minima.</li>
+<li>Gradient of MSE contains \(\sigma'(z)\), which vanishes when the model is confidently wrong → learning stalls. Log-loss's gradient is simply \((\hat p-y)\), large when wrong.</li>
+<li>Log-loss is the correct likelihood for Bernoulli outcomes, and it heavily penalises confident mistakes.</li>
+</ul>
+<h4>Perfect separation</h4>
+<p>If classes are perfectly separable, the MLE doesn't exist: pushing ‖w‖ → ∞ keeps decreasing the loss. Unregularised solvers diverge / warn. Regularisation (the default L2) fixes this.</p>
+<div class="widget" id="demo" data-demo="sigmoid"><div class="widget-title">Fit a sigmoid by hand</div><div class="widget-sub">Move w and b to minimise the mean log-loss. Notice the boundary is where w·x + b = 0.</div></div>
+</details>
 
 <h2 id="code">Code</h2>
 <script type="text/plain" class="snippet" data-title="Pipeline, CV and odds ratios">

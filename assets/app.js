@@ -17,7 +17,9 @@
     { id: "decision-trees", file: "decision-trees.html", title: "Decision trees", group: "Supervised models" },
     { id: "random-forest", file: "random-forest.html", title: "Bagging & Random Forest", group: "Supervised models" },
     { id: "boosting", file: "boosting.html", title: "AdaBoost & Gradient Boosting", group: "Supervised models" },
-    { id: "xgboost", file: "xgboost.html", title: "XGBoost, LightGBM & CatBoost", group: "Supervised models" },
+    { id: "xgboost", file: "xgboost.html", title: "XGBoost", group: "Supervised models" },
+    { id: "lightgbm", file: "lightgbm.html", title: "LightGBM", group: "Supervised models" },
+    { id: "catboost", file: "catboost.html", title: "CatBoost", group: "Supervised models" },
     { id: "kmeans", file: "kmeans.html", title: "K-Means clustering", group: "Unsupervised" },
     { id: "clustering", file: "clustering.html", title: "Hierarchical, DBSCAN, GMM & anomalies", group: "Unsupervised" },
     { id: "dim-reduction", file: "dim-reduction.html", title: "PCA & dimensionality reduction", group: "Unsupervised" },
@@ -195,6 +197,7 @@
     const el = document.getElementById(h);
     if (!el) return;
     if (el.tagName === "DETAILS") el.open = true;
+    const dp = el.closest("details.deep"); if (dp && !dp.open) dp.open = true;
     const par = el.closest(".tab-panel");
     if (par && !par.classList.contains("on")) {
       const root = par.parentElement; const idx = [...root.querySelectorAll(":scope > .tab-panel")].indexOf(par);
@@ -327,6 +330,7 @@
     renderMath(document.body);
     openHash();
     window.addEventListener("hashchange", openHash);
+    document.querySelectorAll("details.deep").forEach(d => d.addEventListener("toggle", () => { if (d.open) window.dispatchEvent(new Event("resize")); }));
   });
 
   // canvas helper for demos

@@ -9,21 +9,78 @@
 <main>
 <div class="eyebrow">Supervised · Ensemble · Bagging</div>
 <h1>Bagging & Random Forest</h1>
-<p class="lede">Average many deep, decorrelated trees to cut variance without adding much bias. Random Forest is the most reliable “it just works” model on tabular data and the comparison point for boosting. Expect: how bagging reduces variance, why random feature subsets, OOB error, feature importance pitfalls, RF vs GBM.</p>
-<div class="toc"><a href="#pitch">30-sec answer</a><a href="#bagging">Bagging</a><a href="#rf">Random Forest</a><a href="#math">Why it works</a><a href="#oob">OOB error</a><a href="#importance">Feature importance</a><a href="#hp">Hyperparameters</a><a href="#extra">Extra Trees</a><a href="#vs">RF vs boosting</a><a href="#procon">Pros/cons</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<p class="lede">Many deep decision trees, each trained on a slightly different random slice of the data, voting together. Random Forest is the most reliable “works out of the box” model for tabular data. Interviews probe bagging, why randomness helps, out-of-bag error and feature-importance traps.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#oob">Out-of-bag</a><a href="#importance">Feature importance</a><a href="#hp">Hyperparameters</a><a href="#extra">Extremely Randomised Trees</a><a href="#vs">Random Forest vs Gradient Boosting</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
-<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“Random Forest is bagging of decision trees plus feature randomness. Each tree is trained on a bootstrap sample, and at each split only a random subset of features (max_features, e.g. √d) is considered, which decorrelates the trees. Predictions are averaged (regression) or voted/probability-averaged (classification). Averaging B trees with variance σ² and pairwise correlation ρ gives variance \(\rho\sigma^2+\frac{1-\rho}{B}\sigma^2\), so lowering ρ is the key. Trees are grown deep (low bias), more trees never overfit — they just plateau — and the ~37% out-of-bag rows give a free validation estimate. It's robust, needs little tuning or preprocessing, but is large, slower at inference, and impurity importances are biased.”</p></div>
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>Ask one expert and you get one opinion, which might be wildly off. Ask <b>500 people</b>, each of whom has seen a <b>different random sample</b> of the evidence and was only allowed to look at <b>a few clues at a time</b>, and then average their answers. Individually they're erratic, but their mistakes point in different directions and cancel out. That's the wisdom of crowds.</p>
+<p>One decision tree is that erratic expert: very sensitive to the exact data it saw. Random Forest builds hundreds of deliberately <i>different</i> trees and lets them vote. The more different the trees, the better the crowd.</p></div>
 
-<h2 id="bagging">Bagging (bootstrap aggregating)</h2>
-<ol><li>Draw B bootstrap samples (n rows sampled with replacement).</li><li>Train a high-variance base learner (deep tree) on each, independently and in parallel.</li><li>Aggregate: average for regression, majority vote or averaged probabilities for classification.</li></ol>
-<p>Each bootstrap sample contains about \(1-(1-1/n)^n\approx 1-1/e\approx 63.2\%\) of unique rows; the remaining ~36.8% are <b>out-of-bag</b> for that tree.</p>
-<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Ask 500 people who each saw a slightly different sample of the evidence and were each allowed to look at only a few clues at a time. Individually they're erratic; their average is remarkably stable. That's the “wisdom of crowds” — but only if the crowd's mistakes aren't all the same, which is why RF forces diversity.</p></div>
+<h2 id="steps">How it works, step by step (no maths)</h2>
+<ol class="steps">
+<li><b>Make a bootstrap sample</b>: draw n rows <i>with replacement</i> from the training data. About 63% of rows appear (some twice), and the other ~37% are “out-of-bag”.</li>
+<li><b>Grow a deep tree</b> on that sample, but at <b>each split only consider a random subset of features</b> (e.g. √(number of features)). This is the “random” in Random Forest.</li>
+<li><b>Repeat</b> hundreds of times, independently. This can run fully in parallel.</li>
+<li><b>Predict</b> by majority vote (classification) or averaging (regression).</li>
+<li><b>Free validation:</b> score each row using only the trees that never saw it (the out-of-bag estimate).</li>
+</ol>
 
-<h2 id="rf">What Random Forest adds</h2>
-<p>Plain bagged trees are highly correlated — a few strong features dominate every tree's top splits. RF considers only a random subset of <code>max_features</code> candidates at <b>each split</b>, so other features get a chance and the trees disagree more. Defaults: \(\sqrt d\) for classification, all features (1.0) in sklearn regression (originally d/3).</p>
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“Random Forest is bagging of decision trees plus feature randomness. Each tree is trained on a bootstrap sample, and at every split it considers only a random subset of features. That decorrelates the trees, so averaging them cuts variance a lot while keeping the low bias of deep trees. It needs little tuning, no scaling, handles non-linearity and interactions, gives a free out-of-bag error estimate, and is hard to overfit by adding trees. Its weaknesses: impurity-based feature importance is biased toward high-cardinality features, so I use permutation importance or SHAP; it's slower and larger at inference than a single tree; and it can't extrapolate. Tuned boosting usually beats it on accuracy.”</p></div>
 
-<h2 id="math">Why it works: variance of an average</h2>
-<div class="callout math"><div class="tag">∑ Variance of the ensemble</div>$$\operatorname{Var}\Big(\frac1B\sum_{b=1}^B T_b\Big)=\rho\sigma^2+\frac{1-\rho}{B}\sigma^2$$<p>As B → ∞ the second term vanishes, but the first stays: <b>correlation ρ between trees limits the benefit</b>. Bootstrapping and feature subsampling reduce ρ (at a small cost in individual-tree bias/variance). Bias of the average ≈ bias of one tree, so use low-bias (deep) trees.</p></div>
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Bagging reduces variance, not bias.</b> So use deep, low-bias trees as the members.</li>
+<li><b>Feature subsampling (max_features) is the key addition over plain bagging.</b> It stops one strong feature from making every tree look the same.</li>
+<li><b>More trees never overfit.</b> The error flattens out, and extra trees only cost time. Overfitting comes from tree depth and leaf size, not tree count.</li>
+<li><b>Out-of-bag (OOB) score:</b> a built-in validation estimate with no separate hold-out set needed.</li>
+<li><b>Feature importance trap:</b> impurity (MDI) importance favours high-cardinality and continuous features, and splits credit between correlated ones. Prefer permutation importance or SHAP.</li>
+<li><b>No scaling, robust to outliers and noise, handles mixed types.</b> It's a great first model.</li>
+<li><b>Parallel training</b> (n_jobs=-1). Boosting is inherently sequential.</li>
+<li><b>Can't extrapolate</b>, and predictions are averages, so extremes get pulled toward the middle.</li>
+<li><b>Imbalance:</b> class_weight="balanced_subsample" or balanced random forest.</li>
+</ul>
+
+<h2 id="deeper">Going deeper: advanced intuition</h2>
+<div class="grid two">
+<div class="card"><div class="kicker">the core law</div><h4>Correlation limits the crowd</h4><p>Averaging infinitely many trees removes the “independent” part of their errors, but the part they share remains. So the real job is to make the trees <i>disagree</i>, which is why bootstrapping plus random feature subsets work.</p></div>
+<div class="card"><div class="kicker">max_features</div><h4>The diversity dial</h4><p>Fewer features per split means more diverse but individually weaker trees. All features means plain bagging, with strong but similar trees. √p for classification and p/3 to all features for regression are good starting points.</p></div>
+<div class="card"><div class="kicker">vs boosting</div><h4>Parallel crowd vs sequential coaching</h4><p>RF builds independent deep trees and averages them, which cuts variance and is robust to noise. Boosting builds dependent shallow trees, each fixing the last, which cuts bias, scores higher accuracy and is more sensitive to noise and tuning.</p></div>
+<div class="card"><div class="kicker">Extra Trees</div><h4>Even more random</h4><p>Extremely Randomised Trees pick split thresholds at random instead of searching for the best one. Training is faster and variance lower, at the cost of a little bias. It's often just as accurate.</p></div>
+<div class="card"><div class="kicker">proximity</div><h4>Bonus uses</h4><p>How often two rows land in the same leaf gives a similarity measure, useful for clustering, outlier detection and imputation. Isolation Forest is a random-tree cousin built for anomaly detection.</p></div>
+<div class="card"><div class="kicker">noisy labels</div><h4>Why RF tolerates noise</h4><p>Each mislabelled row affects only the trees whose bootstrap includes it, and gets out-voted. Boosting keeps trying to fix that row, round after round.</p></div>
+</div>
+
+<h2 id="when">When each one wins</h2>
+<h3>Random Forest</h3>
+<div class="callout win"><div class="tag">🏆 Pick Random Forest when…</div><ul>
+<li>You want a <b>strong baseline with almost no tuning</b> on tabular data.</li>
+<li><b>Labels are noisy</b> or the dataset is small to medium. It's more forgiving than boosting.</li>
+<li>You want <b>built-in validation</b> (OOB) and easy parallel training.</li>
+<li>You need a robust model quickly for feature screening, or as a benchmark that boosting must beat.</li>
+</ul></div>
+<h3>Plain bagging</h3>
+<div class="callout win"><div class="tag">🏆 Pick bagging when…</div><ul>
+<li>You want to stabilise <b>any</b> high-variance model, not only trees (e.g. kNN or a neural net).</li>
+<li>There are only a few features, so feature subsampling adds little.</li>
+</ul></div>
+<h3>Extra Trees</h3>
+<div class="callout win"><div class="tag">🏆 Pick Extra Trees when…</div><ul>
+<li><b>Training speed</b> matters on large data, or the data is very noisy and you want even lower variance.</li>
+</ul></div>
+<div class="table-wrap"><table class="vs">
+<tr><th>Compared with</th><th>Choose Random Forest when…</th><th>Choose the other when…</th></tr>
+<tr><td><a href="xgboost.html">XGBoost</a> / <a href="lightgbm.html">LightGBM</a></td><td>There's little time to tune, labels are noisy, or you want robustness.</td><td>You can tune and want maximum accuracy.</td></tr>
+<tr><td><a href="decision-trees.html">Single tree</a></td><td>Accuracy and stability matter.</td><td>Humans must read the full model.</td></tr>
+<tr><td><a href="logistic-regression.html">Logistic / linear</a></td><td>Relationships are non-linear with interactions.</td><td>You need extrapolation, coefficients or tiny models.</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Avoid it when…</div><ul>
+<li>You need <b>low latency or a small memory footprint</b> (hundreds of deep trees are big).</li>
+<li>The data is <b>very high-dimensional and sparse</b> (text). Linear models do better.</li>
+<li>You need <b>extrapolation</b> or the best possible accuracy (use tuned boosting).</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>Predictive maintenance on factory sensors:</b> 30k machine-days, 60 noisy sensor features and labels with some mistakes (failures logged late). Random Forest with default settings and OOB evaluation delivers a solid model on day one, and permutation importance shows which sensors matter. Later, a tuned LightGBM gains about 2% recall, but RF stays as the robust fallback.</p></div>
 
 <h2 id="oob">Out-of-bag (OOB) evaluation</h2>
 <p>For each row, average the predictions of only the trees that didn't see it in training. The resulting OOB score is close to a cross-validation estimate at no extra training cost (<code>oob_score=True</code>). It's slightly pessimistic for small B since each row is predicted by ~37% of the trees. Not valid for time-series or grouped data (rows aren't independent).</p>
@@ -69,6 +126,11 @@
 <h2 id="procon">Pros, cons & when to use</h2>
 <div class="procon"><div class="pro"><h4>✅ Strengths</h4><ul><li>Strong accuracy with little tuning; hard to badly overfit</li><li>No scaling; handles non-linearity, interactions, mixed features</li><li>OOB estimate, feature importance, parallel training</li><li>Robust to outliers and noisy features</li></ul></div>
 <div class="con"><h4>❌ Weaknesses</h4><ul><li>Large models, slower inference than a single tree / linear model</li><li>Less interpretable than one tree</li><li>Can't extrapolate; struggles with very sparse high-dimensional data</li><li>Usually a bit below tuned boosting on tabular benchmarks</li></ul></div></div>
+
+<details class="deep" id="maths"><summary>Optional maths — only if the interviewer goes deep<span class="small">click to expand</span></summary>
+<h3 id="math">Why it works: variance of an average</h3>
+<div class="callout math"><div class="tag">∑ Variance of the ensemble</div>$$\operatorname{Var}\Big(\frac1B\sum_{b=1}^B T_b\Big)=\rho\sigma^2+\frac{1-\rho}{B}\sigma^2$$<p>As B → ∞ the second term vanishes, but the first stays: <b>correlation ρ between trees limits the benefit</b>. Bootstrapping and feature subsampling reduce ρ (at a small cost in individual-tree bias/variance). Bias of the average ≈ bias of one tree, so use low-bias (deep) trees.</p></div>
+</details>
 
 <h2 id="labs">Labs</h2>
 <div class="lab" data-id="rf-bootstrap" data-title="Bootstrap maths: the 63.2% rule">

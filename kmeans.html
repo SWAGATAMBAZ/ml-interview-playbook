@@ -9,10 +9,71 @@
 <main>
 <div class="eyebrow">Unsupervised · Clustering · Centroid-based</div>
 <h1>K-Means clustering</h1>
-<p class="lede">Partition data into K groups by alternately assigning points to the nearest centroid and moving centroids to the mean of their points. The most-asked unsupervised algorithm: know the objective, why it converges, k-means++, choosing K, and the assumptions that make it fail.</p>
-<div class="toc"><a href="#pitch">30-sec answer</a><a href="#algo">Algorithm</a><a href="#demo">Step-through</a><a href="#math">Objective & convergence</a><a href="#init">k-means++</a><a href="#choosek">Choosing K</a><a href="#assumptions">Assumptions & failures</a><a href="#hp">Hyperparameters</a><a href="#variants">Variants</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<p class="lede">The go-to <b>unsupervised</b> algorithm. It groups similar points into K clusters with no labels needed. It's simple, fast and scales to millions of rows. Interviews test choosing K, initialisation, scaling and the shapes of data where it fails.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#algo">Lloyd's algorithm</a><a href="#demo">Step through it</a><a href="#init">Initialisation: k-means++</a><a href="#choosek">Choosing K</a><a href="#assumptions">Assumptions & when it fails</a><a href="#hp">Hyperparameters</a><a href="#variants">Variants</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
-<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“K-means minimises the within-cluster sum of squares \(\sum_k\sum_{x\in C_k}\lVert x-\mu_k\rVert^2\). Lloyd's algorithm alternates an assignment step (nearest centroid) and an update step (centroid = cluster mean); each step can't increase the objective and there are finitely many partitions, so it converges — but to a local minimum, so we use k-means++ initialisation and several restarts (n_init). K is chosen with the elbow method, silhouette score, gap statistic or business needs. It assumes roughly spherical, similarly sized clusters under Euclidean distance, needs scaling, and is sensitive to outliers; alternatives are GMM, DBSCAN, hierarchical or k-medoids.”</p></div>
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>You want to open <b>3 delivery hubs</b> for customers spread across a city. Drop 3 pins on the map at random. Every customer goes to their <b>nearest pin</b>. Then move each pin to the <b>centre of the crowd</b> standing at it. Customers re-check which pin is now nearest, and the pins move again. Repeat until nobody switches. The pins have settled in the middle of 3 natural groups.</p>
+<p>That's K-means: <b>assign to nearest centre → move centre to the average → repeat</b>.</p></div>
+
+<h2 id="steps">How it works, step by step (no maths)</h2>
+<ol class="steps">
+<li><b>Scale the features</b>, because it's distance-based.</li>
+<li><b>Choose K</b>, the number of clusters.</li>
+<li><b>Place K starting centres</b>, spread out using k-means++.</li>
+<li><b>Assign</b> every point to its nearest centre.</li>
+<li><b>Move</b> each centre to the average of its points.</li>
+<li><b>Repeat 4–5</b> until assignments stop changing. Run it several times from different starts and keep the best (n_init).</li>
+</ol>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“K-means partitions data into K clusters by minimising the within-cluster sum of squared distances to each cluster's centroid. Lloyd's algorithm alternates two steps: assign points to the nearest centroid, then recompute each centroid as the mean. Every step lowers the objective, so it always converges, but only to a local optimum, so I use k-means++ initialisation and several restarts. I choose K with the elbow method, silhouette score and business sense. It assumes roughly spherical, similar-sized clusters, needs scaled features, is sensitive to outliers, and every point is forced into some cluster. For odd shapes or noise I'd use DBSCAN, and for soft or elliptical clusters, a Gaussian Mixture Model.”</p></div>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Objective:</b> make points as close as possible to their cluster's centre (minimise inertia, i.e. the within-cluster sum of squares).</li>
+<li><b>Always converges, but to a local optimum.</b> The result depends on the starting centres, so use <b>k-means++</b> and <b>n_init</b> restarts.</li>
+<li><b>You must choose K:</b> the elbow in the inertia curve, silhouette score (−1 to 1, higher is better), gap statistic, or business needs (“marketing can handle 5 segments”).</li>
+<li><b>Scale features first</b>, or the biggest-unit feature decides the clusters.</li>
+<li><b>Assumes round, similar-size, similar-density clusters.</b> It fails on rings, crescents, long thin shapes and very unequal sizes.</li>
+<li><b>Sensitive to outliers</b>, because the mean gets pulled. K-medoids or removing outliers first helps.</li>
+<li><b>Hard assignment:</b> every point belongs to exactly one cluster, even noise.</li>
+<li><b>Fast:</b> linear in the number of points. MiniBatchKMeans handles huge data.</li>
+<li><b>Numeric features only</b>, since means need numbers. Use K-modes or K-prototypes for categorical data.</li>
+</ul>
+
+<h2 id="deeper">Going deeper: advanced intuition</h2>
+<div class="grid two">
+<div class="card"><div class="kicker">why it converges</div><h4>Two moves, both downhill</h4><p>Re-assigning a point to a closer centre can only lower the total distance, and moving a centre to its group's mean can only lower it too. The total can't fall forever, so the algorithm stops, though maybe in a valley that isn't the deepest one.</p></div>
+<div class="card"><div class="kicker">k-means++</div><h4>Spread the starting pins</h4><p>Each new starting centre is chosen with probability proportional to its squared distance from existing centres, so the centres start far apart. That gives faster convergence and much better results than purely random starts.</p></div>
+<div class="card"><div class="kicker">hidden assumption</div><h4>Voronoi cells = straight borders</h4><p>Cluster borders are always straight lines halfway between centres. That's why K-means can't separate a ring from its centre, or two crescent moons.</p></div>
+<div class="card"><div class="kicker">elbow is fuzzy</div><h4>Inertia always drops with K</h4><p>More clusters always means a lower inertia (K = n gives zero), so you look for the bend where improvements slow down. It's often ambiguous. Combine it with silhouette and domain sense.</p></div>
+<div class="card"><div class="kicker">GMM link</div><h4>K-means is a special GMM</h4><p>K-means equals a Gaussian Mixture Model with equal, round clusters and hard assignments. GMM relaxes both: elliptical shapes and soft probabilities.</p></div>
+<div class="card"><div class="kicker">high dimensions</div><h4>Reduce first</h4><p>In many dimensions distances lose contrast. Running PCA or using embeddings before K-means usually gives cleaner clusters.</p></div>
+</div>
+
+<h2 id="when">When K-means wins (and when it doesn't)</h2>
+<div class="callout win"><div class="tag">🏆 Pick K-means when…</div>
+<ul>
+<li><b>Customer segmentation</b> on numeric behaviour (recency, frequency, spend), where you want a fixed number of actionable groups.</li>
+<li>Data is <b>large</b> (millions of rows) and you need speed.</li>
+<li>Clusters are roughly <b>compact and blob-like</b>.</li>
+<li><b>Vector quantisation</b>: compressing colours in an image, building a codebook, or pre-clustering embeddings for faster search.</li>
+<li>You need a simple, explainable result: “cluster 2 = high-spend, infrequent buyers”.</li>
+</ul></div>
+<div class="table-wrap"><table class="vs">
+<tr><th>Compared with</th><th>Choose K-means when…</th><th>Choose the other when…</th></tr>
+<tr><td><a href="clustering.html#dbscan">DBSCAN</a></td><td>You know roughly how many clusters you want, clusters are blobs and there's lots of data.</td><td>Clusters have arbitrary shapes, there's noise or outliers, and you don't know K.</td></tr>
+<tr><td><a href="clustering.html#gmm">Gaussian Mixture</a></td><td>You need speed and hard labels.</td><td>Clusters are elliptical or overlapping, or you need membership probabilities.</td></tr>
+<tr><td><a href="clustering.html#hier">Hierarchical</a></td><td>Data is large.</td><td>Data is small and you want a tree of nested groups (dendrogram).</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Avoid it when…</div><ul>
+<li>Clusters are <b>non-convex</b> (rings, moons), differ hugely in <b>size or density</b>, or there are <b>many outliers</b>.</li>
+<li>Data is <b>categorical</b> or mixed.</li>
+<li>You don't want every point forced into a cluster, e.g. for anomaly detection.</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>Retail RFM segmentation:</b> 2M customers described by recency, frequency and monetary value (log-transformed, then standardised). K-means with k-means++ and K = 5, chosen from the elbow plus silhouette plus the marketing team's capacity, produces segments like “champions”, “at-risk big spenders” and “one-time buyers”, each getting its own campaign.</p></div>
 
 <h2 id="algo">Lloyd's algorithm</h2>
 <ol><li>Choose K and initialise K centroids (k-means++).</li><li><b>Assign</b> each point to its nearest centroid.</li><li><b>Update</b> each centroid to the mean of its assigned points.</li><li>Repeat 2–3 until assignments stop changing (or centroid shift &lt; tol / max_iter).</li></ol>
@@ -21,9 +82,6 @@
 
 <h2 id="demo">Step through it</h2>
 <div class="widget" data-demo="kmeans"><div class="widget-title">Lloyd's algorithm, step by step</div><div class="widget-sub">Initialise → Assign → Move. Try random init several times with K = 5 to land in a bad local minimum.</div></div>
-
-<h2 id="math">Objective & why it converges</h2>
-<div class="callout math"><div class="tag">∑ Within-cluster sum of squares (inertia)</div>$$J=\sum_{k=1}^K\sum_{x_i\in C_k}\lVert x_i-\mu_k\rVert^2$$<ul><li>Assignment step: for fixed centroids, assigning each point to its nearest centroid minimises J over assignments.</li><li>Update step: for fixed assignments, the mean minimises the sum of squared distances (set derivative to zero: \(\mu_k=\frac{1}{|C_k|}\sum_{x\in C_k}x\)).</li><li>J never increases and there are finitely many partitions ⇒ convergence in finite steps, to a <b>local</b> optimum. Finding the global optimum is NP-hard.</li><li>K-means is a special case of EM for a Gaussian mixture with equal, spherical covariances and hard assignments.</li></ul></div>
 
 <h2 id="init">Initialisation: k-means++</h2>
 <p>Pick the first centroid uniformly at random; pick each next centroid with probability proportional to \(D(x)^2\), the squared distance to the nearest already-chosen centroid. Spreads centroids out, gives an expected O(log K) approximation of the optimum, and converges faster. Still run several initialisations (<code>n_init</code>) and keep the lowest inertia.</p>
@@ -62,6 +120,11 @@
 
 <h2 id="variants">Variants</h2>
 <ul><li><b>Mini-batch K-means:</b> updates centroids with small random batches — much faster, slightly worse inertia.</li><li><b>K-medoids (PAM):</b> centres are actual data points; any distance; robust to outliers; O(n²).</li><li><b>K-modes / K-prototypes:</b> categorical / mixed data.</li><li><b>Bisecting K-means:</b> repeatedly split the largest cluster — hierarchical flavour.</li><li><b>Kernel / spectral clustering:</b> non-convex shapes.</li></ul>
+
+<details class="deep" id="maths"><summary>Optional maths — only if the interviewer goes deep<span class="small">click to expand</span></summary>
+<h3 id="math">Objective & why it converges</h3>
+<div class="callout math"><div class="tag">∑ Within-cluster sum of squares (inertia)</div>$$J=\sum_{k=1}^K\sum_{x_i\in C_k}\lVert x_i-\mu_k\rVert^2$$<ul><li>Assignment step: for fixed centroids, assigning each point to its nearest centroid minimises J over assignments.</li><li>Update step: for fixed assignments, the mean minimises the sum of squared distances (set derivative to zero: \(\mu_k=\frac{1}{|C_k|}\sum_{x\in C_k}x\)).</li><li>J never increases and there are finitely many partitions ⇒ convergence in finite steps, to a <b>local</b> optimum. Finding the global optimum is NP-hard.</li><li>K-means is a special case of EM for a Gaussian mixture with equal, spherical covariances and hard assignments.</li></ul></div>
+</details>
 
 <h2 id="labs">Labs</h2>
 <div class="lab" data-id="km-scratch" data-title="K-means from scratch">

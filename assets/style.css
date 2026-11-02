@@ -268,3 +268,21 @@ mark{background:var(--amber-soft);color:inherit;padding:0 3px;border-radius:4px}
 main{min-width:0}
 .hero .statrow .stat{min-width:0;flex:1 1 90px}
 @media (max-width:900px){main{padding-left:16px;padding-right:16px}.lab-head{flex-wrap:wrap}.flash-card{padding:20px}.flash-card .front{font-size:20px}}
+
+/* easy-read layer: collapsed maths, key points, when-it-wins */
+details.deep{background:var(--panel);border:1px dashed var(--line);border-radius:var(--radius);margin:26px 0;padding:0 18px}
+details.deep[open]{border-style:solid;border-color:var(--accent)}
+details.deep > summary{cursor:pointer;padding:14px 0;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+details.deep > summary::-webkit-details-marker{display:none}
+details.deep > summary::before{content:"∑";font-family:var(--mono);font-size:13px;background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:1px 8px}
+details.deep > summary .small{font-weight:400;margin-left:auto}
+details.deep[open] > summary{border-bottom:1px solid var(--line);margin-bottom:6px}
+ul.keypts{list-style:none;padding-left:0}
+ul.keypts li{position:relative;padding:7px 0 7px 30px;border-bottom:1px solid var(--line)}
+ul.keypts li:last-child{border-bottom:0}
+ul.keypts li::before{content:"★";position:absolute;left:4px;top:7px;color:var(--amber)}
+ol.steps{counter-reset:s;list-style:none;padding-left:0}
+ol.steps li{counter-increment:s;position:relative;padding:6px 0 6px 38px}
+ol.steps li::before{content:counter(s);position:absolute;left:0;top:5px;width:26px;height:26px;border-radius:50%;background:var(--teal-soft);color:var(--teal);font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center}
+.vs td:first-child{font-weight:600;white-space:nowrap}
+.lvl-tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-left:8px}

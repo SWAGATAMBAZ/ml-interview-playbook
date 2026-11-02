@@ -9,37 +9,70 @@
 <main>
 <div class="eyebrow">Supervised · Tree-based · Foundation of RF & boosting</div>
 <h1>Decision trees</h1>
-<p class="lede">A flowchart of if/else questions learned greedily from data. On their own they overfit easily, but they are the building block of Random Forests and Gradient Boosting — so interviewers dig into splitting criteria (Gini vs entropy), how regression trees split, pruning and the hyperparameters that control depth.</p>
-<div class="toc"><a href="#pitch">30-sec answer</a><a href="#how">How a tree grows</a><a href="#criteria">Split criteria</a><a href="#calc">Gini calculator</a><a href="#regression">Regression trees</a><a href="#overfit">Overfitting & pruning</a><a href="#hp">Hyperparameters</a><a href="#props">Properties</a><a href="#procon">Pros/cons</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<p class="lede">A flowchart of yes/no questions learned from data. On its own it's the most explainable model there is, and it's the building block of Random Forest, XGBoost, LightGBM and CatBoost. Understand trees well and half of tabular ML follows.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#calc">Split calculator</a><a href="#regression">Regression trees</a><a href="#overfit">Overfitting & pruning</a><a href="#hp">Hyperparameters</a><a href="#props">Important properties</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
-<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“A decision tree recursively partitions the feature space with axis-aligned splits. CART chooses, at each node, the feature and threshold that maximise impurity decrease — Gini or entropy for classification, variance (MSE) reduction for regression — greedily, top-down. Leaves predict the majority class or mean. Fully grown trees have low bias and very high variance, so we limit growth with max_depth, min_samples_leaf etc., or prune with cost-complexity pruning (ccp_alpha). Trees need no scaling, capture interactions and non-linearity, and are interpretable, but they're unstable and produce step-shaped predictions — which is why we ensemble them.”</p></div>
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>It's the game of <b>“20 questions”</b>. To decide whether a loan applicant is risky, the tree asks “Is income above ₹50k?”. If not, it asks “Missed any payment last year?”, and so on, until it reaches a box that says “risky” or “safe”.</p>
+<p>The tree learns <b>which question to ask first</b> by trying every feature and cut-off and picking the one that splits people into the <b>“purest” groups</b>, i.e. groups where almost everyone has the same answer. Then it repeats inside each group. Without limits, it keeps asking until every training person sits in their own box, which is perfect memorisation and poor generalisation.</p></div>
 
-<h2 id="how">How a tree grows (CART)</h2>
-<ol>
-<li>Start with all training rows at the root.</li>
-<li>For every feature and every candidate threshold (midpoints between sorted unique values), compute the impurity of the two children.</li>
-<li>Pick the split with the largest weighted impurity decrease.</li>
-<li>Recurse on each child until a stopping rule: node pure, max_depth reached, too few samples, or no split improves impurity enough.</li>
-<li>Leaf prediction: majority class (with class proportions as probabilities) or mean target.</li>
+<h2 id="steps">How it works, step by step (no maths)</h2>
+<ol class="steps">
+<li><b>Put all training rows in one box</b> (the root).</li>
+<li><b>Try every feature and every possible cut-off</b>, e.g. age &lt; 30, age &lt; 31…</li>
+<li><b>Pick the split that makes the two child boxes most “pure”</b>, measured by Gini or entropy for classes, or by variance for numbers.</li>
+<li><b>Repeat inside each child box.</b> The choice is greedy: the best split right now, without looking ahead.</li>
+<li><b>Stop</b> when a box is pure, too small, or the tree hits max_depth. Optionally <b>prune</b> branches that don't help on validation data.</li>
+<li><b>Predict</b>: drop a new row down the questions. The leaf's majority class (or average value) is the answer.</li>
 </ol>
-<p>Greedy = locally optimal; finding the globally optimal tree is NP-complete. Cost of building: about \(O(d\cdot n\log n)\) per level with pre-sorting.</p>
-<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Like the game “20 questions”: each question (“Is income &gt; 50k?”) is chosen to split the remaining people into groups that are as “pure” (same answer) as possible, so you reach a confident guess in as few questions as possible.</p></div>
 
-<h2 id="criteria">Split criteria</h2>
-<div class="callout math"><div class="tag">∑ Impurity measures (p_k = class share in the node)</div>
-$$\text{Gini}=1-\sum_k p_k^2\qquad\text{Entropy}=-\sum_k p_k\log_2 p_k\qquad\text{Misclassification}=1-\max_k p_k$$
-$$\text{Gain}=I(\text{parent})-\frac{n_L}{n}I(L)-\frac{n_R}{n}I(R)$$</div>
-<ul>
-<li>Binary node: Gini max 0.5, entropy max 1.0 (both at 50/50); both 0 when pure.</li>
-<li>Gini is slightly faster (no log) and tends to isolate the most frequent class; entropy gives slightly more balanced trees. In practice they agree on &gt;95% of splits — choose by CV or default to Gini.</li>
-<li>Misclassification error isn't used for growing because it's not strictly concave — it often shows zero gain for useful splits.</li>
-<li><b>Information gain ratio</b> (C4.5) divides by split information to counter ID3's bias toward high-cardinality features.</li>
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“A decision tree recursively splits the data on the feature and threshold that most reduce impurity: Gini or entropy for classification, variance (MSE) for regression. This is CART, a greedy algorithm that builds binary splits. Leaves predict the majority class or the mean. Trees are interpretable, need no feature scaling, handle non-linearity and interactions naturally, and work with mixed feature types. Their weakness is high variance: a fully grown tree memorises noise, and small data changes can produce a completely different tree. So I limit max_depth and min_samples_leaf, or use cost-complexity pruning, and in practice use ensembles: bagging (Random Forest) to cut variance or boosting to cut bias.”</p></div>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Split quality = impurity reduction.</b> <b>Gini</b> means “how often would I mislabel a random item from this box?”. <b>Entropy</b> means “how surprised am I by the box's contents?”. Both are 0 for a pure box, they agree about 95% of the time, and Gini is slightly faster.</li>
+<li><b>Regression trees</b> split to reduce variance and predict the leaf's average, so the prediction is a step function.</li>
+<li><b>Greedy and top-down.</b> Finding the perfect tree is computationally infeasible, so each step takes the locally best split.</li>
+<li><b>High variance:</b> deep trees overfit, and a small change in the data can change the whole tree. That's the main reason ensembles exist.</li>
+<li><b>Control complexity</b> with max_depth, min_samples_leaf, min_samples_split, max_leaf_nodes, or pruning (ccp_alpha).</li>
+<li><b>No scaling needed</b>, and outliers in features don't matter, because only the order of values counts.</li>
+<li><b>Axis-aligned splits</b>: a diagonal boundary needs many staircase steps.</li>
+<li><b>Can't extrapolate.</b> Predictions outside the training range equal the nearest leaf's value.</li>
+<li><b>Feature importance</b> (impurity-based) is biased toward high-cardinality features. Use permutation importance or SHAP.</li>
 </ul>
-<div class="table-wrap"><table><tr><th>Algorithm</th><th>Criterion</th><th>Splits</th><th>Notes</th></tr>
-<tr><td>ID3</td><td>Information gain</td><td>Multi-way, categorical only</td><td>No pruning, biased to many-valued features</td></tr>
-<tr><td>C4.5 / C5.0</td><td>Gain ratio</td><td>Multi-way; handles continuous & missing</td><td>Error-based pruning</td></tr>
-<tr><td>CART (sklearn)</td><td>Gini / entropy; MSE for regression</td><td>Binary</td><td>Cost-complexity pruning; surrogate splits for missing (original)</td></tr>
+
+<h2 id="deeper">Going deeper: advanced intuition</h2>
+<div class="grid two">
+<div class="card"><div class="kicker">instability</div><h4>One different first question changes everything</h4><p>If two features are nearly tied for the first split, a tiny data change flips the winner and the whole tree below it changes. Averaging many trees (Random Forest) turns this weakness into a strength.</p></div>
+<div class="card"><div class="kicker">interactions</div><h4>Interactions for free</h4><p>A path like “income &lt; 50k AND age &lt; 25” is a learned interaction. Linear models need you to add such terms by hand.</p></div>
+<div class="card"><div class="kicker">pruning</div><h4>Grow big, then cut back</h4><p>Cost-complexity pruning grows a full tree, then removes the branches whose accuracy gain doesn't justify their size, choosing the trade-off by cross-validation. It often beats stopping early, because a weak split can lead to a strong one below it.</p></div>
+<div class="card"><div class="kicker">high-cardinality bias</div><h4>Why IDs look “important”</h4><p>A feature with thousands of unique values (like customer_id) offers thousands of cut-offs, so by chance one looks great. That inflates impurity-based importance and causes overfitting.</p></div>
+<div class="card"><div class="kicker">probabilities</div><h4>Leaf proportions are crude</h4><p>A leaf with 3 rows gives probabilities of 0%, 33%, 67% or 100%, which is poorly calibrated. Larger leaves or ensembles give smoother probabilities.</p></div>
+<div class="card"><div class="kicker">ancestry</div><h4>ID3 → C4.5 → CART</h4><p>ID3 used information gain with multi-way splits. C4.5 added gain ratio and continuous features. CART (used by sklearn) does binary splits with Gini or MSE and cost-complexity pruning.</p></div>
+</div>
+
+<h2 id="when">When a single decision tree wins (and when it doesn't)</h2>
+<div class="callout win"><div class="tag">🏆 Pick a single tree when…</div>
+<ul>
+<li><b>Explainability is the product</b>: business rules you can print on one page, triage flowcharts, policy rules, loan-officer guidelines.</li>
+<li>You want to <b>discover segments</b> in the data quickly (“who churns?”) or <b>sanity-check features and leakage</b> before modelling seriously.</li>
+<li>You need <b>extremely fast, dependency-free inference</b> (a few if-statements on an edge device or in SQL).</li>
+<li>The data mixes types, has non-linear thresholds, and the pattern is genuinely rule-like.</li>
+</ul></div>
+<div class="table-wrap"><table class="vs">
+<tr><th>Compared with</th><th>Choose a single tree when…</th><th>Choose the other when…</th></tr>
+<tr><td><a href="random-forest.html">Random Forest</a></td><td>Humans must read the whole model.</td><td>You want stable, accurate predictions with little tuning.</td></tr>
+<tr><td><a href="xgboost.html">XGBoost / LightGBM</a></td><td>Transparency beats the last few % of accuracy.</td><td>Accuracy matters most on tabular data.</td></tr>
+<tr><td><a href="logistic-regression.html">Logistic regression</a></td><td>The patterns are threshold- or interaction-like (“if A and B…”).</td><td>The effects are smooth and additive, and you need calibrated probabilities.</td></tr>
 </table></div>
+<div class="callout trap"><div class="tag">⚠️ Avoid a single tree when…</div><ul>
+<li><b>Accuracy matters</b>. One tree is almost always beaten by an ensemble.</li>
+<li><b>The data is small and noisy</b>, so the tree is unstable and overfits.</li>
+<li><b>Boundaries are smooth or diagonal</b>, or you need extrapolation.</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>Hospital triage guideline:</b> doctors need a rule they can follow at the bedside, e.g. “if SpO₂ &lt; 92% → urgent; else if age &gt; 65 and fever → priority”. A depth-3 tree trained on past cases gives exactly that, readable on one card. A gradient-boosted model might be 3% more accurate but couldn't be used on the ward.</p></div>
 
 <h2 id="calc">Split calculator</h2>
 <div class="widget" data-demo="gini"><div class="widget-title">Gini & entropy for one candidate split</div><div class="widget-sub">Change class counts in the two children. A good split makes both children pure.</div></div>
@@ -83,6 +116,24 @@ $$\text{Gain}=I(\text{parent})-\frac{n_L}{n}I(L)-\frac{n_R}{n}I(R)$$</div>
 <h2 id="procon">Pros, cons & when to use</h2>
 <div class="procon"><div class="pro"><h4>✅ Strengths</h4><ul><li>Interpretable rules; easy to visualise & explain to business</li><li>No scaling, handles mixed types, non-linearity, interactions</li><li>Fast prediction O(depth)</li><li>Robust to outliers in features</li></ul></div>
 <div class="con"><h4>❌ Weaknesses</h4><ul><li>Overfits; high variance, unstable</li><li>Greedy, axis-aligned, step-function predictions</li><li>Can't extrapolate</li><li>Biased toward dominant classes & many-valued features</li></ul></div></div>
+
+<details class="deep" id="maths"><summary>Optional maths — only if the interviewer goes deep<span class="small">click to expand</span></summary>
+<h3 id="criteria">Split criteria</h3>
+<div class="callout math"><div class="tag">∑ Impurity measures (p_k = class share in the node)</div>
+$$\text{Gini}=1-\sum_k p_k^2\qquad\text{Entropy}=-\sum_k p_k\log_2 p_k\qquad\text{Misclassification}=1-\max_k p_k$$
+$$\text{Gain}=I(\text{parent})-\frac{n_L}{n}I(L)-\frac{n_R}{n}I(R)$$</div>
+<ul>
+<li>Binary node: Gini max 0.5, entropy max 1.0 (both at 50/50); both 0 when pure.</li>
+<li>Gini is slightly faster (no log) and tends to isolate the most frequent class; entropy gives slightly more balanced trees. In practice they agree on &gt;95% of splits — choose by CV or default to Gini.</li>
+<li>Misclassification error isn't used for growing because it's not strictly concave — it often shows zero gain for useful splits.</li>
+<li><b>Information gain ratio</b> (C4.5) divides by split information to counter ID3's bias toward high-cardinality features.</li>
+</ul>
+<div class="table-wrap"><table><tr><th>Algorithm</th><th>Criterion</th><th>Splits</th><th>Notes</th></tr>
+<tr><td>ID3</td><td>Information gain</td><td>Multi-way, categorical only</td><td>No pruning, biased to many-valued features</td></tr>
+<tr><td>C4.5 / C5.0</td><td>Gain ratio</td><td>Multi-way; handles continuous & missing</td><td>Error-based pruning</td></tr>
+<tr><td>CART (sklearn)</td><td>Gini / entropy; MSE for regression</td><td>Binary</td><td>Cost-complexity pruning; surrogate splits for missing (original)</td></tr>
+</table></div>
+</details>
 
 <h2 id="labs">Labs</h2>
 <div class="lab" data-id="dt-best-split" data-title="Find the best split by hand (Gini)">

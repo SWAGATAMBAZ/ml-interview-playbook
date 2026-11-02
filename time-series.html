@@ -9,10 +9,77 @@
 <main>
 <div class="eyebrow">Applied · Forecasting · Classical + ML</div>
 <h1>Time-series forecasting</h1>
-<p class="lede">Demand, sales, traffic, sensor readings: data scientists forecast constantly, and interviews probe stationarity, ACF/PACF, ARIMA orders, seasonality, time-aware validation, lag features for ML models, and the leakage traps unique to time.</p>
-<div class="toc"><a href="#pitch">30-sec answer</a><a href="#components">Components</a><a href="#stationarity">Stationarity</a><a href="#acf">ACF & PACF</a><a href="#arima">ARIMA family</a><a href="#ets">Smoothing & Prophet</a><a href="#ml">ML approach</a><a href="#validation">Validation</a><a href="#metrics">Metrics</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<p class="lede">Predicting the future from the past: sales, demand, traffic, prices. Interviews care less about formulas and more about whether you <b>respect time</b>: stationarity, no shuffling, proper backtesting and picking the right family of models. Each model family below gets its own plain-English idea and a “when it wins” box.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#models">Each model</a><a href="#when">When it wins</a><a href="#components">Components</a><a href="#stationarity">Stationarity</a><a href="#acf">ACF and PACF</a><a href="#ets">Exponential smoothing, Prophet & others</a><a href="#ml">Forecasting with ML</a><a href="#validation">Validation</a><a href="#metrics">Forecast metrics</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
-<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“I start with decomposition into trend, seasonality and residual, and a naive / seasonal-naive baseline. Classical models like ARIMA need a stationary series — constant mean and variance, autocovariance depending only on lag — which I check with ADF/KPSS and achieve by differencing or log transforms; p and q come from PACF and ACF cut-offs, or AIC search, and SARIMA adds seasonal terms. For many related series or rich covariates I use gradient boosting on lag, rolling-window and calendar features, being careful that every feature only uses information available at prediction time. Validation is always time-ordered — rolling-origin / TimeSeriesSplit with a gap — never shuffled K-fold. Metrics: MAE, RMSE, MAPE/sMAPE or MASE relative to the naive forecast.”</p></div>
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>To forecast tomorrow's ice-cream sales, you'd look at: the <b>trend</b> (sales growing year on year), <b>seasonality</b> (more in summer, more on weekends), <b>recent momentum</b> (yesterday was unusually high) and <b>outside drivers</b> (a heatwave, a promotion). Every forecasting model is a different way of combining these four ingredients.</p>
+<p>The golden rule: <b>never let the model peek into the future</b>. Train on the past, test on what came after, just as it'll be used in real life.</p></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“I start by decomposing the series into trend, seasonality and residual, and checking stationarity with ADF or KPSS, differencing or log-transforming as needed. For a few series with clear structure I use classical models: ETS or Holt-Winters for trend plus seasonality, and SARIMA or SARIMAX when autocorrelation and external regressors matter, picking orders from ACF/PACF plots and AIC. For many related series with rich drivers I build a global gradient-boosting model on lag, rolling and calendar features, making sure every feature only uses past information. I validate with rolling-origin (walk-forward) backtests, never random K-fold, compare against naive and seasonal-naive baselines, and report MAE, RMSE or MASE, plus prediction intervals.”</p></div>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Components:</b> trend, seasonality, cycles and noise. Use an <b>additive</b> model when the seasonal swing is constant, and a <b>multiplicative</b> one when it grows with the level (log the series to make it additive).</li>
+<li><b>Stationarity</b> means a constant mean, variance and autocorrelation over time. ARIMA needs it, so <b>difference</b> to remove trend and seasonal-difference to remove seasonality. ADF: p &lt; 0.05 means stationary. KPSS: the opposite.</li>
+<li><b>ACF/PACF plots</b> help pick ARIMA orders. A PACF that cuts off at lag p suggests AR(p). An ACF that cuts off at lag q suggests MA(q).</li>
+<li><b>Never shuffle.</b> Use <b>time-based splits</b> and walk-forward or expanding-window backtesting (TimeSeriesSplit).</li>
+<li><b>Leakage traps:</b> rolling means that include today, features unknown at forecast time (future prices), or scaling with full-period statistics.</li>
+<li><b>Always beat a baseline:</b> naive (tomorrow = today) and seasonal naive (next Monday = last Monday). <b>MASE</b> measures exactly this.</li>
+<li><b>Metrics:</b> MAE and RMSE are scale-dependent. MAPE blows up near zero, so prefer sMAPE, WAPE or MASE for intermittent demand.</li>
+<li><b>Tree models can't extrapolate trends.</b> Detrend first or predict differences.</li>
+<li><b>Horizon matters:</b> recursive multi-step forecasting compounds errors, while direct or multi-output strategies avoid that.</li>
+</ul>
+
+<h2 id="models">Each model family in plain English</h2>
+
+<h3 id="m-ets">1 · Exponential smoothing (ETS / Holt-Winters)</h3>
+<div class="callout layman"><div class="tag">🧒 Idea</div><p>A weighted average of the past where <b>recent days count more</b>, with the weights fading exponentially. Holt adds a trend, and Holt-Winters adds seasonality on top.</p></div>
+<div class="callout win"><div class="tag">🏆 Wins when…</div><p>You have <b>one or a few series</b> with clear trend and seasonality and limited history, and need fast, robust, explainable forecasts, e.g. monthly sales of a product line or weekly call-centre volume. It's a superb baseline that's hard to beat on simple series.</p></div>
+
+<h3 id="m-arima">2 · ARIMA / SARIMA / SARIMAX</h3>
+<div class="callout layman"><div class="tag">🧒 Idea</div><p>Predict the next value from <b>its own recent values</b> (AR) and <b>recent forecast errors</b> (MA), after <b>differencing</b> (I) to remove the trend. SARIMA adds the same idea at the seasonal lag (e.g. the same month last year), and SARIMAX adds external drivers like price or holidays.</p></div>
+<ul class="keypts">
+<li>Needs a stationary series after differencing, with orders (p, d, q) chosen via ACF/PACF plots and AIC, or automatically (auto_arima).</li>
+<li>Gives proper <b>prediction intervals</b> and interpretable dynamics.</li>
+<li>One model per series. Slow for thousands of series, and struggles with multiple seasonalities (daily and weekly and yearly).</li>
+</ul>
+<div class="callout win"><div class="tag">🏆 Wins when…</div><p>There are <b>few series with strong autocorrelation</b> and a medium history length, and you need statistically sound intervals: economics, finance indicators, energy load for one region. Use SARIMAX when known drivers (price, promotions) exist.</p></div>
+
+<h3 id="m-prophet">3 · Prophet</h3>
+<div class="callout layman"><div class="tag">🧒 Idea</div><p>A “curve-fitting” model: <b>trend</b> (which can bend at changepoints) + <b>weekly and yearly patterns</b> + <b>holiday effects</b>, added together. It was built for analysts who aren't time-series experts.</p></div>
+<div class="callout win"><div class="tag">🏆 Wins when…</div><p>Daily business data with <b>several seasonalities, holidays, missing days and outliers</b>, like website traffic or orders, and you need a quick, tunable, explainable forecast. It's often beaten by tuned ETS or GBMs on accuracy, so treat it as a strong, convenient baseline.</p></div>
+
+<h3 id="m-ml">4 · ML / gradient boosting with lag features (LightGBM, XGBoost)</h3>
+<div class="callout layman"><div class="tag">🧒 Idea</div><p>Turn forecasting into an ordinary table: for each date and series, create features like <b>“sales 7 days ago”, “28-day average”, “day of week”, “price”, “is holiday”</b>, then train one regression model across <b>all series at once</b> (a global model).</p></div>
+<ul class="keypts">
+<li>Learns <b>shared patterns across thousands of series</b> (SKUs × stores) and uses rich external drivers.</li>
+<li>Needs careful <b>leakage-free features</b> (shift before rolling) and detrending, because trees can't extrapolate.</li>
+<li>Won the M5 forecasting competition, and is the industry standard for retail demand.</li>
+</ul>
+<div class="callout win"><div class="tag">🏆 Wins when…</div><p>There are <b>many related series</b> (hundreds to millions), <b>lots of external drivers</b> (price, promotions, weather, events) and enough history. Typical cases: retail and e-commerce demand, delivery volumes, ride demand per zone.</p></div>
+
+<h3 id="m-dl">5 · Deep learning (N-BEATS, TFT, DeepAR)</h3>
+<div class="callout win"><div class="tag">🏆 Wins when…</div><p>The data is <b>very large</b> (many long series), patterns are complex, you need probabilistic multi-horizon forecasts, and the team can afford the complexity. Otherwise GBMs usually match it with far less effort.</p></div>
+
+<h2 id="when">Which one should you pick?</h2>
+<div class="table-wrap"><table class="vs">
+<tr><th>Situation</th><th>Best pick</th></tr>
+<tr><td>1–10 series, clear trend and season, short history</td><td>ETS / Holt-Winters (plus seasonal-naive baseline)</td></tr>
+<tr><td>Few series, autocorrelation, need intervals or drivers</td><td>SARIMA / SARIMAX</td></tr>
+<tr><td>Daily business data, holidays, quick analyst model</td><td>Prophet</td></tr>
+<tr><td>Thousands of SKUs × stores, promotions and prices</td><td>Global LightGBM with lag features</td></tr>
+<tr><td>Huge data, complex patterns, ML team in place</td><td>Deep learning (TFT / N-BEATS)</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Traps that sink time-series answers</div><ul>
+<li>Random K-fold or shuffling, which lets the model see the future.</li>
+<li>Rolling features that include the current value, or features you won't know at forecast time.</li>
+<li>Reporting MAPE when actual values hit zero.</li>
+<li>Skipping the naive baseline. Fancy models often lose to it.</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>Grocery demand for 20k SKUs × 300 stores, 14 days ahead:</b> one global LightGBM on lags (7, 14, 28 days), rolling means shifted by the horizon, price, promotion flag, holidays and day-of-week, validated by walk-forward backtests on the last 8 weeks. It beats per-series ARIMA on WAPE, and slow-moving SKUs use a simple ETS fallback.</p></div>
 
 <h2 id="components">Components</h2>
 <ul><li><b>Trend:</b> long-run increase/decrease.</li><li><b>Seasonality:</b> fixed-period patterns (weekly, yearly).</li><li><b>Cycles:</b> irregular-period fluctuations (business cycles).</li><li><b>Noise/residual.</b></li></ul>
@@ -33,12 +100,6 @@
 <tr><td>AR(p)</td><td>Tails off gradually</td><td>Cuts off after lag p</td></tr>
 <tr><td>MA(q)</td><td>Cuts off after lag q</td><td>Tails off</td></tr>
 <tr><td>ARMA(p, q)</td><td>Tails off</td><td>Tails off</td></tr></table></div>
-
-<h2 id="arima">The ARIMA family</h2>
-<div class="callout math"><div class="tag">∑ ARIMA(p, d, q)</div>
-$$\text{AR}(p):\ y_t=c+\phi_1y_{t-1}+\dots+\phi_py_{t-p}+\varepsilon_t\qquad \text{MA}(q):\ y_t=\mu+\varepsilon_t+\theta_1\varepsilon_{t-1}+\dots+\theta_q\varepsilon_{t-q}$$
-<p>ARIMA applies ARMA(p, q) to the series differenced d times. <b>SARIMA(p,d,q)(P,D,Q)ₛ</b> adds seasonal AR/MA/differencing at period s. <b>SARIMAX</b> adds exogenous regressors (price, promotions, holidays).</p></div>
-<ul><li>Box–Jenkins: identify (stationarity, ACF/PACF) → estimate (MLE) → diagnose (residuals ≈ white noise: Ljung–Box test) → forecast.</li><li>Order selection by AIC/BIC (auto_arima).</li><li>Limits: one series at a time, linear, struggles with multiple seasonalities and many covariates.</li></ul>
 
 <h2 id="ets">Exponential smoothing, Prophet & others</h2>
 <ul>
@@ -76,6 +137,14 @@ $$\text{AR}(p):\ y_t=c+\phi_1y_{t-1}+\dots+\phi_py_{t-p}+\varepsilon_t\qquad \te
 <tr><td>MASE</td><td>MAE / MAE of naive (seasonal) forecast</td><td>Scale-free; &lt; 1 beats naive</td></tr>
 <tr><td>Pinball / quantile loss</td><td>For prediction intervals</td><td>Probabilistic forecasts</td></tr>
 </table></div>
+
+<details class="deep" id="maths"><summary>Optional maths — only if the interviewer goes deep<span class="small">click to expand</span></summary>
+<h3 id="arima">The ARIMA family</h3>
+<div class="callout math"><div class="tag">∑ ARIMA(p, d, q)</div>
+$$\text{AR}(p):\ y_t=c+\phi_1y_{t-1}+\dots+\phi_py_{t-p}+\varepsilon_t\qquad \text{MA}(q):\ y_t=\mu+\varepsilon_t+\theta_1\varepsilon_{t-1}+\dots+\theta_q\varepsilon_{t-q}$$
+<p>ARIMA applies ARMA(p, q) to the series differenced d times. <b>SARIMA(p,d,q)(P,D,Q)ₛ</b> adds seasonal AR/MA/differencing at period s. <b>SARIMAX</b> adds exogenous regressors (price, promotions, holidays).</p></div>
+<ul><li>Box–Jenkins: identify (stationarity, ACF/PACF) → estimate (MLE) → diagnose (residuals ≈ white noise: Ljung–Box test) → forecast.</li><li>Order selection by AIC/BIC (auto_arima).</li><li>Limits: one series at a time, linear, struggles with multiple seasonalities and many covariates.</li></ul>
+</details>
 
 <h2 id="labs">Labs</h2>
 <div class="lab" data-id="ts-stationarity" data-title="Test stationarity and difference">

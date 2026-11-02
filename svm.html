@@ -9,37 +9,75 @@
 <main>
 <div class="eyebrow">Supervised · Margin-based · Classification & regression</div>
 <h1>Support Vector Machines (SVM)</h1>
-<p class="lede">Find the separating hyperplane with the widest margin; let a few points violate it at a cost C; use the kernel trick to get non-linear boundaries without ever computing high-dimensional features. Classic questions: what are support vectors, what do C and gamma do, what is the kernel trick, hinge loss vs log loss.</p>
-<div class="toc"><a href="#pitch">30-sec answer</a><a href="#intuition">Intuition</a><a href="#math">Maths</a><a href="#demo">Margin & C</a><a href="#kernel">Kernel trick</a><a href="#hp">C & gamma</a><a href="#svr">SVR</a><a href="#practice">Practical</a><a href="#procon">Pros/cons</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<p class="lede">A classifier that draws the boundary with the <b>widest possible safety gap</b> between classes, and with the “kernel trick” it can bend that boundary into curves. It was the king of ML before boosting and deep learning, and is still asked about for its elegant ideas: margin, support vectors, C, gamma and kernels.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#demo">Margin and C</a><a href="#hp">Hyperparameters</a><a href="#svr">Support Vector Regression</a><a href="#practice">Practical notes</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
-<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“An SVM finds the hyperplane \(w^Tx+b=0\) that maximises the margin \(2/\lVert w\rVert\) between classes. The soft-margin version minimises \(\tfrac12\lVert w\rVert^2 + C\sum\xi_i\), equivalently L2-regularised hinge loss; C trades margin width against training errors. Only the support vectors — points on or inside the margin — determine the solution. Via the dual problem, data appear only through dot products, so we can replace them with a kernel such as RBF \(e^{-\gamma\lVert x-z\rVert^2}\) to get non-linear boundaries. Large C or large γ overfit. Features must be scaled, and kernel SVMs scale roughly O(n²)–O(n³), so they're best for small-to-medium data.”</p></div>
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>Imagine red and blue marbles on a table, and you need to lay a ruler between them. Many positions work, but the safest one leaves the <b>widest empty “street”</b> on both sides, because new marbles are then less likely to land on the wrong side. SVM finds exactly that street.</p>
+<p>Only the marbles <b>touching the edge of the street</b> matter. They're the <b>support vectors</b>, and moving any other marble changes nothing. And if no straight ruler can separate them (blue in a ring around red)? The <b>kernel trick</b> imagines lifting the marbles into a higher dimension, say pushing the centre ones upward, where a flat sheet <i>can</i> separate them. Seen back on the table, that sheet is a circle.</p></div>
 
-<h2 id="intuition">Intuition</h2>
-<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Many lines can separate two groups. SVM picks the one that leaves the widest empty “street” between them, because a wide street is less likely to be crossed by new points. The points standing on the edge of the street are the support vectors — move any other point (without crossing the street) and the line doesn't change.</p></div>
+<h2 id="steps">How it works, step by step (no maths)</h2>
+<ol class="steps">
+<li><b>Scale the features.</b> SVM is distance-based, so units matter.</li>
+<li><b>Look for the boundary with the widest margin</b> between the classes.</li>
+<li><b>Allow some mistakes (soft margin).</b> Real data overlaps, so points may sit inside the street or on the wrong side, at a cost controlled by <b>C</b>.</li>
+<li><b>Need a curved boundary?</b> Choose a kernel (RBF is the usual default), which measures similarity as if in a richer feature space.</li>
+<li><b>The final model depends only on the support vectors</b>, the critical points near the boundary.</li>
+<li><b>Tune C and gamma together</b> with cross-validation.</li>
+</ol>
 
-<h2 id="math">Maths</h2>
-<h3>Hard margin (separable data)</h3>
-<div class="callout math"><div class="tag">∑ Primal</div>$$\min_{w,b}\ \frac12\lVert w\rVert^2\quad\text{s.t.}\quad y_i(w^Tx_i+b)\ge1\ \ \forall i,\qquad y_i\in\{-1,+1\}$$<p>Distance from a point to the hyperplane is \(|w^Tx+b|/\lVert w\rVert\); with the canonical scaling (closest points have \(|w^Tx+b|=1\)) the margin width is \(2/\lVert w\rVert\), so maximising it = minimising \(\lVert w\rVert^2\).</p></div>
-<h3>Soft margin</h3>
-<div class="callout math"><div class="tag">∑ Primal with slack ξ</div>$$\min_{w,b,\xi}\ \frac12\lVert w\rVert^2 + C\sum_i\xi_i\quad\text{s.t.}\quad y_i(w^Tx_i+b)\ge1-\xi_i,\ \xi_i\ge0$$
-$$\Longleftrightarrow\ \min_{w,b}\ \frac12\lVert w\rVert^2 + C\sum_i\max\big(0,\,1-y_i(w^Tx_i+b)\big)\quad\text{(hinge loss)}$$</div>
-<h3>Dual (where kernels come from)</h3>
-<div class="callout math"><div class="tag">∑ Dual problem</div>$$\max_\alpha\ \sum_i\alpha_i-\frac12\sum_{i,j}\alpha_i\alpha_jy_iy_j\,x_i^Tx_j\quad\text{s.t.}\ 0\le\alpha_i\le C,\ \sum_i\alpha_iy_i=0$$
-$$f(x)=\operatorname{sign}\Big(\sum_{i\in SV}\alpha_iy_i\,K(x_i,x)+b\Big)$$<p>KKT conditions: \(\alpha_i=0\) for points outside the margin (irrelevant), \(0&lt;\alpha_i&lt;C\) on the margin, \(\alpha_i=C\) inside/misclassified. The non-zero α's are the support vectors.</p></div>
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“An SVM finds the hyperplane that maximises the margin between classes, and only the points on or inside the margin, the support vectors, define it. The soft-margin version uses hinge loss and a parameter C to trade margin width against training errors: large C means fewer violations and a risk of overfitting, small C means a wider, more regularised margin. The kernel trick replaces dot products with a kernel function such as RBF, giving non-linear boundaries without ever computing the high-dimensional features. For RBF, gamma controls how far each point's influence reaches. I scale features, tune C and gamma jointly, and use a linear SVM for large sparse text data. Kernel SVMs scale poorly beyond roughly 100k rows.”</p></div>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Maximum margin</b> means better generalisation: a wide gap is robust to small changes in new data.</li>
+<li><b>Support vectors</b> are the only points that matter. The model is sparse and memory-light at prediction time.</li>
+<li><b>C (soft margin):</b> large C means strict, a narrow margin and overfitting risk. Small C means tolerant, a wide margin and more bias. It works like 1/regularisation strength.</li>
+<li><b>Kernels:</b> linear (text, many features), polynomial (interactions), <b>RBF</b> (default for curved boundaries).</li>
+<li><b>gamma (RBF):</b> large gamma means each point's influence is very local, giving wiggly boundaries that overfit. Small gamma means smooth boundaries that can underfit.</li>
+<li><b>Hinge loss:</b> correct points comfortably outside the margin cost zero, so the model ignores easy points.</li>
+<li><b>Scaling is mandatory.</b></li>
+<li><b>No native probabilities.</b> <code>probability=True</code> adds a slow calibration step (Platt scaling).</li>
+<li><b>Training time grows roughly quadratically to cubically with the number of rows</b> for kernel SVMs, so they're impractical beyond about 100k rows. LinearSVC scales well.</li>
+<li><b>SVR</b> is the regression version: it fits a tube of width ε and ignores errors inside it.</li>
+</ul>
+
+<h2 id="deeper">Going deeper: advanced intuition</h2>
+<div class="grid two">
+<div class="card"><div class="kicker">kernel trick</div><h4>Similarity instead of features</h4><p>The SVM only ever needs to know “how similar are these two points?”. A kernel computes the similarity you'd get in a huge (even infinite) feature space, without building that space. RBF says “points are similar if they're close”.</p></div>
+<div class="card"><div class="kicker">C × gamma</div><h4>The two dials together</h4><p>High C with high gamma memorises every point (islands around each one). Low C with low gamma is almost a straight line. The sweet spot lies on a diagonal of the grid, so always search them jointly, on a log scale.</p></div>
+<div class="card"><div class="kicker">hinge vs log-loss</div><h4>SVM vs logistic regression</h4><p>Both draw a linear boundary. Logistic regression listens a little to <i>every</i> point. SVM listens <i>only</i> to points near the boundary, which makes it more robust to far-away points but stops it from giving natural probabilities.</p></div>
+<div class="card"><div class="kicker">high dimensions</div><h4>Why SVMs love text</h4><p>When there are more features than rows, classes are often linearly separable, and maximising the margin is a strong regulariser there. That's why linear SVMs were state of the art for text classification.</p></div>
+<div class="card"><div class="kicker">sparsity</div><h4>Few support vectors = simple model</h4><p>If only 5% of the points are support vectors, the boundary is simple and likely to generalise. If almost all points are support vectors, the classes overlap heavily or C and gamma are off.</p></div>
+<div class="card"><div class="kicker">duality</div><h4>Why kernels are possible</h4><p>The optimisation can be rewritten so the data appears only through pairwise similarities (the “dual”). That rewrite is what lets you swap in any valid kernel.</p></div>
+</div>
+
+<h2 id="when">When SVM wins (and when it doesn't)</h2>
+<div class="callout win"><div class="tag">🏆 Pick SVM when…</div>
+<ul>
+<li>The data is <b>small to medium</b> (hundreds to tens of thousands of rows) with a <b>complex but clean boundary</b> (RBF kernel).</li>
+<li>There are <b>more features than rows</b>, as in genomics, text and some bioinformatics. Use a linear SVM.</li>
+<li>The task is <b>text classification</b> with TF-IDF (LinearSVC is fast and very strong).</li>
+<li>You want a model robust to points far from the boundary, and probabilities aren't needed.</li>
+</ul></div>
+<div class="table-wrap"><table class="vs">
+<tr><th>Compared with</th><th>Choose SVM when…</th><th>Choose the other when…</th></tr>
+<tr><td><a href="logistic-regression.html">Logistic regression</a></td><td>You want maximum margin or a kernel for a non-linear boundary.</td><td>You need calibrated probabilities and interpretable coefficients.</td></tr>
+<tr><td><a href="xgboost.html">Gradient boosting</a></td><td>Data is small, high-dimensional and features are all numeric.</td><td>It's large tabular data with mixed types, missing values or categoricals.</td></tr>
+<tr><td><a href="knn.html">kNN</a></td><td>You need fast prediction and a robust boundary.</td><td>You want no training and instant updates.</td></tr>
+<tr><td>Neural networks</td><td>Data is small and you want a convex problem (no local minima).</td><td>Data is large and unstructured (images, audio, text semantics).</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Avoid it when…</div><ul>
+<li>There are <b>more than about 100k rows</b> with a kernel. Training becomes painfully slow.</li>
+<li>You need <b>probabilities or explanations</b>.</li>
+<li>Data is <b>very noisy with heavily overlapping classes</b>, or full of missing values and categoricals.</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>Cancer subtype classification from gene expression:</b> 200 patients × 20,000 genes. More features than rows rules out most models. A linear SVM (or one with a modest RBF kernel), with C tuned by cross-validation, gives a strong, well-regularised boundary where tree ensembles overfit.</p></div>
 
 <h2 id="demo">Margin and C</h2>
 <div class="widget" data-demo="svm"><div class="widget-title">Linear soft-margin SVM</div><div class="widget-sub">Two overlapping classes with a couple of “outliers”. Slide C and watch the street narrow and the support vectors change.</div></div>
-
-<h2 id="kernel">The kernel trick</h2>
-<p>The dual only needs dot products \(x_i^Tx_j\). Replace them with \(K(x_i,x_j)=\phi(x_i)^T\phi(x_j)\) for some feature map φ — possibly infinite-dimensional — without ever computing φ. A valid kernel must be symmetric positive semi-definite (Mercer's condition).</p>
-<div class="table-wrap"><table>
-<tr><th>Kernel</th><th>K(x, z)</th><th>Notes</th></tr>
-<tr><td>Linear</td><td>\(x^Tz\)</td><td>High-dimensional sparse data (text); use LinearSVC for speed</td></tr>
-<tr><td>Polynomial</td><td>\((\gamma x^Tz+r)^d\)</td><td>Feature interactions up to degree d</td></tr>
-<tr><td>RBF / Gaussian</td><td>\(\exp(-\gamma\lVert x-z\rVert^2)\)</td><td>Default; infinite-dimensional φ; similarity decays with distance</td></tr>
-<tr><td>Sigmoid</td><td>\(\tanh(\gamma x^Tz+r)\)</td><td>Rarely used; not always PSD</td></tr>
-</table></div>
-<p>Example: for 2-D \(x\), \((x^Tz)^2=\phi(x)^T\phi(z)\) with \(\phi(x)=(x_1^2,\sqrt2x_1x_2,x_2^2)\) — a circle in 2-D becomes a plane in 3-D.</p>
 
 <h2 id="hp">Hyperparameters: C and gamma</h2>
 <div class="table-wrap"><table class="hp">
@@ -69,6 +107,28 @@ $$f(x)=\operatorname{sign}\Big(\sum_{i\in SV}\alpha_iy_i\,K(x_i,x)+b\Big)$$<p>KK
 <h2 id="procon">Pros, cons & when to use</h2>
 <div class="procon"><div class="pro"><h4>✅ Strengths</h4><ul><li>Effective in high-dimensional spaces, even d &gt; n</li><li>Max-margin → good generalisation; convex (unique global optimum)</li><li>Flexible non-linear boundaries via kernels</li><li>Memory-efficient prediction (support vectors only)</li></ul></div>
 <div class="con"><h4>❌ Weaknesses</h4><ul><li>Doesn't scale to very large n (kernel)</li><li>Sensitive to C, γ, kernel choice and feature scaling</li><li>No direct probabilities; hard to interpret with kernels</li><li>Noisy, overlapping classes → many support vectors, slow</li></ul></div></div>
+
+<details class="deep" id="maths"><summary>Optional maths — only if the interviewer goes deep<span class="small">click to expand</span></summary>
+<h3 id="math">Maths</h3>
+<h4>Hard margin (separable data)</h4>
+<div class="callout math"><div class="tag">∑ Primal</div>$$\min_{w,b}\ \frac12\lVert w\rVert^2\quad\text{s.t.}\quad y_i(w^Tx_i+b)\ge1\ \ \forall i,\qquad y_i\in\{-1,+1\}$$<p>Distance from a point to the hyperplane is \(|w^Tx+b|/\lVert w\rVert\); with the canonical scaling (closest points have \(|w^Tx+b|=1\)) the margin width is \(2/\lVert w\rVert\), so maximising it = minimising \(\lVert w\rVert^2\).</p></div>
+<h4>Soft margin</h4>
+<div class="callout math"><div class="tag">∑ Primal with slack ξ</div>$$\min_{w,b,\xi}\ \frac12\lVert w\rVert^2 + C\sum_i\xi_i\quad\text{s.t.}\quad y_i(w^Tx_i+b)\ge1-\xi_i,\ \xi_i\ge0$$
+$$\Longleftrightarrow\ \min_{w,b}\ \frac12\lVert w\rVert^2 + C\sum_i\max\big(0,\,1-y_i(w^Tx_i+b)\big)\quad\text{(hinge loss)}$$</div>
+<h4>Dual (where kernels come from)</h4>
+<div class="callout math"><div class="tag">∑ Dual problem</div>$$\max_\alpha\ \sum_i\alpha_i-\frac12\sum_{i,j}\alpha_i\alpha_jy_iy_j\,x_i^Tx_j\quad\text{s.t.}\ 0\le\alpha_i\le C,\ \sum_i\alpha_iy_i=0$$
+$$f(x)=\operatorname{sign}\Big(\sum_{i\in SV}\alpha_iy_i\,K(x_i,x)+b\Big)$$<p>KKT conditions: \(\alpha_i=0\) for points outside the margin (irrelevant), \(0&lt;\alpha_i&lt;C\) on the margin, \(\alpha_i=C\) inside/misclassified. The non-zero α's are the support vectors.</p></div>
+<h3 id="kernel">The kernel trick</h3>
+<p>The dual only needs dot products \(x_i^Tx_j\). Replace them with \(K(x_i,x_j)=\phi(x_i)^T\phi(x_j)\) for some feature map φ — possibly infinite-dimensional — without ever computing φ. A valid kernel must be symmetric positive semi-definite (Mercer's condition).</p>
+<div class="table-wrap"><table>
+<tr><th>Kernel</th><th>K(x, z)</th><th>Notes</th></tr>
+<tr><td>Linear</td><td>\(x^Tz\)</td><td>High-dimensional sparse data (text); use LinearSVC for speed</td></tr>
+<tr><td>Polynomial</td><td>\((\gamma x^Tz+r)^d\)</td><td>Feature interactions up to degree d</td></tr>
+<tr><td>RBF / Gaussian</td><td>\(\exp(-\gamma\lVert x-z\rVert^2)\)</td><td>Default; infinite-dimensional φ; similarity decays with distance</td></tr>
+<tr><td>Sigmoid</td><td>\(\tanh(\gamma x^Tz+r)\)</td><td>Rarely used; not always PSD</td></tr>
+</table></div>
+<p>Example: for 2-D \(x\), \((x^Tz)^2=\phi(x)^T\phi(z)\) with \(\phi(x)=(x_1^2,\sqrt2x_1x_2,x_2^2)\) — a circle in 2-D becomes a plane in 3-D.</p>
+</details>
 
 <h2 id="labs">Labs</h2>
 <div class="lab" data-id="svm-grid" data-title="Tune C and gamma for an RBF SVM">

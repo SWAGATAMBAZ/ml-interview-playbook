@@ -9,22 +9,72 @@
 <main>
 <div class="eyebrow">Supervised · Probabilistic · Generative classifier</div>
 <h1>Naive Bayes</h1>
-<p class="lede">Apply Bayes' theorem with the “naive” assumption that features are conditionally independent given the class. Absurdly simple, extremely fast, and still a strong baseline for text classification and spam filtering. Interviewers love asking why it works despite the wrong assumption, and what Laplace smoothing is.</p>
-<div class="toc"><a href="#pitch">30-sec answer</a><a href="#bayes">Bayes' theorem</a><a href="#math">The NB model</a><a href="#variants">Variants</a><a href="#smoothing">Laplace smoothing</a><a href="#example">Worked example</a><a href="#hp">Hyperparameters</a><a href="#procon">Pros/cons</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<p class="lede">A probability-based classifier that “counts and multiplies”. It's absurdly fast, works with tiny data and remains a strong baseline for text such as spam filtering, sentiment and document tagging. Interviewers check whether you understand the “naive” assumption and smoothing.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#bayes">Bayes' theorem</a><a href="#variants">Variants</a><a href="#smoothing">Laplace</a><a href="#example">Worked example</a><a href="#hp">Hyperparameters</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
-<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“Naive Bayes is a generative classifier: it estimates the prior P(y) and the class-conditional likelihood P(x|y), then uses Bayes' rule to get P(y|x). The naive assumption — features independent given the class — factorises the likelihood into \(\prod_j P(x_j\mid y)\), so it needs very little data and trains in one pass. Gaussian NB for continuous features, Multinomial for counts like word frequencies, Bernoulli for binary presence. Laplace smoothing prevents zero probabilities for unseen feature values; we sum log-probabilities to avoid underflow. Its rankings are often good even though its probabilities are poorly calibrated.”</p></div>
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>An email arrives containing “free”, “winner” and “click here”. Is it spam? Naive Bayes starts from <b>how common spam is in general</b> (say 30%), then, for each word, asks <b>“how much more often does this word appear in spam than in normal mail?”</b> and nudges the guess up or down. It multiplies all these nudges together and picks the class with the higher final score.</p>
+<p>The <b>“naive”</b> part: it treats every word as independent evidence, even though “click” and “here” clearly come together. It's a wrong assumption, yet the model still ranks classes surprisingly well.</p></div>
+
+<h2 id="steps">How it works, step by step (no maths)</h2>
+<ol class="steps">
+<li><b>Count class frequencies</b> (the prior), e.g. 30% spam, 70% not spam.</li>
+<li><b>For each class, count how often each feature value appears</b>, e.g. “free” appears in 20% of spam but 1% of normal mail.</li>
+<li><b>Add a small count to everything (Laplace smoothing)</b> so a word never seen in spam doesn't make the probability exactly zero.</li>
+<li><b>For a new email, combine</b> the prior with every word's evidence. Adding logs avoids tiny numbers.</li>
+<li><b>Predict the class with the highest score.</b> That's the whole model: training is one pass of counting.</li>
+</ol>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“Naive Bayes applies Bayes' theorem with the naive assumption that features are conditionally independent given the class. It predicts the class that maximises the prior times the product of per-feature likelihoods, computed as a sum of logs for numerical stability. Training is just counting, so it's extremely fast, needs little data and supports online updates. The variants are Gaussian for continuous features, Multinomial for word counts and Bernoulli for binary presence, with Laplace smoothing to avoid zero probabilities. Its class rankings are often good even though the independence assumption is violated, but its probabilities are poorly calibrated, usually too extreme.”</p></div>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Naive assumption:</b> features are independent <i>given the class</i>. It's almost always false, but the model still works because classification only needs the <i>right winner</i>, not exact probabilities.</li>
+<li><b>Three variants:</b> <b>Gaussian</b> (continuous features), <b>Multinomial</b> (word counts, TF-IDF), <b>Bernoulli</b> (word present or absent). Complement NB suits imbalanced text.</li>
+<li><b>Laplace smoothing (alpha)</b> stops a single unseen word from zeroing out a class.</li>
+<li><b>Use logs</b> so that multiplying thousands of small probabilities doesn't underflow to 0.</li>
+<li><b>Very fast and data-efficient:</b> one counting pass, works with hundreds of examples, and supports <code>partial_fit</code> for streaming.</li>
+<li><b>Probabilities are badly calibrated</b> (over-confident) because correlated evidence is double-counted. Use calibration if you need real probabilities.</li>
+<li><b>Generative model:</b> it learns how each class generates the data, unlike logistic regression, which learns the boundary directly.</li>
+<li>It handles <b>many features</b> (100k-word vocabularies) with ease.</li>
+</ul>
+
+<h2 id="deeper">Going deeper: advanced intuition</h2>
+<div class="grid two">
+<div class="card"><div class="kicker">why it still works</div><h4>Right ranking, wrong confidence</h4><p>Double-counting correlated words inflates the scores of <i>both</i> classes in similar ways, so the winner is often unchanged. That's why accuracy is good but probabilities near 0 or 1 can't be trusted.</p></div>
+<div class="card"><div class="kicker">generative vs discriminative</div><h4>NB vs logistic regression</h4><p>NB reaches its (higher) best error with very few examples. Logistic regression needs more data but ends up lower. Small data → NB, more data → logistic. It's a classic Ng &amp; Jordan result.</p></div>
+<div class="card"><div class="kicker">it's linear</div><h4>A linear model in disguise</h4><p>Multinomial and Bernoulli NB produce a decision boundary that's linear in the feature counts, the same shape as logistic regression, only with weights set by counting instead of optimising.</p></div>
+<div class="card"><div class="kicker">smoothing</div><h4>Alpha is regularisation</h4><p>A bigger alpha pulls every word's probability toward uniform, which means less trust in rare words. Tune it with cross-validation like any other regulariser.</p></div>
+<div class="card"><div class="kicker">correlated features</div><h4>Duplicates are dangerous</h4><p>Add the same feature twice and NB counts its evidence twice. Remove near-duplicate features or use logistic regression.</p></div>
+<div class="card"><div class="kicker">Gaussian NB</div><h4>Bell-curve assumption</h4><p>For continuous features, each class is assumed to produce a bell curve per feature. Skewed features hurt, so transform them (log) or bin them.</p></div>
+</div>
+
+<h2 id="when">When Naive Bayes wins (and when it doesn't)</h2>
+<div class="callout win"><div class="tag">🏆 Pick Naive Bayes when…</div>
+<ul>
+<li>The task is <b>text classification</b>: spam, sentiment, support-ticket routing, news categories. These are high-dimensional sparse word counts.</li>
+<li><b>Training data is tiny</b> (hundreds of labelled examples).</li>
+<li>You need <b>real-time training or streaming updates</b>, or training on huge data on one machine.</li>
+<li>You need a <b>baseline in five minutes</b> before trying anything heavier.</li>
+</ul></div>
+<div class="table-wrap"><table class="vs">
+<tr><th>Compared with</th><th>Choose Naive Bayes when…</th><th>Choose the other when…</th></tr>
+<tr><td><a href="logistic-regression.html">Logistic regression</a></td><td>Data is very small, or you need instant or online training.</td><td>There's more data, features are correlated, or you need calibrated probabilities.</td></tr>
+<tr><td><a href="svm.html">Linear SVM</a></td><td>You need speed and simplicity on text.</td><td>You want the most accurate linear text classifier and have time to tune.</td></tr>
+<tr><td>Transformers (BERT)</td><td>Compute budget is tiny, data is tiny, or you need a baseline.</td><td>Meaning, word order and context matter, and you have GPU and data.</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Avoid it when…</div><ul>
+<li>You need <b>trustworthy probabilities</b> (risk scoring, expected values).</li>
+<li>Features are <b>strongly correlated or duplicated</b>, or <b>interactions</b> matter (“not good” means the opposite of “good”).</li>
+<li>Continuous features are far from bell-shaped (for Gaussian NB).</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>Routing customer-support emails into 12 queues</b> with only 2,000 labelled tickets: Multinomial NB on TF-IDF trains in under a second, retrains every night as agents relabel tickets, and gets about 85% accuracy as a baseline. Upgrade to logistic regression or a fine-tuned transformer later, once more labels exist.</p></div>
 
 <h2 id="bayes">Bayes' theorem</h2>
 <div class="callout math"><div class="tag">∑ Posterior ∝ likelihood × prior</div>$$P(y\mid x)=\frac{P(x\mid y)\,P(y)}{P(x)}\ \propto\ P(x\mid y)\,P(y)$$</div>
 <div class="callout layman"><div class="tag">🧒 In plain English</div><p>An email contains “free”, “winner” and “click”. How likely is spam? Start from how common spam is (prior), then for each word multiply by how much more often it appears in spam than in normal mail (likelihood). The “naive” part: treat each word's evidence as if it were independent of the others.</p></div>
-
-<h2 id="math">The Naive Bayes model</h2>
-<div class="callout math"><div class="tag">∑ Decision rule (in log space)</div>$$\hat y=\arg\max_k\ \Big[\log P(y=k)+\sum_{j=1}^d\log P(x_j\mid y=k)\Big]$$
-<p>Logs turn a product of many small numbers (underflow risk) into a sum. P(x) is the same for every class, so it's dropped for classification.</p></div>
-<ul>
-<li><b>Training</b> = counting/averaging: class frequencies, and per-class feature distributions. O(n·d) single pass, trivially parallel and supports online updates (partial_fit).</li>
-<li>Multinomial and Bernoulli NB are <b>linear classifiers</b> in log space (log-odds is linear in feature counts).</li>
-</ul>
 
 <h2 id="variants">Variants</h2>
 <div class="table-wrap"><table>
@@ -58,6 +108,16 @@
 <h2 id="procon">Pros, cons & when to use</h2>
 <div class="procon"><div class="pro"><h4>✅ Strengths</h4><ul><li>Very fast to train & predict; scales to huge vocabularies</li><li>Works with little training data; few parameters</li><li>Handles many features & multiclass naturally; online learning</li><li>Strong baseline for text: spam, sentiment, topic, intent</li></ul></div>
 <div class="con"><h4>❌ Weaknesses</h4><ul><li>Independence assumption rarely true → can't model interactions</li><li>Poorly calibrated, overconfident probabilities (correlated features double-count evidence)</li><li>GaussianNB assumes normal features</li><li>Usually beaten by logistic regression / boosting with enough data</li></ul></div></div>
+
+<details class="deep" id="maths"><summary>Optional maths — only if the interviewer goes deep<span class="small">click to expand</span></summary>
+<h3 id="math">The Naive Bayes model</h3>
+<div class="callout math"><div class="tag">∑ Decision rule (in log space)</div>$$\hat y=\arg\max_k\ \Big[\log P(y=k)+\sum_{j=1}^d\log P(x_j\mid y=k)\Big]$$
+<p>Logs turn a product of many small numbers (underflow risk) into a sum. P(x) is the same for every class, so it's dropped for classification.</p></div>
+<ul>
+<li><b>Training</b> = counting/averaging: class frequencies, and per-class feature distributions. O(n·d) single pass, trivially parallel and supports online updates (partial_fit).</li>
+<li>Multinomial and Bernoulli NB are <b>linear classifiers</b> in log space (log-odds is linear in feature counts).</li>
+</ul>
+</details>
 
 <h2 id="labs">Labs</h2>
 <div class="lab" data-id="nb-gaussian-scratch" data-title="Gaussian Naive Bayes from scratch">

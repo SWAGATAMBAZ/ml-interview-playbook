@@ -9,10 +9,75 @@
 <main>
 <div class="eyebrow">Unsupervised · Clustering beyond K-means · Outliers</div>
 <h1>Hierarchical, DBSCAN, GMM & anomaly detection</h1>
-<p class="lede">When clusters aren't round, K is unknown, or you need probabilities or noise labels, K-means isn't enough. This page covers the other clustering families interviewers expect you to compare, plus the unsupervised anomaly detectors used in fraud and monitoring: Isolation Forest, LOF and One-Class SVM.</p>
-<div class="toc"><a href="#pitch">30-sec answer</a><a href="#hier">Hierarchical</a><a href="#dbscan">DBSCAN</a><a href="#gmm">GMM & EM</a><a href="#compare">Which clustering?</a><a href="#anomaly">Anomaly detection</a><a href="#hp">Hyperparameters</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<p class="lede">Beyond K-means: four tools for finding groups and oddities in unlabelled data. <b>Hierarchical</b> clustering builds a family tree of groups, <b>DBSCAN</b> finds dense crowds of any shape, <b>Gaussian Mixtures</b> give soft, probabilistic clusters, and <b>anomaly detectors</b> flag the points that fit nowhere. Each model below gets its own plain-English explanation and a “when it wins” box.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#pitch">30-sec answer</a><a href="#models">Each model</a><a href="#when">When it wins</a><a href="#hier">Hierarchical</a><a href="#dbscan">DBSCAN</a><a href="#compare">Which clustering algorithm?</a><a href="#anomaly">Anomaly / outlier detection</a><a href="#hp">Hyperparameters</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
-<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“Hierarchical agglomerative clustering starts with every point as its own cluster and repeatedly merges the closest pair according to a linkage — single, complete, average or Ward — giving a dendrogram you can cut at any height, no K needed upfront but O(n²) memory. DBSCAN is density-based: core points have at least min_samples neighbours within eps; it finds arbitrarily shaped clusters and labels outliers as noise, but struggles with varying densities. GMMs model data as a mixture of Gaussians fitted with EM, giving soft assignments and elliptical clusters, with K chosen by BIC. For anomalies I'd use Isolation Forest — anomalies are isolated in fewer random splits — or LOF for local density deviations.”</p></div>
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>Imagine a satellite photo of people in a park at night. <b>Hierarchical</b> clustering starts with every person alone, keeps merging the two closest groups, and records the full family tree. <b>DBSCAN</b> says “a cluster is wherever people are packed tightly together”, so crowds can be any shape and the loners are noise. <b>GMM</b> assumes each crowd is a fuzzy oval and says “this person is 70% crowd A, 30% crowd B”. <b>Anomaly detection</b> ignores the crowds and finds the people who are strangely far from everyone.</p></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“I choose the clustering method by the shape of the clusters and what I need out of them. K-means is for fast, round clusters when I know K. Agglomerative hierarchical clustering gives a dendrogram, so there's no need to fix K upfront, and the linkage choice controls cluster shape, but it's O(n²) in memory, so it suits smaller data. DBSCAN groups density-connected points, finds arbitrary shapes and labels outliers as noise. Its weakness is one global density, which HDBSCAN fixes. GMMs fit a mixture of Gaussians with EM, giving soft assignments and elliptical clusters, with K chosen by BIC. For anomalies I'd use Isolation Forest for scale, LOF for local density outliers, or reconstruction error from an autoencoder or PCA.”</p></div>
+
+<h2 id="models">Each model in plain English</h2>
+
+<h3 id="m-hier">1 · Hierarchical (agglomerative) clustering</h3>
+<div class="callout layman"><div class="tag">🧒 Idea</div><p>Start with every point as its own group. Repeatedly <b>merge the two closest groups</b> until one remains. The merge history is a tree (dendrogram), and you <b>cut</b> it at whatever height gives a sensible number of groups.</p></div>
+<ul class="keypts">
+<li><b>No need to pick K first.</b> Look at the dendrogram, then decide.</li>
+<li><b>Linkage = how “distance between groups” is defined.</b> <b>Ward</b> (the most common) gives compact, K-means-like groups. <b>Single</b> chains into long shapes and is noise-sensitive. <b>Complete</b> gives tight groups. <b>Average</b> is in between.</li>
+<li><b>Expensive:</b> memory grows with n², so it's practical up to roughly 10–20k points.</li>
+<li><b>Deterministic</b> (no random start), but merges are greedy and can't be undone.</li>
+</ul>
+<div class="callout win"><div class="tag">🏆 Wins when…</div><p>Data is small to medium and you want a <b>taxonomy or nested structure</b>: product categories, gene-expression families, document topics within topics, or an org-chart-like view of customer types. It's also good when stakeholders want to <i>see</i> how groups relate.</p></div>
+
+<h3 id="m-dbscan">2 · DBSCAN (and HDBSCAN)</h3>
+<div class="callout layman"><div class="tag">🧒 Idea</div><p>A point with at least <code>min_samples</code> neighbours within radius <code>eps</code> is a <b>core</b> point, sitting inside a crowd. Clusters grow by chaining core points together. Points near a crowd join it, and points near nobody are labelled <b>noise</b>.</p></div>
+<ul class="keypts">
+<li><b>Finds arbitrary shapes</b> (rings, moons, rivers) and <b>doesn't need K</b>.</li>
+<li><b>Built-in outlier detection</b>: noise points get the label −1.</li>
+<li><b>Choose eps</b> from a k-distance plot (the “knee”). Set <b>min_samples</b> to roughly 2 × the number of dimensions.</li>
+<li><b>Weakness: one global density.</b> It fails when clusters have different densities. <b>HDBSCAN</b> fixes this and needs only a minimum cluster size.</li>
+<li>It struggles in high dimensions, because distances blur. Reduce dimensions first.</li>
+</ul>
+<div class="callout win"><div class="tag">🏆 Wins when…</div><p><b>Geospatial or GPS data</b> (finding hotspots, delivery zones, ride pick-up clusters), irregularly shaped clusters, <b>unknown K</b>, and data with noise you want flagged rather than forced into a cluster. Prefer HDBSCAN when densities vary.</p></div>
+
+<h3 id="m-gmm">3 · Gaussian Mixture Models (GMM)</h3>
+<div class="callout layman"><div class="tag">🧒 Idea</div><p>Assume the data was produced by K overlapping <b>fuzzy ovals</b> (bell curves). The EM algorithm alternates two steps: guess how much each point belongs to each oval, then re-fit the ovals to those soft memberships. The output is a <b>probability per cluster</b> for every point.</p></div>
+<ul class="keypts">
+<li><b>Soft clustering:</b> “70% segment A, 30% segment B”, which is useful when groups overlap.</li>
+<li><b>Elliptical clusters</b> with different sizes and orientations. K-means is the special case with round, equal clusters and hard assignments.</li>
+<li><b>Choose K with BIC or AIC</b>, since it's a probabilistic model.</li>
+<li><b>It's a density model too:</b> a very low likelihood flags an anomaly, and you can sample new data from it.</li>
+<li>Sensitive to initialisation (local optima). Use the full covariance only with enough data per cluster.</li>
+</ul>
+<div class="callout win"><div class="tag">🏆 Wins when…</div><p>Clusters <b>overlap</b> or are <b>elongated</b>, you need <b>membership probabilities</b> (e.g. a customer partly in two personas), or you need a density estimate for anomaly scoring or simulation.</p></div>
+
+<h3 id="m-anomaly">4 · Anomaly detection (Isolation Forest, LOF and others)</h3>
+<div class="callout layman"><div class="tag">🧒 Idea</div><p><b>Isolation Forest</b>: keep cutting the data with random lines. Normal points are buried in crowds and take many cuts to isolate, while oddballs get isolated in just a few. <b>LOF</b>: compare how crowded a point's neighbourhood is with how crowded its neighbours' neighbourhoods are. A point much lonelier than its neighbours is an outlier.</p></div>
+<ul class="keypts">
+<li><b>Isolation Forest:</b> fast, scales to millions of rows, copes with many features. <code>contamination</code> sets the expected share of outliers.</li>
+<li><b>LOF:</b> catches <i>local</i> outliers in data with varying density, but it's slower.</li>
+<li><b>Simple rules</b> (z-score, IQR) are fine for one variable. <b>Reconstruction error</b> (PCA or an autoencoder) works for complex, high-dimensional data.</li>
+<li>Labels are usually rare, so evaluate on whatever labelled incidents exist (precision@k) and tune the threshold to the team's investigation capacity.</li>
+</ul>
+<div class="callout win"><div class="tag">🏆 Wins when…</div><p><b>Fraud, intrusion, sensor faults or quality defects</b> with few or no labels. Start with Isolation Forest at scale, use LOF for local, density-varying outliers, and switch to a supervised classifier once enough confirmed anomalies exist.</p></div>
+
+<h2 id="when">Which one should you pick?</h2>
+<div class="table-wrap"><table class="vs">
+<tr><th>Situation</th><th>Best pick</th><th>Why</th></tr>
+<tr><td>Lots of numeric data, round groups, known K</td><td><a href="kmeans.html">K-means</a></td><td>Fastest and simplest</td></tr>
+<tr><td>Small data, want nested groups or a dendrogram</td><td>Hierarchical (Ward)</td><td>Full tree, no K upfront</td></tr>
+<tr><td>Odd shapes, noise, unknown K (GPS, spatial)</td><td>DBSCAN / HDBSCAN</td><td>Density-based, labels outliers</td></tr>
+<tr><td>Overlapping or elliptical groups, need probabilities</td><td>GMM</td><td>Soft, probabilistic membership</td></tr>
+<tr><td>Find rare odd points, few labels</td><td>Isolation Forest / LOF</td><td>Built for outliers, not groups</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Traps that apply to all of them</div><ul>
+<li><b>Scale the features</b>. Every method here is distance- or density-based.</li>
+<li><b>Clustering always returns <i>something</i></b>, even on random data. Validate with silhouette scores, stability across runs and, above all, whether the groups are actionable for the business.</li>
+<li>In high dimensions, reduce first (PCA, UMAP) or cluster embeddings.</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>Ride-hailing pick-up hotspots:</b> 5M GPS pick-up points across a city. K-means would slice the city into round blobs and force stray points into them. HDBSCAN finds natural hotspots of any shape (stations, malls, along a main road) at different densities and labels scattered pick-ups as noise. Isolation Forest on trip features flags suspicious trips separately.</p></div>
 
 <h2 id="hier">Hierarchical (agglomerative) clustering</h2>
 <ol><li>Start with n singleton clusters.</li><li>Merge the two closest clusters according to the linkage criterion.</li><li>Repeat until one cluster remains; record merges in a <b>dendrogram</b>.</li><li>Cut the dendrogram at a height (distance threshold) or at K clusters.</li></ol>
@@ -33,11 +98,6 @@
 <li>Clusters = maximal sets of density-connected points (chains of core points + their borders).</li>
 </ul>
 <p><b>Choosing eps:</b> k-distance plot — sort each point's distance to its k-th nearest neighbour (k = min_samples) and pick the “knee”. <b>min_samples:</b> rule of thumb ≥ d + 1, often 2·d. <b>Pros:</b> arbitrary shapes, no K, explicit outliers, robust to noise. <b>Cons:</b> single global density (fails when densities vary — use <b>HDBSCAN</b>), sensitive to eps, struggles in high dimensions, needs scaling.</p>
-
-<h2 id="gmm">Gaussian Mixture Models & EM</h2>
-<div class="callout math"><div class="tag">∑ Mixture density</div>$$p(x)=\sum_{k=1}^K\pi_k\,\mathcal N(x\mid\mu_k,\Sigma_k),\qquad\sum_k\pi_k=1$$
-<p><b>E-step:</b> responsibilities \(\gamma_{ik}=\frac{\pi_k\mathcal N(x_i\mid\mu_k,\Sigma_k)}{\sum_j\pi_j\mathcal N(x_i\mid\mu_j,\Sigma_j)}\) (soft assignments).<br><b>M-step:</b> \(N_k=\sum_i\gamma_{ik}\), \(\pi_k=N_k/n\), \(\mu_k=\frac1{N_k}\sum_i\gamma_{ik}x_i\), \(\Sigma_k=\frac1{N_k}\sum_i\gamma_{ik}(x_i-\mu_k)(x_i-\mu_k)^T\).<br>Each EM iteration never decreases the log-likelihood; converges to a local maximum.</p></div>
-<ul><li><b>covariance_type:</b> full (any ellipse), tied (shared), diag (axis-aligned), spherical (K-means-like).</li><li>Choose K with <b>BIC/AIC</b> (penalised likelihood) — lower is better.</li><li>Gives probabilities, densities (for anomaly scores: low p(x) = unusual), and can generate samples.</li><li>Risks: singular covariances (a component collapses onto a point) — use reg_covar; local optima — n_init.</li></ul>
 
 <h2 id="compare">Which clustering algorithm?</h2>
 <div class="table-wrap"><table>
@@ -73,6 +133,13 @@
 <tr><td>LocalOutlierFactor</td><td>n_neighbors (20), contamination, novelty</td><td>n_neighbors ≥ min cluster size</td></tr>
 <tr><td>OneClassSVM</td><td>nu (upper bound on outlier fraction), gamma, kernel</td><td>Scale first; nu ≈ anomaly rate</td></tr>
 </table></div>
+
+<details class="deep" id="maths"><summary>Optional maths — only if the interviewer goes deep<span class="small">click to expand</span></summary>
+<h3 id="gmm">Gaussian Mixture Models & EM</h3>
+<div class="callout math"><div class="tag">∑ Mixture density</div>$$p(x)=\sum_{k=1}^K\pi_k\,\mathcal N(x\mid\mu_k,\Sigma_k),\qquad\sum_k\pi_k=1$$
+<p><b>E-step:</b> responsibilities \(\gamma_{ik}=\frac{\pi_k\mathcal N(x_i\mid\mu_k,\Sigma_k)}{\sum_j\pi_j\mathcal N(x_i\mid\mu_j,\Sigma_j)}\) (soft assignments).<br><b>M-step:</b> \(N_k=\sum_i\gamma_{ik}\), \(\pi_k=N_k/n\), \(\mu_k=\frac1{N_k}\sum_i\gamma_{ik}x_i\), \(\Sigma_k=\frac1{N_k}\sum_i\gamma_{ik}(x_i-\mu_k)(x_i-\mu_k)^T\).<br>Each EM iteration never decreases the log-likelihood; converges to a local maximum.</p></div>
+<ul><li><b>covariance_type:</b> full (any ellipse), tied (shared), diag (axis-aligned), spherical (K-means-like).</li><li>Choose K with <b>BIC/AIC</b> (penalised likelihood) — lower is better.</li><li>Gives probabilities, densities (for anomaly scores: low p(x) = unusual), and can generate samples.</li><li>Risks: singular covariances (a component collapses onto a point) — use reg_covar; local optima — n_init.</li></ul>
+</details>
 
 <h2 id="labs">Labs</h2>
 <div class="lab" data-id="cl-dbscan-moons" data-title="K-means vs DBSCAN on moons">

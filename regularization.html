@@ -9,39 +9,78 @@
 <main>
 <div class="eyebrow">Supervised · Regression · Regularisation</div>
 <h1>Ridge, Lasso & Elastic Net</h1>
-<p class="lede">Regularisation adds a penalty on coefficient size to the loss, trading a little bias for a big drop in variance. “Why does L1 give sparse solutions and L2 doesn't?” is one of the most-asked ML interview questions — this page makes sure you can answer it three different ways.</p>
-<div class="toc"><a href="#pitch">30-sec answer</a><a href="#why">Why regularise</a><a href="#math">Maths</a><a href="#sparsity">Why L1 is sparse</a><a href="#demo">Coefficient paths</a><a href="#compare">Comparison</a><a href="#hp">Hyperparameters</a><a href="#practice">Practical tips</a><a href="#code">Code</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<p class="lede">Three ways to stop a linear model from over-trusting its training data: Ridge shrinks every weight, Lasso pushes useless weights to exactly zero, and Elastic Net blends the two. Interviewers love asking <i>why</i> Lasso zeroes features and Ridge doesn't.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#demo">Coefficient paths</a><a href="#compare">Side-by-side</a><a href="#hp">Hyperparameters</a><a href="#practice">Practical tips & gotchas</a><a href="#maths">Optional maths</a><a href="#code">Code</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
-<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“Regularisation penalises large weights to reduce overfitting. Ridge adds \(\alpha\sum\beta_j^2\): it shrinks all coefficients smoothly, handles multicollinearity, and always has a closed-form, unique solution. Lasso adds \(\alpha\sum|\beta_j|\): its diamond-shaped constraint has corners on the axes, so the optimum often lands exactly at zero — automatic feature selection. Elastic Net combines both, which is better when features are correlated or p ≫ n. Features must be standardised first, and α is chosen by cross-validation.”</p></div>
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>Plain linear regression is an eager student who'll use <i>any</i> clue to fit the training data perfectly, including coincidences. Regularisation adds a <b>“complexity tax”</b>: every bit of weight a feature gets costs a penalty, so the model only gives weight to features that truly earn it.</p>
+<p><b>Ridge</b> is like a flat tax: everyone's weight is shrunk, nobody is removed. <b>Lasso</b> is a tax with a fixed fee: small contributors find it's not worth paying and drop out completely (weight = 0), so you get automatic feature selection. <b>Elastic Net</b> charges a bit of both.</p></div>
 
-<h2 id="why">Why regularise?</h2>
-<ul>
-<li><b>Overfitting:</b> with many features (or polynomial terms) OLS fits noise; coefficients become huge and wiggly.</li>
-<li><b>Multicollinearity:</b> \(X^TX\) is near-singular → unstable, high-variance coefficients. Adding \(\alpha I\) makes it well-conditioned.</li>
-<li><b>p &gt; n:</b> OLS has no unique solution; Ridge does, Lasso picks at most n features.</li>
-<li><b>Interpretability:</b> Lasso gives a sparse model with fewer features.</li>
+<h2 id="steps">How it works, step by step (no maths)</h2>
+<ol class="steps">
+<li><b>Scale the features first</b> (standardise). The penalty treats all weights equally, so units must be comparable.</li>
+<li><b>Fit as usual</b> (minimise the errors) <b>plus a penalty</b> on the size of the weights.</li>
+<li><b>Pick the strength</b> of the penalty (alpha / λ). Zero gives plain OLS; very large shrinks everything to nothing.</li>
+<li><b>Choose alpha with cross-validation</b> (RidgeCV, LassoCV, ElasticNetCV), i.e. the value with the best validation error.</li>
+<li><b>Read the result.</b> Ridge gives all small-but-non-zero weights. Lasso gives a short list of surviving features.</li>
+</ol>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“Regularisation adds a penalty on coefficient size to the loss, trading a little bias for a big drop in variance. Ridge (L2) penalises squared weights. It shrinks all coefficients smoothly and handles multicollinearity by sharing weight among correlated features. Lasso (L1) penalises absolute weights, which drives some exactly to zero, so it does feature selection, but among correlated features it tends to pick one arbitrarily. Elastic Net mixes both, so you get sparsity plus stable, grouped selection. I standardise features, tune alpha (and l1_ratio) with cross-validation, and never penalise the intercept.”</p></div>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Why regularise?</b> To reduce overfitting (variance) when there are many features, correlated features, or more features than rows.</li>
+<li><b>Ridge (L2):</b> shrinks all weights toward zero but never exactly to zero. Great with multicollinearity. Always has a unique solution.</li>
+<li><b>Lasso (L1):</b> sets some weights <i>exactly</i> to zero, which is built-in feature selection. Unstable when features are correlated, since it picks one somewhat at random.</li>
+<li><b>Elastic Net:</b> L1 + L2. Correlated features are kept or dropped together. Best when p ≫ n or there are groups of correlated features.</li>
+<li><b>Alpha (λ) controls strength.</b> Bigger means simpler, more biased, less variance. Tune it with cross-validation.</li>
+<li><b>Always standardise features</b>, or the penalty unfairly hits features measured in small units.</li>
+<li><b>The intercept isn't penalised.</b></li>
+<li><b>In sklearn's LogisticRegression, C = 1/λ</b>, so a <i>smaller</i> C means <i>stronger</i> regularisation. This is a classic gotcha.</li>
+<li>The same idea appears everywhere: weight decay in neural nets, λ/α in XGBoost.</li>
 </ul>
-<div class="callout layman"><div class="tag">🧒 In plain English</div><p>You let the model use weights, but every unit of weight costs “rent”. Ridge charges rent proportional to the square of each weight (big weights are very expensive, small ones almost free, so everything shrinks a bit). Lasso charges the same rate per unit no matter the size, so for weak features it is cheaper to evict them completely (weight = 0).</p></div>
 
-<h2 id="math">The maths</h2>
-<div class="callout math"><div class="tag">∑ Objectives (scikit-learn conventions)</div>
-$$\textbf{Ridge:}\quad \min_\beta\ \lVert y-X\beta\rVert_2^2 + \alpha\lVert\beta\rVert_2^2 \quad\Rightarrow\quad \hat\beta = (X^TX+\alpha I)^{-1}X^Ty$$
-$$\textbf{Lasso:}\quad \min_\beta\ \frac{1}{2n}\lVert y-X\beta\rVert_2^2 + \alpha\lVert\beta\rVert_1 \quad\text{(no closed form → coordinate descent)}$$
-$$\textbf{Elastic Net:}\quad \min_\beta\ \frac{1}{2n}\lVert y-X\beta\rVert_2^2 + \alpha\rho\lVert\beta\rVert_1 + \frac{\alpha(1-\rho)}{2}\lVert\beta\rVert_2^2,\quad \rho=\texttt{l1\_ratio}$$</div>
-<ul>
-<li>The intercept is <b>not</b> penalised.</li>
-<li>Equivalent constrained form: minimise RSS subject to \(\sum\beta_j^2\le t\) (Ridge) or \(\sum|\beta_j|\le t\) (Lasso). Larger α ↔ smaller budget t.</li>
-<li><b>Bayesian view:</b> Ridge = MAP estimate with a Gaussian prior on β; Lasso = MAP with a Laplace prior (sharp peak at 0 → sparsity).</li>
-<li>Ridge in SVD terms: shrinks each principal direction by \(d_j^2/(d_j^2+\alpha)\) — directions with small variance (the unstable ones) are shrunk the most.</li>
-<li>Lasso coordinate update is <b>soft-thresholding</b>: \(\beta_j \leftarrow S(\rho_j,\alpha)=\operatorname{sign}(\rho_j)\max(|\rho_j|-\alpha,0)\), which sets small correlations exactly to 0.</li>
-</ul>
-
-<h2 id="sparsity">Why Lasso gives exact zeros (three explanations)</h2>
-<div class="grid">
-<div class="card"><div class="kicker">geometry</div><h4>Diamond vs circle</h4><p>RSS contours are ellipses around the OLS solution. The L1 ball \(|\beta_1|+|\beta_2|\le t\) is a diamond with corners on the axes; the first contour to touch it usually hits a corner → a coefficient is 0. The L2 ball is round, so the tangent point is almost never on an axis.</p></div>
-<div class="card"><div class="kicker">gradient</div><h4>Constant vs vanishing pull</h4><p>The L2 penalty's gradient \(2\alpha\beta_j\) shrinks as β → 0, so it never quite reaches 0. The L1 penalty's (sub)gradient is a constant ±α regardless of size, so it can push a weak coefficient all the way to 0 and hold it there.</p></div>
-<div class="card"><div class="kicker">algorithm</div><h4>Soft-thresholding</h4><p>In coordinate descent, if a feature's correlation with the residual is below α, its coefficient is set to exactly 0. Ridge's update divides by \((1+\alpha)\) instead — proportional shrinkage, never zero.</p></div>
+<h2 id="deeper">Going deeper: advanced intuition</h2>
+<div class="grid two">
+<div class="card"><div class="kicker">why Lasso hits zero</div><h4>The diamond has corners</h4><p>Picture the allowed weights as a shape. For L2 it's a circle, for L1 a diamond. The best-fit solution touches the shape where the error contours first meet it, and a diamond's corners stick out and lie <i>on the axes</i>, where some weights equal zero. A circle has no corners, so Ridge rarely lands exactly on an axis.</p></div>
+<div class="card"><div class="kicker">the push</div><h4>Constant vs proportional pressure</h4><p>L1 pushes every weight toward zero with the <i>same</i> force, however small the weight, so tiny weights get pushed all the way to zero. L2's push weakens as the weight shrinks, so weights get small but never vanish.</p></div>
+<div class="card"><div class="kicker">correlated features</div><h4>Sharing vs picking</h4><p>Given two near-identical features, Ridge splits the weight between them (stable). Lasso gives it all to one and zeroes the other, and which one wins can flip with a small change in the data. Elastic Net keeps or drops them as a group.</p></div>
+<div class="card"><div class="kicker">Bayesian view</div><h4>Penalties are beliefs</h4><p>Ridge equals believing beforehand that weights are small and bell-shaped (Gaussian prior). Lasso equals believing most weights are exactly zero and a few are big (Laplace prior).</p></div>
+<div class="card"><div class="kicker">bias–variance</div><h4>Why a biased model wins</h4><p>Shrinking weights deliberately biases them, but it cuts the variance (how much they jump between samples) much more. The total test error goes down. That's the whole game.</p></div>
+<div class="card"><div class="kicker">inference caveat</div><h4>No easy p-values</h4><p>After Lasso picks features, the usual p-values are invalid because the selection used the same data. If you need inference, use a separate sample or post-selection methods.</p></div>
 </div>
+
+<h2 id="when">When each one wins</h2>
+<h3>Ridge (L2)</h3>
+<div class="callout win"><div class="tag">🏆 Pick Ridge when…</div><ul>
+<li>Most features are probably useful and many are <b>correlated</b> (e.g. marketing channels, sensor readings).</li>
+<li>You want <b>stable</b> coefficients and predictions more than a short feature list.</li>
+<li>There are more features than rows, and you want a smooth, unique solution.</li>
+</ul></div>
+<h3>Lasso (L1)</h3>
+<div class="callout win"><div class="tag">🏆 Pick Lasso when…</div><ul>
+<li>You suspect <b>only a few features matter</b> and want automatic <b>feature selection</b> for a simple, explainable model.</li>
+<li>Serving cost depends on how many features you must compute or collect.</li>
+</ul></div>
+<h3>Elastic Net</h3>
+<div class="callout win"><div class="tag">🏆 Pick Elastic Net when…</div><ul>
+<li>There are <b>many more features than rows</b> (genomics, text) <b>and</b> groups of correlated features.</li>
+<li>Lasso's selection keeps changing between runs, and you want sparsity that's stable.</li>
+</ul></div>
+<div class="table-wrap"><table class="vs">
+<tr><th>Compared with</th><th>Choose regularised linear when…</th><th>Choose the other when…</th></tr>
+<tr><td><a href="linear-regression.html">Plain OLS</a></td><td>There are many or correlated features, or validation error beats OLS.</td><td>There are few features and you need unbiased coefficients with valid p-values.</td></tr>
+<tr><td><a href="xgboost.html">Tree boosting</a></td><td>Data is small or wide, or you need interpretability or extrapolation.</td><td>Relationships are non-linear and there's plenty of data.</td></tr>
+<tr><td><a href="dim-reduction.html">PCA + regression</a></td><td>You want to keep the original, interpretable features.</td><td>You only care about prediction and features are extremely collinear.</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Common traps</div><ul>
+<li>Forgetting to standardise, or fitting the scaler on all the data instead of inside a Pipeline (leakage).</li>
+<li>Treating Lasso's chosen features as “the true causes”. The selection is unstable when features are correlated.</li>
+<li>Reading coefficients without remembering they're shrunk (biased toward 0).</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>Predicting house prices from 300 engineered features on 1,500 homes:</b> plain OLS overfits badly. LassoCV keeps about 40 features (easy to explain to the business), while RidgeCV gives slightly better RMSE. ElasticNetCV with l1_ratio around 0.5 lands close to Ridge's accuracy with around 60 features. Pick based on whether interpretability or accuracy matters more.</p></div>
 
 <h2 id="demo">Coefficient paths</h2>
 <div class="widget" data-demo="regpath"><div class="widget-title">Regularisation paths: Lasso vs Ridge vs Elastic Net</div><div class="widget-sub">6 standardised features; x₂ is a noisy copy of x₁; x₅ and x₆ are pure noise. Slide α and watch which coefficients die.</div></div>
@@ -79,6 +118,27 @@ $$\textbf{Elastic Net:}\quad \min_\beta\ \frac{1}{2n}\lVert y-X\beta\rVert_2^2 +
 <li>Lasso coefficients are biased toward 0; a common trick is “relaxed Lasso”: select with Lasso, refit OLS on the selected features.</li>
 <li>Regularisation also applies to logistic regression, SVMs, neural nets (weight decay), and tree boosters (XGBoost's lambda/alpha on leaf weights).</li>
 </ul>
+
+<details class="deep" id="maths"><summary>Optional maths — only if the interviewer goes deep<span class="small">click to expand</span></summary>
+<h3 id="math">The maths</h3>
+<div class="callout math"><div class="tag">∑ Objectives (scikit-learn conventions)</div>
+$$\textbf{Ridge:}\quad \min_\beta\ \lVert y-X\beta\rVert_2^2 + \alpha\lVert\beta\rVert_2^2 \quad\Rightarrow\quad \hat\beta = (X^TX+\alpha I)^{-1}X^Ty$$
+$$\textbf{Lasso:}\quad \min_\beta\ \frac{1}{2n}\lVert y-X\beta\rVert_2^2 + \alpha\lVert\beta\rVert_1 \quad\text{(no closed form → coordinate descent)}$$
+$$\textbf{Elastic Net:}\quad \min_\beta\ \frac{1}{2n}\lVert y-X\beta\rVert_2^2 + \alpha\rho\lVert\beta\rVert_1 + \frac{\alpha(1-\rho)}{2}\lVert\beta\rVert_2^2,\quad \rho=\texttt{l1\_ratio}$$</div>
+<ul>
+<li>The intercept is <b>not</b> penalised.</li>
+<li>Equivalent constrained form: minimise RSS subject to \(\sum\beta_j^2\le t\) (Ridge) or \(\sum|\beta_j|\le t\) (Lasso). Larger α ↔ smaller budget t.</li>
+<li><b>Bayesian view:</b> Ridge = MAP estimate with a Gaussian prior on β; Lasso = MAP with a Laplace prior (sharp peak at 0 → sparsity).</li>
+<li>Ridge in SVD terms: shrinks each principal direction by \(d_j^2/(d_j^2+\alpha)\) — directions with small variance (the unstable ones) are shrunk the most.</li>
+<li>Lasso coordinate update is <b>soft-thresholding</b>: \(\beta_j \leftarrow S(\rho_j,\alpha)=\operatorname{sign}(\rho_j)\max(|\rho_j|-\alpha,0)\), which sets small correlations exactly to 0.</li>
+</ul>
+<h3 id="sparsity">Why Lasso gives exact zeros (three explanations)</h3>
+<div class="grid">
+<div class="card"><div class="kicker">geometry</div><h4>Diamond vs circle</h4><p>RSS contours are ellipses around the OLS solution. The L1 ball \(|\beta_1|+|\beta_2|\le t\) is a diamond with corners on the axes; the first contour to touch it usually hits a corner → a coefficient is 0. The L2 ball is round, so the tangent point is almost never on an axis.</p></div>
+<div class="card"><div class="kicker">gradient</div><h4>Constant vs vanishing pull</h4><p>The L2 penalty's gradient \(2\alpha\beta_j\) shrinks as β → 0, so it never quite reaches 0. The L1 penalty's (sub)gradient is a constant ±α regardless of size, so it can push a weak coefficient all the way to 0 and hold it there.</p></div>
+<div class="card"><div class="kicker">algorithm</div><h4>Soft-thresholding</h4><p>In coordinate descent, if a feature's correlation with the residual is below α, its coefficient is set to exactly 0. Ridge's update divides by \((1+\alpha)\) instead — proportional shrinkage, never zero.</p></div>
+</div>
+</details>
 
 <h2 id="code">Code</h2>
 <script type="text/plain" class="snippet" data-title="Choosing α with built-in CV">

@@ -9,37 +9,84 @@
 <main>
 <div class="eyebrow">Supervised · Ensemble · Boosting fundamentals</div>
 <h1>AdaBoost & Gradient Boosting</h1>
-<p class="lede">Boosting builds an ensemble sequentially: each weak learner focuses on what the previous ones got wrong. AdaBoost does it by re-weighting samples; Gradient Boosting does it by fitting the negative gradient of the loss (residuals for squared error). Understand this page and XGBoost/LightGBM/CatBoost are just engineering on top.</p>
-<div class="toc"><a href="#pitch">30-sec answer</a><a href="#idea">Core idea</a><a href="#ada">AdaBoost</a><a href="#gbm">Gradient boosting</a><a href="#demo">Step-by-step demo</a><a href="#losses">Losses</a><a href="#reg">Regularisation</a><a href="#hp">Hyperparameters</a><a href="#tuning">Tuning recipe</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<p class="lede">The idea behind XGBoost, LightGBM and CatBoost: build many weak models <b>one after another</b>, each one fixing what the previous ones got wrong. This page covers the two classic versions, <b>AdaBoost</b> and <b>Gradient Boosting</b>. The modern libraries have their own pages: <a href="xgboost.html">XGBoost</a>, <a href="lightgbm.html">LightGBM</a>, <a href="catboost.html">CatBoost</a>.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#demo">Watch it learn</a><a href="#losses">Common loss functions</a><a href="#reg">Regularising a booster</a><a href="#hp">Hyperparameters</a><a href="#tuning">A tuning recipe that works</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
-<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“Boosting combines weak learners sequentially to reduce bias. AdaBoost reweights the training samples — misclassified points get more weight — and combines stumps with weights based on their error; it's equivalent to forward stagewise fitting of exponential loss. Gradient boosting generalises this to any differentiable loss: start with a constant, then at each step fit a small regression tree to the negative gradient (pseudo-residuals) of the loss with respect to the current predictions, and add it scaled by a learning rate. Key knobs are learning rate, number of trees (with early stopping), tree depth/leaves, subsampling and min samples per leaf. Unlike random forests, more trees can overfit.”</p></div>
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>A student takes a mock test, studies <b>only the questions they got wrong</b>, takes another test, studies the new mistakes, and so on. Each round is a small, targeted improvement, and the final knowledge is the sum of all the rounds. But study the same mock paper for too long and you just memorise its answers, which is overfitting.</p>
+<p><b>AdaBoost</b> does this by making the wrongly answered questions <i>heavier</i>, so the next learner pays more attention to them. <b>Gradient Boosting</b> does it by training the next learner directly on the <i>leftover error</i> (the residuals): “we predicted ₹40L, the truth was ₹50L, so the next tree learns +₹10L”.</p></div>
 
-<h2 id="idea">The core idea</h2>
-<div class="callout layman"><div class="tag">🧒 In plain English</div><p>A student takes a mock test, then studies only the questions they got wrong, takes another test, studies those mistakes, and so on. Each round is a small, targeted improvement. The final knowledge is the sum of all the rounds — but study too long on the same mock paper and you just memorise its answers (overfitting).</p></div>
-<div class="callout math"><div class="tag">∑ Additive model built stage-wise</div>$$F_M(x)=F_0(x)+\sum_{m=1}^{M}\eta\,h_m(x)$$<p>Each \(h_m\) is a weak learner (shallow tree) chosen to most reduce the loss given \(F_{m-1}\); η is the learning rate (shrinkage).</p></div>
-
-<h2 id="ada">AdaBoost (classification)</h2>
-<ol>
-<li>Initialise sample weights \(w_i=1/n\); labels \(y_i\in\{-1,+1\}\).</li>
-<li>For m = 1…M: fit a weak learner \(h_m\) (usually a depth-1 stump) on the weighted data.</li>
-<li>Weighted error \(\varepsilon_m=\sum_i w_i\,\mathbb 1[h_m(x_i)\ne y_i]\).</li>
-<li>Learner weight \(\alpha_m=\tfrac12\ln\frac{1-\varepsilon_m}{\varepsilon_m}\) (better learners count more; ε = 0.5 → α = 0).</li>
-<li>Update \(w_i\leftarrow w_i\,e^{-\alpha_m y_i h_m(x_i)}\), then normalise — misclassified points get heavier.</li>
-<li>Final: \(H(x)=\operatorname{sign}\big(\sum_m\alpha_m h_m(x)\big)\).</li>
+<h2 id="steps">How it works, step by step (no maths)</h2>
+<h3>AdaBoost</h3>
+<ol class="steps">
+<li>Give every training row the <b>same weight</b>.</li>
+<li>Train a tiny model, usually a <b>stump</b> (a one-question tree).</li>
+<li>Give that stump a <b>say</b> based on its accuracy. Better stumps get louder votes.</li>
+<li><b>Increase the weight of rows it got wrong</b> and decrease the ones it got right.</li>
+<li>Repeat. The final answer is the weighted vote of all the stumps.</li>
 </ol>
-<p>AdaBoost = gradient boosting with <b>exponential loss</b> \(e^{-yF(x)}\). That loss punishes misclassified points exponentially, so AdaBoost is <b>sensitive to label noise and outliers</b>.</p>
-
-<h2 id="gbm">Gradient boosting (Friedman)</h2>
-<div class="callout math"><div class="tag">∑ Algorithm</div>
-<ol>
-<li>\(F_0(x)=\arg\min_c\sum_iL(y_i,c)\) — the mean for squared error, the log-odds of the base rate for log-loss.</li>
-<li>For m = 1…M:
-<ul><li>Pseudo-residuals: \(r_{im}=-\Big[\frac{\partial L(y_i,F(x_i))}{\partial F(x_i)}\Big]_{F=F_{m-1}}\)</li>
-<li>Fit a regression tree \(h_m\) to \(\{(x_i,r_{im})\}\) → leaf regions \(R_{jm}\).</li>
-<li>Optimal leaf values: \(\gamma_{jm}=\arg\min_\gamma\sum_{x_i\in R_{jm}}L(y_i,F_{m-1}(x_i)+\gamma)\).</li>
-<li>Update \(F_m(x)=F_{m-1}(x)+\eta\sum_j\gamma_{jm}\mathbb 1[x\in R_{jm}]\).</li></ul></li>
+<h3>Gradient Boosting</h3>
+<ol class="steps">
+<li>Start with a simple prediction, e.g. the average.</li>
+<li>Compute each row's <b>leftover error</b> (more generally, the direction that reduces the loss most).</li>
+<li>Fit a small tree (depth 3–8) to those errors.</li>
+<li>Add the tree's prediction × a small <b>learning rate</b> (e.g. 0.1).</li>
+<li>Repeat, and stop when validation error stops improving (early stopping).</li>
 </ol>
-<p>For squared error \(L=\tfrac12(y-F)^2\) the negative gradient is exactly the residual \(y-F\): <b>“fit the residuals”</b>. For log-loss it's \(y-p\). Gradient boosting = gradient descent in <i>function space</i>.</p></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“Boosting builds an additive model sequentially: each weak learner focuses on what the current ensemble gets wrong, which mainly reduces bias. AdaBoost re-weights misclassified samples and weights each learner by its accuracy. It's equivalent to minimising exponential loss, which makes it sensitive to outliers and label noise. Gradient boosting generalises the idea: each tree fits the negative gradient of any differentiable loss, so it's gradient descent in function space, and for squared error that's simply fitting the residuals. The key controls are the learning rate, the number of trees chosen by early stopping, tree depth and subsampling. XGBoost, LightGBM and CatBoost are optimised, regularised implementations of gradient boosting.”</p></div>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Boosting reduces bias</b> by combining weak learners sequentially. <b>Bagging (Random Forest) reduces variance</b> by combining strong learners in parallel.</li>
+<li><b>AdaBoost</b> re-weights the data, and its learners are usually stumps. It equals boosting with <b>exponential loss</b>, which is very sensitive to <b>noisy labels and outliers</b>.</li>
+<li><b>Gradient boosting</b> fits trees to <b>negative gradients</b> (pseudo-residuals), so any differentiable loss works: squared error, absolute error, Huber, log-loss, quantile.</li>
+<li><b>Learning rate × number of trees</b>: a smaller learning rate needs more trees but generalises better. Pick the number of trees with <b>early stopping</b>.</li>
+<li><b>Boosting <i>can</i> overfit</b> as trees are added, unlike Random Forest.</li>
+<li><b>Shallow trees</b> (depth 3–8) are typical. Depth controls the order of interactions captured.</li>
+<li><b>Stochastic gradient boosting</b>: training each tree on a random subsample of rows reduces variance and speeds things up.</li>
+<li><b>Sequential, so harder to parallelise</b> across trees. Libraries parallelise <i>inside</i> each tree instead.</li>
+<li>In sklearn, <code>HistGradientBoosting*</code> is the fast, LightGBM-style version, and it handles missing values natively.</li>
+</ul>
+
+<h2 id="deeper">Going deeper: advanced intuition</h2>
+<div class="grid two">
+<div class="card"><div class="kicker">function-space descent</div><h4>Each tree is one downhill step</h4><p>Normal gradient descent nudges <i>numbers</i>. Gradient boosting nudges the <i>whole prediction function</i>: the gradient says how every row's prediction should change, and a tree is the best simple approximation of that move.</p></div>
+<div class="card"><div class="kicker">loss choice</div><h4>The loss decides what is learned</h4><p>Squared error targets the mean and is outlier-sensitive. Absolute error targets the median. Huber blends the two. Quantile loss gives prediction intervals. Log-loss gives probabilities. Same algorithm, different goals.</p></div>
+<div class="card"><div class="kicker">noise</div><h4>Why AdaBoost hates mislabelled data</h4><p>A mislabelled point keeps being “wrong”, so its weight grows exponentially until the ensemble twists itself to fit it. Gradient boosting with a robust loss (Huber) is far more forgiving.</p></div>
+<div class="card"><div class="kicker">shrinkage</div><h4>Why small steps generalise</h4><p>A low learning rate means each tree only partly corrects the errors, leaving room for later trees to correct differently. The result is smoother and averages away the quirks of single trees.</p></div>
+<div class="card"><div class="kicker">margins</div><h4>AdaBoost keeps improving after 0 training error</h4><p>Even when training error hits zero, AdaBoost keeps pushing points further from the boundary (bigger margins). That's why its test error often keeps falling instead of overfitting right away.</p></div>
+<div class="card"><div class="kicker">from GBM to XGBoost</div><h4>What the modern libraries added</h4><p>Regularised trees, second-order (curvature) steps, histogram binning, missing-value handling, categorical support and GPU training. Same core idea, industrial engineering.</p></div>
+</div>
+
+<h2 id="when">When each one wins</h2>
+<h3>AdaBoost</h3>
+<div class="callout win"><div class="tag">🏆 Pick AdaBoost when…</div><ul>
+<li>Data is <b>clean</b> (few label errors) and small to medium, and you want a simple boosted baseline.</li>
+<li>You want to boost a <b>non-tree weak learner</b>, or explain boosting simply in a teaching or legacy context. Classic use: Viola–Jones face detection.</li>
+</ul></div>
+<h3>Gradient Boosting (sklearn GBM / HistGradientBoosting)</h3>
+<div class="callout win"><div class="tag">🏆 Pick classic GBM when…</div><ul>
+<li>You want boosting <b>inside the sklearn ecosystem</b> with no extra dependencies. HistGradientBoosting is fast and handles missing values.</li>
+<li>You need a <b>custom or robust loss</b> (Huber, quantile) on tabular data of moderate size.</li>
+</ul></div>
+<h3>Modern libraries</h3>
+<div class="callout win"><div class="tag">🏆 Move to XGBoost / LightGBM / CatBoost when…</div><ul>
+<li>You need production-grade speed, regularisation, GPU, categorical handling or the last bit of accuracy. See <a href="xgboost.html#when">XGBoost</a>, <a href="lightgbm.html#when">LightGBM</a> and <a href="catboost.html#when">CatBoost</a> for which to pick.</li>
+</ul></div>
+<div class="table-wrap"><table class="vs">
+<tr><th>Compared with</th><th>Choose boosting when…</th><th>Choose the other when…</th></tr>
+<tr><td><a href="random-forest.html">Random Forest</a></td><td>You can tune and want maximum accuracy on fairly clean data.</td><td>Labels are noisy, you have little tuning time, or you want parallel training.</td></tr>
+<tr><td><a href="logistic-regression.html">Linear models</a></td><td>There are non-linear effects and interactions.</td><td>You need interpretability, extrapolation, or the data is tiny.</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Avoid boosting when…</div><ul>
+<li><b>Labels are very noisy</b> (especially AdaBoost).</li>
+<li>Data is <b>tiny</b>, or you can't afford a validation set for early stopping.</li>
+<li>You need <b>trend extrapolation</b> or a model a human can read in full.</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>Delivery-time prediction with prediction intervals:</b> 80k orders with distance, time of day, restaurant prep time and weather. sklearn's HistGradientBoostingRegressor with <code>loss="quantile"</code> at 0.1 and 0.9 gives a “25–40 min” range, with no extra libraries and missing weather data handled natively.</p></div>
 
 <h2 id="demo">Watch it learn</h2>
 <div class="widget" data-demo="boost"><div class="widget-title">Gradient boosting, one tree at a time</div><div class="widget-sub">Add trees and watch the residuals shrink. Compare η = 1 (fast, jumpy) with η = 0.1 (slow, smooth).</div></div>
@@ -90,6 +137,30 @@
 <li>Lower the learning rate (e.g. ÷5), raise the round budget, re-run early stopping for the final model.</li>
 </ol>
 <p>Use random search or Bayesian optimisation (Optuna) rather than full grids; always evaluate on a proper CV scheme.</p>
+
+<details class="deep" id="maths"><summary>Optional maths — only if the interviewer goes deep<span class="small">click to expand</span></summary>
+<h3 id="ada">AdaBoost (classification)</h3>
+<ol>
+<li>Initialise sample weights \(w_i=1/n\); labels \(y_i\in\{-1,+1\}\).</li>
+<li>For m = 1…M: fit a weak learner \(h_m\) (usually a depth-1 stump) on the weighted data.</li>
+<li>Weighted error \(\varepsilon_m=\sum_i w_i\,\mathbb 1[h_m(x_i)\ne y_i]\).</li>
+<li>Learner weight \(\alpha_m=\tfrac12\ln\frac{1-\varepsilon_m}{\varepsilon_m}\) (better learners count more; ε = 0.5 → α = 0).</li>
+<li>Update \(w_i\leftarrow w_i\,e^{-\alpha_m y_i h_m(x_i)}\), then normalise — misclassified points get heavier.</li>
+<li>Final: \(H(x)=\operatorname{sign}\big(\sum_m\alpha_m h_m(x)\big)\).</li>
+</ol>
+<p>AdaBoost = gradient boosting with <b>exponential loss</b> \(e^{-yF(x)}\). That loss punishes misclassified points exponentially, so AdaBoost is <b>sensitive to label noise and outliers</b>.</p>
+<h3 id="gbm">Gradient boosting (Friedman)</h3>
+<div class="callout math"><div class="tag">∑ Algorithm</div>
+<ol>
+<li>\(F_0(x)=\arg\min_c\sum_iL(y_i,c)\) — the mean for squared error, the log-odds of the base rate for log-loss.</li>
+<li>For m = 1…M:
+<ul><li>Pseudo-residuals: \(r_{im}=-\Big[\frac{\partial L(y_i,F(x_i))}{\partial F(x_i)}\Big]_{F=F_{m-1}}\)</li>
+<li>Fit a regression tree \(h_m\) to \(\{(x_i,r_{im})\}\) → leaf regions \(R_{jm}\).</li>
+<li>Optimal leaf values: \(\gamma_{jm}=\arg\min_\gamma\sum_{x_i\in R_{jm}}L(y_i,F_{m-1}(x_i)+\gamma)\).</li>
+<li>Update \(F_m(x)=F_{m-1}(x)+\eta\sum_j\gamma_{jm}\mathbb 1[x\in R_{jm}]\).</li></ul></li>
+</ol>
+<p>For squared error \(L=\tfrac12(y-F)^2\) the negative gradient is exactly the residual \(y-F\): <b>“fit the residuals”</b>. For log-loss it's \(y-p\). Gradient boosting = gradient descent in <i>function space</i>.</p></div>
+</details>
 
 <h2 id="labs">Labs</h2>
 <div class="lab" data-id="gb-scratch" data-title="Gradient boosting for regression from scratch">

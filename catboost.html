@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CatBoost · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="catboost">
+<main>
+<div class="eyebrow">Supervised · Boosting · Categorical data specialist</div>
+<h1>CatBoost</h1>
+<p class="lede">Yandex's “Categorical Boosting”. It's gradient boosting designed for data full of text categories (city, product, brand), with a clever no-peeking trick that prevents target leakage, plus symmetric trees that are hard to overfit and very fast to predict with. Its defaults are famously strong.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#hp">Hyperparameters</a><a href="#maths">Optional maths</a><a href="#code">Code</a><a href="#qa">Q&A</a></div>
+
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>Models need numbers, but much real data is words: “Mumbai”, “iPhone”, “Gold plan”. A popular shortcut is to replace each category with its average outcome, e.g. Mumbai → 7% churn. The danger is that each row's own answer gets baked into its number. That's like a student whose cheat-sheet was written using the answer key: perfect in practice, useless in the real exam (this is <b>target leakage</b>).</p>
+<p>CatBoost's fix is to <b>shuffle the rows and encode each one using only the rows that came before it</b>, the way a teacher might grade each paper against only the papers already handed in. No row ever sees its own answer. It also uses <b>symmetric trees</b>, where every node at the same depth asks the same question, so the trees are simple, steady and lightning-fast at prediction time.</p></div>
+
+<h2 id="steps">How it works, step by step (no maths)</h2>
+<ol class="steps">
+<li><b>Shuffle the rows</b> (it actually uses several random orders).</li>
+<li><b>Turn categories into numbers without peeking.</b> For each row, the category's value is the average target of <i>earlier</i> rows with the same category, blended with the overall average so rare categories aren't extreme. These are called ordered target statistics.</li>
+<li><b>Build combinations automatically</b>, e.g. city × device, when they help.</li>
+<li><b>Compute errors without peeking either (ordered boosting).</b> Each row's error is judged by a model that hasn't trained on that row.</li>
+<li><b>Grow a symmetric (oblivious) tree.</b> It picks one question per depth level and applies it to every node at that level.</li>
+<li><b>Add the tree × learning rate</b>, repeat, and early-stop. The defaults (depth 6, an auto-chosen learning rate) usually work well.</li>
+</ol>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“CatBoost is a gradient-boosting library from Yandex built for categorical data. It encodes categories with ordered target statistics: under a random permutation, each row uses only target information from rows before it, so there's no target leakage. It also builds category combinations automatically. Ordered boosting applies the same idea to the residuals to reduce prediction shift. It uses symmetric, or oblivious, trees, which regularise strongly and are very fast at inference. I reach for it when the data has many high-cardinality categoricals or when I have little time to tune, because its defaults are strong.”</p></div>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Just pass the raw categorical columns</b> with <code>cat_features=[...]</code>. No one-hot encoding or manual target encoding needed.</li>
+<li><b>Target leakage</b> is the problem with naive target encoding: a category seen once is encoded as its own label. <b>Ordered target statistics</b> fix it.</li>
+<li><b>Ordered boosting</b> fixes <i>prediction shift</i>: in normal boosting, residuals are computed by a model that already saw that row, so they're over-optimistic.</li>
+<li><b>Oblivious trees:</b> each level has the same split, so a depth-6 tree has exactly 64 leaves. That gives strong regularisation and very fast, branch-free prediction.</li>
+<li><b>Great defaults.</b> It's often competitive with zero tuning: depth 6, l2_leaf_reg 3, and an automatically chosen learning rate.</li>
+<li><b>Low-cardinality categories are one-hot encoded automatically</b> (<code>one_hot_max_size</code>). Higher-cardinality ones get target statistics.</li>
+<li><b>Training is slower</b> than LightGBM on big numeric data on CPU. The GPU version is fast. Inference is very fast.</li>
+<li>It also <b>handles text and embedding features</b>, missing numeric values, ranking objectives and multi-class problems.</li>
+</ul>
+
+<h2 id="deeper">Going deeper: advanced intuition</h2>
+<div class="grid two">
+<div class="card"><div class="kicker">leakage</div><h4>Why naive target encoding fails</h4><p>Imagine customer_id as a feature. Each ID appears once, so its “average churn” is exactly that customer's own label. The model learns “encoding = answer”, scores 100% in training and collapses on new data. Ordered statistics never let a row see its own label.</p></div>
+<div class="card"><div class="kicker">prior</div><h4>Smoothing rare categories</h4><p>A city seen twice shouldn't be encoded as 0% or 100%. Blending with the global average (the prior) pulls rare categories toward the middle until there's enough evidence.</p></div>
+<div class="card"><div class="kicker">permutations</div><h4>Why several shuffles</h4><p>Rows near the start of a shuffle have little history, so their encodings are noisy. Using several permutations averages that noise out.</p></div>
+<div class="card"><div class="kicker">oblivious trees</div><h4>A tree that is really a lookup table</h4><p>With the same question at every level, a depth-6 tree is just 6 yes/no answers forming a 6-bit index into 64 leaf values. Prediction becomes a few comparisons and one array lookup, which is ideal for low-latency serving.</p></div>
+<div class="card"><div class="kicker">regularisation</div><h4>Symmetry as a brake</h4><p>Forcing the same split across a level stops the tree from carving out tiny special-case regions. It's a strong built-in defence against overfitting, especially on small datasets.</p></div>
+<div class="card"><div class="kicker">serving</div><h4>Training vs inference encodings</h4><p>At prediction time the encodings use statistics from the full training set. The ordering trick only matters during training, to keep the learning honest.</p></div>
+</div>
+
+<h2 id="when">When CatBoost wins (and when it doesn't)</h2>
+<div class="callout win"><div class="tag">🏆 Pick CatBoost when…</div>
+<ul>
+<li>There are <b>many categorical columns, especially high-cardinality ones</b>: retail (store, SKU, brand), insurance (car make/model, region), travel (route, hotel), HR (role, department, location).</li>
+<li>The dataset is <b>small to medium</b> and overfitting is a real risk.</li>
+<li>You have <b>little time to tune</b> and want a strong result from defaults, e.g. a quick baseline, a hackathon or a first production version.</li>
+<li>You need <b>fast, predictable inference latency</b> (symmetric trees).</li>
+</ul></div>
+<div class="table-wrap"><table class="vs">
+<tr><th>Compared with</th><th>Choose CatBoost when…</th><th>Choose the other when…</th></tr>
+<tr><td><a href="lightgbm.html">LightGBM</a></td><td>Categoricals dominate, data is small or medium, and you want good defaults.</td><td>Data is huge and mostly numeric, and you need the fastest CPU training.</td></tr>
+<tr><td><a href="xgboost.html">XGBoost</a></td><td>You'd otherwise spend effort on one-hot or target encoding.</td><td>Features are numeric or sparse, or you need XGBoost-specific ecosystem tools.</td></tr>
+<tr><td>One-hot + linear model</td><td>Categories interact with each other and with numeric features.</td><td>You need a simple, fully transparent formula.</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Avoid it (or think twice) when…</div>
+<ul>
+<li><b>Massive, mostly numeric data on CPU</b> with tight training-time budgets. LightGBM is usually faster.</li>
+<li><b>The patterns need very irregular trees.</b> Symmetric trees may need more depth or more trees to catch them.</li>
+<li>Note: CatBoost doesn't run in this site's in-browser Python, so practise the code below locally.</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>Insurance claim-cost model:</b> 200k policies with columns like car_model (3,000 values), city (800), occupation and agent_id, plus a few numeric fields. One-hot encoding would explode the column count, and naive target encoding leaks. CatBoost with <code>cat_features=[...]</code> beats a tuned one-hot XGBoost using mostly default settings.</p></div>
+
+<h2 id="hp">Hyperparameters that matter</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Parameter (default)</th><th>What it does, in plain words</th><th>Typical range</th></tr>
+<tr><td>cat_features</td><td>Tell CatBoost which columns are categorical. <b>The single most important setting.</b></td><td>list of column names</td></tr>
+<tr><td>iterations (1000) + early_stopping_rounds</td><td>Number of trees.</td><td>large, stop after 50–200 rounds with no gain</td></tr>
+<tr><td>learning_rate (auto)</td><td>Step size. Chosen automatically from the data size if not set.</td><td>0.02–0.1</td></tr>
+<tr><td>depth (6)</td><td>Depth of the symmetric trees (leaves = 2^depth).</td><td>4–10</td></tr>
+<tr><td>l2_leaf_reg (3)</td><td>Shrinks leaf values.</td><td>1–10</td></tr>
+<tr><td>one_hot_max_size</td><td>Categories with this many values or fewer are one-hot encoded instead.</td><td>2–10</td></tr>
+<tr><td>random_strength (1)</td><td>Noise added to split scores. Fights overfitting.</td><td>0–10</td></tr>
+<tr><td>bagging_temperature (1)</td><td>How aggressive the random row-weighting is.</td><td>0–1+</td></tr>
+<tr><td>auto_class_weights</td><td>"Balanced" for imbalanced classes.</td><td>—</td></tr>
+<tr><td>task_type</td><td>"GPU" for fast training on big data.</td><td>—</td></tr>
+</table></div>
+<p class="small">Start with defaults plus cat_features and early stopping. Tune depth, l2_leaf_reg and learning rate only if needed.</p>
+<details class="deep" id="maths"><summary>Optional maths — only if the interviewer goes deep<span class="small">click to expand</span></summary>
+<div class="callout math"><div class="tag">∑ Ordered target statistic</div>
+<p>For row \(i\) with category \(c\), using only rows that come before \(i\) in a random permutation:</p>
+$$\text{TS}_i=\frac{\sum_{j<i,\ x_j=c} y_j + a\cdot p}{\#\{j<i:\ x_j=c\} + a}$$
+<p>\(p\) is the prior (usually the global target mean) and \(a&gt;0\) its weight. Rare categories are pulled toward \(p\), and row \(i\)'s own label is never used.</p></div>
+<p><b>Oblivious tree:</b> depth \(d\) means \(d\) (feature, threshold) pairs, one per level. The leaf index is the binary number formed by the \(d\) yes/no answers, so there are \(2^d\) leaves and prediction is a table lookup.</p>
+
+</details>
+
+<h2 id="code">Code</h2>
+<p class="small">CatBoost isn't available in the in-browser Python — run this locally (<code>pip install catboost</code>).</p>
+<script type="text/plain" class="snippet" data-title="CatBoost with categorical columns">
+from catboost import CatBoostClassifier
+cat = CatBoostClassifier(iterations=3000, learning_rate=0.05, depth=6, l2_leaf_reg=3,
+                         eval_metric="AUC", early_stopping_rounds=100, verbose=False)
+cat.fit(X_tr, y_tr, cat_features=["city", "device", "plan"], eval_set=(X_val, y_val))
+print(cat.get_feature_importance(prettified=True).head(10))
+</script>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="catboost-bcc9143" data-l="1"><summary>What problem does CatBoost solve that other boosters don't?</summary><div class="ans"><p>Categorical features without manual encoding and without target leakage. Its ordered target statistics encode each row's category using only earlier rows' labels, and ordered boosting computes residuals with models that haven't seen the row.</p></div></details>
+<details class="qa" data-id="catboost-e6c6070" data-l="2"><summary>What is target leakage in target encoding, and how does CatBoost avoid it?</summary><div class="ans"><p>Naive target encoding replaces a category by its mean target computed on all rows, including the row itself, so the feature contains the answer (extreme for rare categories). The model looks great in training and fails on new data. CatBoost uses a random permutation and only rows before the current one, plus a prior for smoothing, so a row never sees its own label. K-fold target encoding is the manual alternative.</p></div></details>
+<details class="qa" data-id="catboost-a3f8566" data-l="2"><summary>What are oblivious (symmetric) trees and why use them?</summary><div class="ans"><p>Trees where every node at a given depth uses the same split. A depth-d tree is d binary tests mapping to 2^d leaves — effectively a lookup table. They're strongly regularised (less overfitting), stable, and extremely fast to evaluate, which suits low-latency serving.</p></div></details>
+<details class="qa" data-id="catboost-390edae" data-l="3"><summary>What is prediction shift and how does ordered boosting fix it?</summary><div class="ans"><p>In standard boosting, the residual for a row is computed by a model that was trained on that same row, so residuals on training data are systematically smaller than on new data — the gradient estimates are biased. Ordered boosting keeps models trained on prefixes of a permutation and computes each row's residual with a model that never saw it.</p></div></details>
+<details class="qa" data-id="xgboost-1e74f40" data-l="2"><summary>How does CatBoost handle categorical features?</summary><div class="ans"><p>With ordered target statistics: under a random permutation, each row's category is encoded with the (prior-smoothed) mean target of rows that come before it, so its own label doesn't leak. It also builds combinations of categorical features greedily. Ordered boosting applies the same idea to residual computation to avoid prediction shift.</p></div></details>
+<details class="qa" data-id="xgboost-76218a0" data-l="2"><summary>When would you pick CatBoost over LightGBM?</summary><div class="ans"><p>Many (high-cardinality) categorical features, small-to-medium datasets where overfitting is a risk, limited tuning time (strong defaults), or when fast and stable inference matters (symmetric trees). LightGBM for very large datasets and fastest training.</p></div></details>
+</div>
+</main>
+</body>
+</html>

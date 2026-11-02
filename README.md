@@ -7,8 +7,8 @@ An interactive, single-stop site for machine-learning, data-science and MLOps in
 ## What's inside
 
 - **Foundations:** ML fundamentals, data prep and feature engineering, evaluation metrics, cross-validation and tuning, improving models and explainability, statistics and A/B testing.
-- **13 model deep-dives:** linear regression, Ridge/Lasso/Elastic Net, logistic regression, kNN, Naive Bayes, SVM, decision trees, bagging and Random Forest, AdaBoost and gradient boosting, XGBoost/LightGBM/CatBoost, K-means, hierarchical/DBSCAN/GMM and anomaly detection, PCA and dimensionality reduction, and time-series forecasting.
-  Each page covers a 30-second interview answer, intuition, the maths, assumptions, an interactive demo, hyperparameters, how to improve the model, pros and cons, code, auto-graded labs and interview Q&A.
+- **15 model deep-dives:** linear regression, Ridge/Lasso/Elastic Net, logistic regression, kNN, Naive Bayes, SVM, decision trees, bagging and Random Forest, AdaBoost and gradient boosting, XGBoost, LightGBM, CatBoost, K-means, hierarchical/DBSCAN/GMM and anomaly detection, PCA and dimensionality reduction, and time-series forecasting.
+  Each page goes from plain English to advanced intuition: a step-by-step explanation without maths, a 30-second interview answer, must-know points, advanced intuition, a “when it wins vs other models” section with a practical example, optional (collapsed) maths, hyperparameters, code, auto-graded labs and interview Q&A.
 - **Production:** MLOps (serving, deployment strategies, CI/CD/CT, monitoring, drift with a PSI demo, retraining, incident playbook) and ML system design with four worked case studies.
 - **Practice:**
   - ~300 interview questions with model answers. You can browse them, study them as flashcards, or take a timed mock interview.

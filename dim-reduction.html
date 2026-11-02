@@ -9,22 +9,74 @@
 <main>
 <div class="eyebrow">Unsupervised · Dimensionality reduction</div>
 <h1>PCA & dimensionality reduction</h1>
-<p class="lede">Compress many correlated features into a few informative directions. PCA is a staple interview topic — eigenvectors of the covariance matrix, explained variance, why standardise, PCA vs LDA, and when to reach for t-SNE or UMAP instead (visualisation only!).</p>
-<div class="toc"><a href="#pitch">30-sec answer</a><a href="#why">Why reduce dimensions</a><a href="#pca">PCA maths</a><a href="#demo">PCA demo</a><a href="#k">How many components</a><a href="#practice">Practical points</a><a href="#lda">LDA</a><a href="#tsne">t-SNE & UMAP</a><a href="#compare">Comparison</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<p class="lede">Squeezing many features into a few without losing what matters. <b>PCA</b> is the workhorse, <b>LDA</b> uses labels to separate classes, and <b>t-SNE / UMAP</b> draw beautiful 2-D maps for visualisation. Each model below gets its own plain-English idea and a “when it wins” box.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#pitch">30-sec answer</a><a href="#models">Each model</a><a href="#when">When it wins</a><a href="#demo">Interactive PCA</a><a href="#k">How many components?</a><a href="#practice">Practical points & pitfalls</a><a href="#lda">Linear Discriminant Analysis</a><a href="#tsne">t-SNE and UMAP</a><a href="#compare">Comparison</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
-<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“PCA finds orthogonal directions — principal components — that capture maximum variance. Mathematically they're the eigenvectors of the covariance matrix of the centred (usually standardised) data, ordered by eigenvalue; in practice computed by SVD of X. Projecting onto the top k components gives the best rank-k linear approximation in squared error. I choose k by cumulative explained variance (e.g. 95%) or by downstream CV performance. It's unsupervised and linear, components are hard to interpret, and it's sensitive to scale and outliers. For class separation there's LDA; for 2-D visualisation of non-linear structure, t-SNE or UMAP — but those aren't for feature engineering.”</p></div>
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>Photograph a teapot. A 3-D object becomes a 2-D picture, and some angles show its shape far better than others: from the side you see the spout and handle, from above just a circle. <b>PCA finds the best camera angle</b>, the direction in which the data is most spread out, then the next best angle at right angles to it, and so on. Keep the top few angles and you keep most of the information with far fewer numbers.</p>
+<p><b>Why bother?</b> Fewer features means faster models, less noise, no redundant (correlated) columns, and charts humans can actually look at.</p></div>
 
-<h2 id="why">Why reduce dimensionality?</h2>
-<ul><li>Curse of dimensionality: distance-based models degrade; data become sparse.</li><li>Remove multicollinearity (PCs are uncorrelated).</li><li>Speed and memory; noise reduction (drop low-variance directions).</li><li>Visualisation in 2-D/3-D.</li></ul>
-<p><b>Feature selection</b> keeps a subset of original features (interpretable); <b>feature extraction</b> (PCA, autoencoders) creates new combined features.</p>
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“Dimensionality reduction fights the curse of dimensionality, removes redundancy and noise, and enables visualisation. PCA is an unsupervised linear method: it finds orthogonal directions of maximum variance (the eigenvectors of the covariance matrix, computed via SVD), and I keep enough components to explain, say, 95% of the variance. Features must be standardised first. LDA is supervised and finds directions that best separate known classes. For visualisation I use t-SNE or UMAP, which preserve local neighbourhoods, though cluster sizes and distances between clusters in those plots aren't meaningful, and UMAP is faster and keeps more global structure. Unlike feature selection, these methods create new combined features, which cost some interpretability.”</p></div>
 
-<h2 id="pca">PCA: the maths</h2>
-<div class="callout math"><div class="tag">∑ Two equivalent views</div>
-<p><b>Max variance:</b> first PC \(w_1=\arg\max_{\lVert w\rVert=1}\operatorname{Var}(Xw)=\arg\max w^T\Sigma w\) → solution: top eigenvector of \(\Sigma=\frac{1}{n-1}X^TX\) (X centred), and the variance captured equals its eigenvalue λ₁. Each next PC maximises variance subject to orthogonality.</p>
-<p><b>Min reconstruction error:</b> projecting onto the top-k eigenvectors minimises \(\lVert X-XW_kW_k^T\rVert_F^2\) (Eckart–Young).</p>
-$$X=U S V^T\ \Rightarrow\ \text{PCs}=V,\quad \lambda_j=\frac{s_j^2}{n-1},\quad \text{scores}=XV=US$$
-$$\text{explained variance ratio}_j=\frac{\lambda_j}{\sum_i\lambda_i}$$</div>
-<ol><li>Centre (and usually standardise) features.</li><li>Compute covariance matrix or SVD.</li><li>Sort eigenvectors by eigenvalue.</li><li>Keep top k; project: \(Z=XW_k\).</li><li>Reconstruct (approximately): \(\hat X=ZW_k^T\) + mean.</li></ol>
+<h2 id="models">Each model in plain English</h2>
+
+<h3 id="m-pca">1 · PCA (Principal Component Analysis)</h3>
+<div class="callout layman"><div class="tag">🧒 Idea</div><p>Find the direction along which the data varies most (PC1), then the next-most direction at right angles (PC2), and so on. Each component is a <b>blend of the original features</b>, and the components are uncorrelated with each other.</p></div>
+<ol class="steps">
+<li><b>Standardise</b> the features, or the one with the biggest units dominates.</li>
+<li>Find the directions of maximum spread (done via SVD).</li>
+<li>Rank them by how much variance they explain.</li>
+<li>Keep the top k, e.g. enough for 90–95% of the variance, or read the elbow of the scree plot.</li>
+<li>Project the data onto those k directions to get the new features.</li>
+</ol>
+<ul class="keypts">
+<li><b>Unsupervised:</b> it ignores the target, so the high-variance directions may not be the predictive ones.</li>
+<li><b>Linear only:</b> it can't unroll curved structures (use kernel PCA, UMAP or autoencoders for those).</li>
+<li><b>Removes multicollinearity:</b> the components are uncorrelated, which helps linear models.</li>
+<li><b>Loses interpretability:</b> “PC3” is a mix of features. Read the loadings to explain it.</li>
+<li><b>Fit it on training data only</b>, inside a Pipeline, to avoid leakage.</li>
+<li>Sensitive to outliers, since variance is pulled by extreme points.</li>
+</ul>
+<div class="callout win"><div class="tag">🏆 Wins when…</div><p>There are <b>many correlated numeric features</b> (sensor arrays, financial indicators, survey items, pixels): compressing before a linear model, kNN or clustering; <b>denoising</b>; speeding up training; making a quick 2-D plot; or creating uncorrelated inputs for regression.</p></div>
+
+<h3 id="m-lda">2 · LDA (Linear Discriminant Analysis)</h3>
+<div class="callout layman"><div class="tag">🧒 Idea</div><p>PCA asks “where is the data most spread out?”. LDA asks “<b>which direction pulls the classes furthest apart</b> while keeping each class tight?”. It uses the labels.</p></div>
+<ul class="keypts">
+<li><b>Supervised</b>, and gives at most (number of classes − 1) components.</li>
+<li>It's also a <b>classifier</b>, assuming each class is a bell curve with the same shape.</li>
+<li>Better than PCA as a pre-step for <b>classification</b>, but it can overfit with few samples per class.</li>
+</ul>
+<div class="callout win"><div class="tag">🏆 Wins when…</div><p>You have labels and want features that <b>separate the classes</b>, e.g. face recognition (Fisherfaces) or reducing features before a simple classifier on small data.</p></div>
+
+<h3 id="m-tsne">3 · t-SNE and UMAP</h3>
+<div class="callout layman"><div class="tag">🧒 Idea</div><p>Draw a 2-D map where <b>points that were neighbours in the high-dimensional space stay neighbours on the map</b>, like a city map that keeps every street's neighbourhood intact but freely distorts the distances between districts.</p></div>
+<ul class="keypts">
+<li><b>For visualisation, not modelling.</b> t-SNE can't transform new points, and UMAP can but with caution.</li>
+<li><b>Cluster sizes and gaps between clusters are not meaningful.</b> Only “who is near whom” is.</li>
+<li><b>t-SNE:</b> slow, results vary between runs, tuned with <b>perplexity</b> (5–50). <b>UMAP:</b> much faster, preserves more global structure, tuned with n_neighbors and min_dist.</li>
+<li>Usually run PCA to about 50 dimensions first to speed things up and reduce noise.</li>
+</ul>
+<div class="callout win"><div class="tag">🏆 Wins when…</div><p>You need to <b>see</b> the structure of high-dimensional data or embeddings: single-cell biology, word or image embeddings, checking whether customer segments separate, or debugging what a neural net has learned. Prefer UMAP for big data.</p></div>
+
+<h2 id="when">Which one should you pick?</h2>
+<div class="table-wrap"><table class="vs">
+<tr><th>Goal</th><th>Best pick</th><th>Why</th></tr>
+<tr><td>Compress or denoise features before a model</td><td>PCA</td><td>Fast, linear, works on new data, uncorrelated outputs</td></tr>
+<tr><td>Features that separate known classes</td><td>LDA</td><td>Uses the labels</td></tr>
+<tr><td>A 2-D picture of complex data</td><td>UMAP (or t-SNE)</td><td>Keeps neighbourhoods and handles curved structure</td></tr>
+<tr><td>Keep original, explainable columns</td><td>Feature selection (Lasso, importance)</td><td>No new mixed features</td></tr>
+<tr><td>Non-linear compression for modelling</td><td>Autoencoder / kernel PCA</td><td>Captures curved manifolds</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Common traps</div><ul>
+<li>Forgetting to <b>standardise</b> before PCA.</li>
+<li>Fitting PCA on train+test data (leakage).</li>
+<li>Assuming the top PCs are the most <i>predictive</i>. They're the most <i>variable</i>.</li>
+<li>Reading cluster sizes or distances in t-SNE plots as real.</li>
+<li>Using PCA before tree models, which rarely helps and destroys interpretability.</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>Credit-risk model with 400 correlated bureau variables:</b> PCA to 40 components (95% of variance) inside a Pipeline makes logistic regression stable and fast. UMAP plots of the components show that defaulters form a separate region, a quick sanity check before building the model.</p></div>
 
 <h2 id="demo">Interactive PCA</h2>
 <div class="widget" data-demo="pca"><div class="widget-title">Principal components of a 2-D cloud</div><div class="widget-sub">Increase correlation → PC1 explains more. Inflate x₂'s scale → PC1 follows the biggest-variance feature even with no correlation.</div></div>
@@ -63,6 +115,16 @@ $$\text{explained variance ratio}_j=\frac{\lambda_j}{\sum_i\lambda_i}$$</div>
 <tr><td>UMAP</td><td>No</td><td>Optional</td><td>Local + some global</td><td>Yes</td><td>Visualisation, embeddings</td></tr>
 <tr><td>Autoencoder</td><td>No</td><td>No</td><td>Reconstruction</td><td>Yes</td><td>Complex data, anomaly detection</td></tr>
 </table></div>
+
+<details class="deep" id="maths"><summary>Optional maths — only if the interviewer goes deep<span class="small">click to expand</span></summary>
+<h3 id="pca">PCA: the maths</h3>
+<div class="callout math"><div class="tag">∑ Two equivalent views</div>
+<p><b>Max variance:</b> first PC \(w_1=\arg\max_{\lVert w\rVert=1}\operatorname{Var}(Xw)=\arg\max w^T\Sigma w\) → solution: top eigenvector of \(\Sigma=\frac{1}{n-1}X^TX\) (X centred), and the variance captured equals its eigenvalue λ₁. Each next PC maximises variance subject to orthogonality.</p>
+<p><b>Min reconstruction error:</b> projecting onto the top-k eigenvectors minimises \(\lVert X-XW_kW_k^T\rVert_F^2\) (Eckart–Young).</p>
+$$X=U S V^T\ \Rightarrow\ \text{PCs}=V,\quad \lambda_j=\frac{s_j^2}{n-1},\quad \text{scores}=XV=US$$
+$$\text{explained variance ratio}_j=\frac{\lambda_j}{\sum_i\lambda_i}$$</div>
+<ol><li>Centre (and usually standardise) features.</li><li>Compute covariance matrix or SVD.</li><li>Sort eigenvectors by eigenvalue.</li><li>Keep top k; project: \(Z=XW_k\).</li><li>Reconstruct (approximately): \(\hat X=ZW_k^T\) + mean.</li></ol>
+</details>
 
 <h2 id="labs">Labs</h2>
 <div class="lab" data-id="pca-scratch" data-title="PCA from scratch via eigendecomposition">

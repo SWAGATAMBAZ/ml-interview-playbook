@@ -9,10 +9,69 @@
 <main>
 <div class="eyebrow">Supervised · Instance-based · Classification & regression</div>
 <h1>k-Nearest Neighbours (kNN)</h1>
-<p class="lede">The “lazy learner”: no training, just memorise the data and, at prediction time, let the k closest points vote. Interviewers use kNN to test your grasp of distance metrics, scaling, the curse of dimensionality and the bias–variance effect of k.</p>
-<div class="toc"><a href="#pitch">30-sec answer</a><a href="#how">How it works</a><a href="#distance">Distances</a><a href="#demo">Decision boundary</a><a href="#k">Choosing k</a><a href="#curse">Curse of dimensionality</a><a href="#hp">Hyperparameters</a><a href="#speed">Scaling it up</a><a href="#procon">Pros/cons</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<p class="lede">The “ask your neighbours” model. It does no real training: to predict a new point, it finds the k most similar past examples and lets them vote. It's simple to explain, and it's great for probing your understanding of distance, scaling and the curse of dimensionality.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#how">How it works</a><a href="#distance">Distance metrics</a><a href="#demo">See k change the boundary</a><a href="#k">Choosing k</a><a href="#curse">The curse of dimensionality</a><a href="#hp">Hyperparameters</a><a href="#speed">Making it fast & robust</a><a href="#procon">Pros/cons</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
-<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview</div><p>“kNN is a non-parametric, instance-based method: to predict a point, find the k nearest training points under a distance metric (usually Euclidean on standardised features) and take a majority vote (classification) or average (regression), optionally weighted by 1/distance. Training is O(1), prediction is O(n·d) per query unless we use KD-trees, ball trees or approximate nearest-neighbour indexes. Small k → low bias/high variance; large k → smoother, higher bias. It needs feature scaling, suffers from the curse of dimensionality and irrelevant features, and k is chosen by cross-validation.”</p></div>
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>To guess a house's price, an estate agent looks at the <b>5 most similar houses nearby</b> that sold recently and takes their average. To guess whether a new customer will like a film, you look at the <b>customers most like them</b> and see what they liked.</p>
+<p>That's kNN. It just <b>remembers all the data</b>, and at prediction time it measures how close the new point is to every stored point, picks the k closest and lets them vote (classification) or averages them (regression).</p></div>
+
+<h2 id="steps">How it works, step by step (no maths)</h2>
+<ol class="steps">
+<li><b>Store the training data.</b> That's the whole “training” step (a lazy learner).</li>
+<li><b>Scale the features</b> so that salary in lakhs doesn't drown out age in years.</li>
+<li><b>For a new point, measure its distance</b> to every stored point. Euclidean (straight line) is the usual choice.</li>
+<li><b>Pick the k nearest.</b></li>
+<li><b>Vote or average.</b> Optionally, closer neighbours get a bigger say (distance weighting).</li>
+</ol>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“kNN is a non-parametric, instance-based learner. It stores the training set and predicts by majority vote or averaging over the k nearest neighbours under a distance metric. Small k gives a flexible, noisy boundary (low bias, high variance), and large k gives a smooth one (high bias), so I pick k by cross-validation. Feature scaling is essential because distances are scale-dependent. It suffers from the curse of dimensionality, and prediction is slow because it compares against all points, so in practice I use KD-trees or ball trees for low dimensions and approximate nearest-neighbour indexes like FAISS or HNSW for large, high-dimensional data.”</p></div>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Lazy learner:</b> training costs nothing, and prediction is the expensive part (it compares with every stored point).</li>
+<li><b>k controls the bias–variance trade-off.</b> k=1 memorises the noise, and huge k predicts the majority class everywhere. Choose k with cross-validation, and use an odd k for binary problems to avoid ties.</li>
+<li><b>Scaling is mandatory.</b> Without it, the feature with the biggest units decides everything.</li>
+<li><b>Distance metric matters:</b> Euclidean for continuous data, Manhattan for high dimensions or outliers, cosine for text and embeddings, Hamming for categories.</li>
+<li><b>Curse of dimensionality:</b> in many dimensions, all points become roughly equally far apart, so “nearest” stops meaning anything. Reduce dimensions first (PCA or feature selection).</li>
+<li><b>Sensitive to irrelevant features and to imbalance.</b> The majority class dominates the vote, and distance weighting helps.</li>
+<li><b>Memory-heavy:</b> it must keep the whole training set.</li>
+<li><b>No model to interpret</b>, but each prediction is explainable: “because these 5 similar cases did X”.</li>
+</ul>
+
+<h2 id="deeper">Going deeper: advanced intuition</h2>
+<div class="grid two">
+<div class="card"><div class="kicker">non-parametric</div><h4>The data <i>is</i> the model</h4><p>kNN assumes no shape for the boundary, so with enough data it can fit any pattern. The flip side is that it needs a lot of data, especially as dimensions grow.</p></div>
+<div class="card"><div class="kicker">curse of dimensionality</div><h4>Everything becomes far away</h4><p>To capture 10% of the data in 10 dimensions, your “neighbourhood” has to span about 80% of each feature's range. The neighbours are no longer local, and the nearest and farthest points end up almost the same distance away.</p></div>
+<div class="card"><div class="kicker">speed</div><h4>Indexes and approximate search</h4><p>KD-trees and ball trees speed up search in low dimensions. For millions of embeddings, approximate nearest-neighbour libraries (FAISS, HNSW, Annoy) trade a little accuracy for a huge speed-up. This is the engine behind vector search and RAG.</p></div>
+<div class="card"><div class="kicker">theory</div><h4>1-NN is surprisingly good</h4><p>With infinite data, 1-NN's error is at most twice the best possible error. It's a neat fact for showing depth in an interview.</p></div>
+<div class="card"><div class="kicker">beyond prediction</div><h4>kNN is everywhere</h4><p>It's used for imputation (KNNImputer), anomaly detection (far from all neighbours means odd), “customers like you” recommendations and semantic search over embeddings.</p></div>
+<div class="card"><div class="kicker">learned distances</div><h4>Better space = better kNN</h4><p>kNN is only as good as its notion of similarity. Running it on learned embeddings (metric learning) is often far stronger than on raw features.</p></div>
+</div>
+
+<h2 id="when">When kNN wins (and when it doesn't)</h2>
+<div class="callout win"><div class="tag">🏆 Pick kNN when…</div>
+<ul>
+<li>You have <b>good embeddings</b> or a meaningful similarity measure: semantic search, “similar products”, face or image lookup, RAG retrieval.</li>
+<li>The dataset is <b>small to medium</b>, has <b>few features</b>, and the boundary is irregular.</li>
+<li>New data arrives constantly and you want <b>no retraining</b>: just add points.</li>
+<li>You need <b>case-based explanations</b> (“these 5 past cases were similar”).</li>
+<li>You need a quick baseline, imputation of missing values, or simple anomaly scoring.</li>
+</ul></div>
+<div class="table-wrap"><table class="vs">
+<tr><th>Compared with</th><th>Choose kNN when…</th><th>Choose the other when…</th></tr>
+<tr><td><a href="logistic-regression.html">Logistic regression</a></td><td>The boundary is irregular and the data is low-dimensional.</td><td>You need speed at prediction time, probabilities or coefficients.</td></tr>
+<tr><td><a href="random-forest.html">Random Forest / boosting</a></td><td>You have meaningful embeddings or need instant updates.</td><td>The data is tabular with many or irrelevant features.</td></tr>
+<tr><td><a href="svm.html">SVM</a></td><td>You want something simple and assumption-free.</td><td>The data is high-dimensional, with a clear margin.</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Avoid it when…</div><ul>
+<li>There are <b>many features</b> (roughly 20+ raw ones) or many <b>irrelevant</b> ones.</li>
+<li>There are <b>millions of rows with strict latency</b> and no approximate-neighbour index.</li>
+<li>Features are on <b>different scales</b> and you can't standardise them sensibly, or the data mixes categories with numbers.</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>“Similar products” on an e-commerce site:</b> each product gets an embedding from its title, image and attributes. kNN with cosine distance in a FAISS/HNSW index returns the 10 nearest products in milliseconds across millions of items, and new products appear the moment they're indexed, with no retraining.</p></div>
 
 <h2 id="how">How it works</h2>
 <ol><li>Store the training set (that's “training”).</li><li>For a query x, compute distances to all stored points.</li><li>Take the k smallest.</li><li>Classification: majority (or distance-weighted) vote; class probabilities = vote shares. Regression: (weighted) mean of their targets.</li></ol>

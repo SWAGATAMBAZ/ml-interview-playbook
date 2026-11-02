@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LightGBM · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="lightgbm">
+<main>
+<div class="eyebrow">Supervised · Boosting · Built for speed at scale</div>
+<h1>LightGBM</h1>
+<p class="lede">Microsoft's gradient-boosting library. It uses the same team-of-trees idea as <a href="xgboost.html">XGBoost</a>, redesigned to train much faster and use less memory on big data. Interviews focus on <i>why</i> it's fast (histograms, leaf-wise growth, GOSS, EFB) and on the overfitting risk that speed brings.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#fast">The 4 speed tricks</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#hp">Hyperparameters</a><a href="#code">Code</a><a href="#labs">Lab</a><a href="#qa">Q&A</a></div>
+
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>LightGBM is boosting with two shortcuts. First, it <b>rounds numbers into buckets</b> before it starts, like turning exam marks 0–100 into grades A–F. Instead of testing every possible cut-off it tests a few hundred buckets, which is far faster.</p>
+<p>Second, it <b>works on the biggest problem first</b>. A teacher with one free hour can give every student five minutes (level-wise growth, like XGBoost), or spend the hour on the student who is struggling most (leaf-wise growth, like LightGBM). The second gets faster results but can over-focus on a few cases. That is LightGBM's trade-off.</p></div>
+
+<h2 id="steps">How it works, step by step (no maths)</h2>
+<ol class="steps">
+<li><b>Bucket every feature once</b> into at most 255 bins (histograms). All later split searches work on bins, not raw values.</li>
+<li><b>Start with a base prediction</b> and measure each row's error.</li>
+<li><b>Optionally skip easy rows (GOSS).</b> Keep every row the model gets badly wrong and only a random sample of the rows it already gets right, giving that sample extra weight so the totals stay fair.</li>
+<li><b>Merge sparse columns (EFB).</b> Columns that are never non-zero at the same time, like one-hot columns, are packed into one column.</li>
+<li><b>Grow the tree leaf-wise.</b> Look at all current leaves, split the single leaf that reduces error the most, and repeat until <code>num_leaves</code> is reached.</li>
+<li><b>Add the tree × learning rate</b>, then repeat. Stop with early stopping on a validation set.</li>
+</ol>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“LightGBM is a gradient-boosting framework optimised for speed and memory. It bins features into histograms, so split search is over a few hundred bins rather than every value. It grows trees leaf-wise, always splitting the leaf with the biggest loss reduction. It can use GOSS to downsample well-fit rows and EFB to bundle sparse features, and it handles categorical features natively. It's usually the fastest option on large data. The catch is that leaf-wise trees overfit small datasets, so I control num_leaves, min_child_samples and max_depth and always use early stopping.”</p></div>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Leaf-wise vs level-wise.</b> For the same number of leaves, leaf-wise growth reaches lower training loss. It produces deep, lopsided trees, which means a higher overfitting risk on small data.</li>
+<li><b><code>num_leaves</code> is the main complexity knob</b> (default 31), not max_depth. Keep <code>num_leaves &lt; 2^max_depth</code>.</li>
+<li><b><code>min_child_samples</code></b> (alias min_data_in_leaf, default 20) is your main guard against overfitting. Raise it on small or noisy data.</li>
+<li><b>Histograms make it fast and light.</b> A child's histogram equals the parent's minus its sibling's, so only one child per split needs computing.</li>
+<li><b>GOSS</b> = keep the hard rows, sample the easy ones. <b>EFB</b> = bundle mutually exclusive sparse columns. Both cut work with little accuracy loss.</li>
+<li><b>Native categoricals.</b> Pass the pandas <code>category</code> dtype and don't one-hot high-cardinality columns.</li>
+<li><b>Same tuning recipe as XGBoost:</b> learning rate plus early stopping, then tree size, then sampling, then regularisation.</li>
+<li><b>It has more objectives than most libraries:</b> ranking (LambdaRank), quantile regression for prediction intervals, Tweedie/Poisson for counts, and more.</li>
+</ul>
+
+<h2 id="fast">The 4 speed tricks, in one picture each</h2>
+<div class="grid two">
+<div class="card"><div class="kicker">histograms</div><h4>Buckets instead of raw values</h4><p>Continuous values are bucketed into ≤ 255 bins (<code>max_bin</code>), so split search costs “number of bins”, not “number of rows”. Binning also acts as mild regularisation, because exact thresholds rarely matter.</p></div>
+<div class="card"><div class="kicker">growth</div><h4>Leaf-wise (best-first)</h4><p>It always splits the leaf with the largest loss reduction. The leaf budget goes where the errors are. Control it with num_leaves, min_child_samples and max_depth.</p></div>
+<div class="card"><div class="kicker">GOSS</div><h4>Gradient-based One-Side Sampling</h4><p>Rows with large errors carry the most information, so all of them are kept. Rows with small errors are sampled and up-weighted so the overall picture stays unbiased. Turn it on with <code>data_sample_strategy="goss"</code>.</p></div>
+<div class="card"><div class="kicker">EFB</div><h4>Exclusive Feature Bundling</h4><p>Sparse columns that are never non-zero together, e.g. 1,000 one-hot columns, are packed into a few dense ones, so there are far fewer columns to scan.</p></div>
+</div>
+<div class="callout trap"><div class="tag">⚠️ num_leaves vs max_depth</div><p>A depth-d balanced tree has up to 2^d leaves. With max_depth 7 that's 128, so set num_leaves ≤ 127, often 31–63. Otherwise leaf-wise growth builds very deep, overfit trees.</p></div>
+
+<h2 id="deeper">Going deeper: advanced intuition</h2>
+<div class="grid two">
+<div class="card"><div class="kicker">best-first search</div><h4>Why leaf-wise wins on big data</h4><p>With millions of rows there's enough evidence to justify deep, specific branches. Spending the leaf budget on the worst region is efficient. With 2,000 rows the same strategy starts memorising noise.</p></div>
+<div class="card"><div class="kicker">GOSS intuition</div><h4>Study what you got wrong</h4><p>It's like reviewing every exam question you missed plus a random handful of the ones you got right, so you don't forget them. You learn almost as much in a fraction of the time.</p></div>
+<div class="card"><div class="kicker">categoricals</div><h4>Many-vs-many splits</h4><p>Categories are sorted by their average error, and the best cut through that sorted list is chosen, e.g. {Delhi, Pune} vs {the rest}. Rare categories can overfit, so tune <code>cat_smooth</code> and <code>min_data_per_group</code>.</p></div>
+<div class="card"><div class="kicker">extrapolation</div><h4>Linear trees</h4><p>Like every tree model it can't extrapolate. <code>linear_tree=True</code> fits a small linear model in each leaf, which helps when there are trends at the edges of the data.</p></div>
+</div>
+
+<h2 id="when">When LightGBM wins (and when it doesn't)</h2>
+<div class="callout win"><div class="tag">🏆 Pick LightGBM when…</div>
+<ul>
+<li><b>The data is big</b>: millions of rows or hundreds of features. It's usually the fastest to train and uses the least memory.</li>
+<li>You <b>retrain often</b> (nightly or hourly) or run <b>large hyperparameter searches</b>, so training time multiplies.</li>
+<li>Features are <b>high-dimensional and sparse</b> (click logs, one-hot IDs). EFB shines here.</li>
+<li>The problem is <b>ranking or CTR at scale</b>: search results, recommendations, ad clicks (LambdaRank objective).</li>
+<li>You need <b>quantile forecasts</b> (P10/P90 demand) from a fast tabular model.</li>
+</ul></div>
+<div class="table-wrap"><table class="vs">
+<tr><th>Compared with</th><th>Choose LightGBM when…</th><th>Choose the other when…</th></tr>
+<tr><td><a href="xgboost.html">XGBoost</a></td><td>Data is large and training speed and memory are the bottleneck.</td><td>Data is small or medium and you prefer conservative, balanced trees.</td></tr>
+<tr><td><a href="catboost.html">CatBoost</a></td><td>Data is huge and mostly numeric, and you want the fastest CPU training.</td><td>Categorical columns dominate, data is small or medium, or there's little tuning time.</td></tr>
+<tr><td><a href="random-forest.html">Random Forest</a></td><td>You want maximum accuracy and can tune.</td><td>You want robustness with near-zero tuning.</td></tr>
+</table></div>
+<div class="callout trap"><div class="tag">⚠️ Avoid it (or constrain it) when…</div>
+<ul>
+<li><b>The dataset is small</b> (under ~10k rows). Defaults overfit. Raise min_child_samples, lower num_leaves, or use XGBoost or CatBoost.</li>
+<li><b>Very noisy labels</b>, where best-first growth chases the noise.</li>
+<li><b>You need trend extrapolation</b>. As with all trees, forecasts flatten outside the training range.</li>
+</ul></div>
+<div class="callout interview"><div class="tag">💼 Practical example to quote</div>
+<p><b>Ad click-through prediction:</b> 50M impressions a day, 300 features including sparse one-hot ad and publisher IDs, retrained every night. LightGBM trains in minutes where others take hours. EFB compresses the sparse columns, and settings like num_leaves 127 with min_child_samples 200 keep the deep trees honest.</p></div>
+
+<h2 id="hp">Hyperparameters that matter</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Parameter (default)</th><th>What it does, in plain words</th><th>Typical range</th></tr>
+<tr><td>learning_rate (0.1)</td><td>Size of each correction step.</td><td>0.01–0.1</td></tr>
+<tr><td>n_estimators + early_stopping</td><td>How many trees. Let early stopping decide.</td><td>large, stop after 50–100 rounds with no gain</td></tr>
+<tr><td>num_leaves (31)</td><td><b>The main complexity knob</b>: maximum leaves per tree.</td><td>15–255, keep &lt; 2^max_depth</td></tr>
+<tr><td>max_depth (−1 = no limit)</td><td>Safety cap on how deep leaf-wise trees can go.</td><td>5–12 or −1</td></tr>
+<tr><td>min_child_samples (20)</td><td>Minimum rows per leaf. The <b>main overfitting guard</b>.</td><td>20–500 (raise on small or noisy data)</td></tr>
+<tr><td>subsample + subsample_freq</td><td>Row sampling (bagging). Needs freq ≥ 1 to take effect.</td><td>0.6–0.9, freq 1</td></tr>
+<tr><td>colsample_bytree (1)</td><td>Column sampling per tree.</td><td>0.5–0.9</td></tr>
+<tr><td>reg_lambda, reg_alpha (0)</td><td>Shrink leaf values.</td><td>0–10</td></tr>
+<tr><td>max_bin (255)</td><td>Number of buckets per feature. More is finer but slower and can overfit.</td><td>63–511</td></tr>
+<tr><td>data_sample_strategy</td><td>"bagging" (default) or "goss".</td><td>—</td></tr>
+<tr><td>cat_smooth, min_data_per_group</td><td>Regularise native categorical splits.</td><td>raise for rare categories</td></tr>
+<tr><td>is_unbalance / scale_pos_weight</td><td>Handle class imbalance.</td><td>—</td></tr>
+</table></div>
+<p class="small">Tuning order: learning rate + early stopping → num_leaves &amp; min_child_samples → sampling → regularisation → lower the learning rate and refit.</p>
+
+<h2 id="code">Code</h2>
+<script type="text/plain" class="snippet" data-title="LightGBM with early stopping & native categoricals">
+import lightgbm as lgb
+from sklearn.model_selection import train_test_split
+X_tr, X_val, y_tr, y_val = train_test_split(X, y, stratify=y, test_size=0.2, random_state=0)
+
+for c in ["city", "device"]:           # native categorical handling
+    X_tr[c] = X_tr[c].astype("category"); X_val[c] = X_val[c].astype(X_tr[c].dtype)
+
+clf = lgb.LGBMClassifier(n_estimators=5000, learning_rate=0.05, num_leaves=31, max_depth=-1,
+    min_child_samples=20, subsample=0.8, subsample_freq=1, colsample_bytree=0.8, verbose=-1)
+clf.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], eval_metric="auc",
+        callbacks=[lgb.early_stopping(100, verbose=False)])
+print("best iteration:", clf.best_iteration_)
+</script>
+
+<h2 id="labs">Lab</h2>
+<p class="small">LightGBM loads in the browser on demand (a few MB on first use).</p>
+<div class="lab" data-id="lgbm-cat" data-title="LightGBM with native categorical features">
+<div class="lab-task"><p>The DataFrame has a high-cardinality categorical column <code>city</code> whose effect on the target is strong. Convert it to pandas <code>category</code> dtype and fit <code>lgb.LGBMRegressor(n_estimators=300, learning_rate=0.05, num_leaves=31, verbose=-1)</code> as <code>model</code>. Store the test RMSE in <code>rmse_cat</code> and compare with treating city as an integer code.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+import lightgbm as lgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+
+rng = np.random.default_rng(0)
+n, k = 6000, 200
+city_effect = rng.normal(scale=3, size=k)
+df = pd.DataFrame({"city": rng.integers(0, k, n), "x1": rng.normal(size=n), "x2": rng.normal(size=n)})
+y = city_effect[df.city] + 2 * df.x1 - df.x2 ** 2 + rng.normal(scale=0.5, size=n)
+X_tr, X_te, y_tr, y_te = train_test_split(df, y, random_state=0)
+
+as_int = lgb.LGBMRegressor(n_estimators=300, learning_rate=0.05, num_leaves=31, verbose=-1).fit(X_tr, y_tr)
+rmse_int = mean_squared_error(y_te, as_int.predict(X_te)) ** 0.5
+
+model = None     # TODO: same model, but city as category dtype
+rmse_cat = None  # TODO
+print("int codes:", rmse_int, "| categorical:", rmse_cat)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, pandas as pd
+import lightgbm as lgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+
+rng = np.random.default_rng(0)
+n, k = 6000, 200
+city_effect = rng.normal(scale=3, size=k)
+df = pd.DataFrame({"city": rng.integers(0, k, n), "x1": rng.normal(size=n), "x2": rng.normal(size=n)})
+y = city_effect[df.city] + 2 * df.x1 - df.x2 ** 2 + rng.normal(scale=0.5, size=n)
+X_tr, X_te, y_tr, y_te = train_test_split(df, y, random_state=0)
+
+as_int = lgb.LGBMRegressor(n_estimators=300, learning_rate=0.05, num_leaves=31, verbose=-1).fit(X_tr, y_tr)
+rmse_int = mean_squared_error(y_te, as_int.predict(X_te)) ** 0.5
+
+Xc_tr, Xc_te = X_tr.copy(), X_te.copy()
+cats = pd.CategoricalDtype(categories=sorted(df.city.unique()))
+Xc_tr["city"] = Xc_tr.city.astype(cats); Xc_te["city"] = Xc_te.city.astype(cats)
+model = lgb.LGBMRegressor(n_estimators=300, learning_rate=0.05, num_leaves=31, verbose=-1).fit(Xc_tr, y_tr)
+rmse_cat = mean_squared_error(y_te, model.predict(Xc_te)) ** 0.5
+print(f"int codes RMSE: {rmse_int:.3f} | native categorical RMSE: {rmse_cat:.3f}")
+</script>
+<script type="text/x-python" data-part="check">
+assert model is not None and rmse_cat is not None, "fit the categorical model and compute rmse_cat"
+assert rmse_cat < rmse_int, "native categorical handling should beat arbitrary integer codes here"
+print("Categorical splits win:", round(rmse_cat, 3), "<", round(rmse_int, 3))
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="lightgbm-fd25ac4" data-l="1"><summary>Why is LightGBM usually faster than XGBoost?</summary><div class="ans"><p>Four things: it bins features into histograms (and computes one child's histogram by subtraction), it grows trees leaf-wise so it reaches good loss with fewer splits, GOSS can skip many well-predicted rows, and EFB bundles sparse columns. Together these cut both rows and columns scanned. XGBoost's hist mode has closed much of the gap, but LightGBM is still typically faster and lighter on very large data.</p></div></details>
+<details class="qa" data-id="lightgbm-d2eb193" data-l="2"><summary>How do you stop LightGBM overfitting on a small dataset?</summary><div class="ans"><p>Lower num_leaves (e.g. 15–31) and set max_depth, raise min_child_samples, add subsample/colsample_bytree and L1/L2 regularisation, lower max_bin, use a small learning rate with early stopping, and validate with cross-validation. If it still overfits, XGBoost, CatBoost or Random Forest may simply suit the data better.</p></div></details>
+<details class="qa" data-id="lightgbm-0efc5c5" data-l="2"><summary>What's the relationship between num_leaves and max_depth?</summary><div class="ans"><p>A balanced tree of depth d has at most 2^d leaves. Because LightGBM grows leaf-wise, num_leaves is the real complexity control. Keep num_leaves below 2^max_depth (e.g. depth 7 → ≤ 127), otherwise trees can become very deep and specific.</p></div></details>
+<details class="qa" data-id="lightgbm-655775a" data-l="2"><summary>How does LightGBM handle categorical features?</summary><div class="ans"><p>Mark them as pandas category (or pass categorical_feature). For each split it sorts categories by their gradient statistics and finds the best cut in that order, giving a many-vs-many partition without one-hot encoding. Regularise rare categories with cat_smooth, min_data_per_group and max_cat_threshold.</p></div></details>
+<details class="qa" data-id="lightgbm-e17f830" data-l="2"><summary>When would you choose LightGBM over XGBoost or CatBoost?</summary><div class="ans"><p>Large data (millions of rows or many features), frequent retraining, big hyperparameter searches, sparse high-dimensional inputs, ranking (LambdaRank) or quantile objectives — anywhere training speed and memory are the bottleneck.</p></div></details>
+<details class="qa" data-id="xgboost-47a1c97" data-l="2"><summary>Level-wise vs leaf-wise tree growth?</summary><div class="ans"><p>Level-wise (XGBoost default) splits all nodes at a depth before going deeper — balanced trees, more robust. Leaf-wise (LightGBM) always splits the leaf with the highest gain — reaches lower loss with fewer leaves, faster, but can produce deep unbalanced trees that overfit small data; constrain with num_leaves, min_data_in_leaf and max_depth.</p></div></details>
+<details class="qa" data-id="xgboost-4e70f62" data-l="2"><summary>What are GOSS and EFB in LightGBM?</summary><div class="ans"><p>GOSS (Gradient-based One-Side Sampling) keeps all high-gradient (under-fit) rows and a random sample of low-gradient rows, reweighting the sampled ones to keep gain estimates unbiased. EFB (Exclusive Feature Bundling) merges sparse features that are rarely non-zero simultaneously into one, reducing the number of features scanned. Both cut training cost with little accuracy loss.</p></div></details>
+</div>
+</main>
+</body>
+</html>
