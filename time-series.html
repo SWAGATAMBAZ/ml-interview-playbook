@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Time-series forecasting · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="time-series">
 <main>
 <div class="eyebrow">Applied · Forecasting · Classical + ML</div>
 <h1>Time-series forecasting</h1>
 <p class="lede">Predicting the future from the past: sales, demand, traffic, prices. Interviews care less about formulas and more about whether you <b>respect time</b>: stationarity, no shuffling, proper backtesting and picking the right family of models. Each model family below gets its own plain-English idea and a “when it wins” box.</p>
-<div class="toc"><a href="#simple">Plain English</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#models">Each model</a><a href="#when">When it wins</a><a href="#components">Components</a><a href="#stationarity">Stationarity</a><a href="#acf">ACF and PACF</a><a href="#ets">Exponential smoothing, Prophet & others</a><a href="#ml">Forecasting with ML</a><a href="#validation">Validation</a><a href="#metrics">Forecast metrics</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#models">Each model</a><a href="#when">When it wins</a><a href="#components">Components</a><a href="#stationarity">Stationarity</a><a href="#acf">ACF and PACF</a><a href="#ets">Exponential smoothing, Prophet & others</a><a href="#ml">Forecasting with ML</a><a href="#validation">Validation</a><a href="#metrics">Forecast metrics</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>To forecast tomorrow's ice-cream sales, you'd look at: the <b>trend</b> (sales growing year on year), <b>seasonality</b> (more in summer, more on weekends), <b>recent momentum</b> (yesterday was unusually high) and <b>outside drivers</b> (a heatwave, a promotion). Every forecasting model is a different way of combining these four ingredients.</p>
@@ -62,6 +62,56 @@
 
 <h3 id="m-dl">5 · Deep learning (N-BEATS, TFT, DeepAR)</h3>
 <div class="callout win"><div class="tag">🏆 Wins when…</div><p>The data is <b>very large</b> (many long series), patterns are complex, you need probabilistic multi-horizon forecasts, and the team can afford the complexity. Otherwise GBMs usually match it with far less effort.</p></div>
+
+<h2 id="deep">How forecasting works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>A time series is a column of numbers in date order — daily sales, hourly traffic. Forecasting rests on one bet: <b>the patterns of the past continue</b>. Three patterns do most of the work: the <b>trend</b> (is the level drifting up or down?), the <b>seasonality</b> (does it repeat every week or year?) and <b>momentum</b> (is today usually like yesterday?). What's left is noise you can't predict. Every method, from a moving average to a neural network, is a different way of estimating those pieces and pushing them forward.</p>
+<p>The golden rule that separates this from ordinary ML: <b>you may never use the future to predict the past</b> — not in features, not in scaling, not in validation.</p>
+<div class="widget" data-demo="tsdemo"><div class="widget-title">Trend, seasonality and the ACF</div><div class="widget-sub">Add trend and seasonality, then tick the differencing boxes and watch the autocorrelation plot calm down.</div></div>
+<h3 id="l2">Level 2 · The workflow step by step</h3>
+<ol>
+<li><b>Plot it.</b> Look for trend, seasonality, level shifts, outliers, missing dates.</li>
+<li><b>Build baselines:</b> naive (tomorrow = today) and seasonal naive (next Monday = last Monday). Any model must beat these.</li>
+<li><b>Split by time</b> and set up rolling-origin backtests matching the real forecast horizon.</li>
+<li><b>Classical route (ARIMA):</b> make the series stationary (difference d times, log if variance grows) → read ACF/PACF or search AIC for p and q → fit → check residuals look like white noise → forecast.</li>
+<li><b>ML route:</b> turn the series into a table — lags, rolling statistics (shifted so they end before the prediction time), calendar and event features — then fit a gradient-boosting model, usually one global model across all series.</li>
+<li><b>Evaluate</b> with MAE/WAPE/MASE per horizon, against the baselines.</li>
+<li><b>Monitor and retrain</b> — the most recent data matters most.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked examples by hand</h3>
+<p><b>Differencing removes trend.</b></p>
+<div class="table-wrap"><table>
+<tr><th>Series</th><th>Values</th><th>Comment</th></tr>
+<tr><td>y</td><td>10, 12, 15, 19, 24</td><td>rising faster and faster — not stationary</td></tr>
+<tr><td>1st difference y_t − y_{t−1}</td><td>2, 3, 4, 5</td><td>still trending → d = 1 not enough</td></tr>
+<tr><td>2nd difference</td><td>1, 1, 1</td><td>constant → stationary; d = 2</td></tr>
+</table></div>
+<p><b>AR(1) forecast.</b> Model \(y_t=2+0.6\,y_{t-1}+\varepsilon_t\). Long-run mean = 2/(1 − 0.6) = 5. Last observed value 10.</p>
+<div class="table-wrap"><table>
+<tr><th>Horizon</th><th>Calculation</th><th>Forecast</th></tr>
+<tr><td>t + 1</td><td>2 + 0.6 × 10</td><td>8.0</td></tr>
+<tr><td>t + 2</td><td>2 + 0.6 × 8</td><td>6.8</td></tr>
+<tr><td>t + 3</td><td>2 + 0.6 × 6.8</td><td>6.08</td></tr>
+<tr><td>t + ∞</td><td>gap to the mean shrinks by 0.6 each step</td><td>→ 5</td></tr>
+</table></div>
+<p>Two interview-worthy facts fall out: forecasts of a stationary AR model <b>decay to the mean</b>, and uncertainty <b>grows with the horizon</b> (the variance of the h-step error is σ²(1 + 0.6² + 0.6⁴ + …)).</p>
+<p><b>Simple exponential smoothing</b> with α = 0.3, previous forecast 100, actual 110: new forecast = 0.3 × 110 + 0.7 × 100 = 103. Higher α reacts faster and is noisier.</p>
+<p><b>MASE.</b> Model MAE = 8; seasonal-naive MAE on the training set = 10 → MASE = 0.8 → 20% better than the naive method (above 1 would mean worse).</p>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Stationarity precisely:</b> constant mean, constant variance, autocovariance depending only on the lag. AR(1) is stationary when |φ| &lt; 1; φ = 1 is a random walk (unit root). ADF tests H₀ “unit root”; KPSS tests H₀ “stationary” — use both. Over-differencing adds an unnecessary MA term and inflates variance.</li>
+<li><b>Reading ACF/PACF:</b> AR(p) → PACF cuts off after lag p, ACF tails off; MA(q) → ACF cuts off after q. Spikes at multiples of s → seasonal terms.</li>
+<li><b>Spurious regression:</b> two unrelated trending series show a high R². Difference them or test for cointegration.</li>
+<li><b>Trees can't extrapolate:</b> a boosted model can't predict a level it never saw. Model differences or ratios to a recent level, or detrend first.</li>
+<li><b>Multi-step strategies:</b> recursive (errors compound), direct (one model per horizon), or multi-output.</li>
+<li><b>Leakage patterns:</b> rolling features that include the current value, statistics computed over the whole series, random K-fold, future-known vs unknown covariates mixed up, back-filled missing values.</li>
+<li><b>Hierarchies and intermittent demand:</b> reconcile store/SKU/category forecasts (bottom-up, top-down, MinT); many zeros → Croston/TSB or Tweedie objectives; stock-outs censor demand.</li>
+<li><b>Intervals:</b> quantile loss, residual bootstrap or conformal prediction; check coverage, not just point error.</li>
+<li><b>MAPE's flaws:</b> undefined at zero, explodes for small actuals, rewards under-forecasting → prefer WAPE/MASE.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“How is time-series data different from ordinary data?”</li><li>“What is stationarity and how do you test for it?”</li><li>“Explain ARIMA and how you choose p, d, q.”</li><li>“How do you validate a forecasting model?”</li><li>“How would you use XGBoost for forecasting? What features?”</li><li>“Your forecast is worse than last year's same-week value — why might that be?”</li><li>“How do you forecast 50,000 products, including new ones?”</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Random train/test split · no naive baseline · rolling mean that includes the target day · scaling with statistics from the full series · reporting MAPE on data with zeros · forgetting that the forecast must only use information available at the time it is made (publication delays!) · evaluating a 28-day-ahead forecast with a 1-day-ahead backtest.</p></div>
 
 <h2 id="when">Which one should you pick?</h2>
 <div class="table-wrap"><table class="vs">

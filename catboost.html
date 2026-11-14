@@ -10,7 +10,7 @@
 <div class="eyebrow">Supervised · Boosting · Categorical data specialist</div>
 <h1>CatBoost</h1>
 <p class="lede">Yandex's “Categorical Boosting”. It's gradient boosting designed for data full of text categories (city, product, brand), with a clever no-peeking trick that prevents target leakage, plus symmetric trees that are hard to overfit and very fast to predict with. Its defaults are famously strong.</p>
-<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#hp">Hyperparameters</a><a href="#maths">Optional maths</a><a href="#code">Code</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#hp">Hyperparameters</a><a href="#maths">Optional maths</a><a href="#code">Code</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>Models need numbers, but much real data is words: “Mumbai”, “iPhone”, “Gold plan”. A popular shortcut is to replace each category with its average outcome, e.g. Mumbai → 7% churn. The danger is that each row's own answer gets baked into its number. That's like a student whose cheat-sheet was written using the answer key: perfect in practice, useless in the real exam (this is <b>target leakage</b>).</p>
@@ -28,6 +28,43 @@
 
 <div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
 <p>“CatBoost is a gradient-boosting library from Yandex built for categorical data. It encodes categories with ordered target statistics: under a random permutation, each row uses only target information from rows before it, so there's no target leakage. It also builds category combinations automatically. Ordered boosting applies the same idea to the residuals to reduce prediction shift. It uses symmetric, or oblivious, trees, which regularise strongly and are very fast at inference. I reach for it when the data has many high-cardinality categoricals or when I have little time to tune, because its defaults are strong.”</p></div>
+
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>CatBoost is gradient boosting designed around one problem: <b>categorical columns</b> such as city, merchant or product ID. The usual trick is to replace each category by the average outcome for that category (“merchant X has a 9% fraud rate”). The catch: if a row's own outcome is included in that average, the feature secretly contains the answer, and the model looks brilliant in training and worse in real life. CatBoost's fix is simple to state: <b>when encoding a row, only use rows that came before it</b>, as if the data arrived one row at a time. It applies the same “never peek at yourself” rule when computing the errors each new tree learns from.</p>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li><b>Shuffle</b> the training rows into a random order (CatBoost keeps several such permutations).</li>
+<li><b>Ordered target statistics:</b> for each row and each categorical feature, compute <code>(sum of targets of earlier rows with the same category + a × prior) / (count of those rows + a)</code>, where prior is the overall target mean and <code>a</code> is a smoothing weight.</li>
+<li><b>Feature combinations:</b> greedily combine categorical features already used in the tree with others (city × device) and encode the combination the same way.</li>
+<li><b>Ordered boosting:</b> the residual (gradient) for a row is computed with a model that was trained without that row, so residuals aren't optimistically small.</li>
+<li><b>Fit a symmetric (oblivious) tree</b> to the gradients: every node on the same level uses the <i>same</i> feature and threshold, so a depth-6 tree is just 6 yes/no questions and 2⁶ = 64 leaves.</li>
+<li><b>Add the tree</b> (scaled by the learning rate) and repeat; stop with early stopping on a validation set.</li>
+<li><b>At prediction time</b> categories are encoded with statistics from the whole training set.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand: ordered target statistics</h3>
+<p>Five rows in their shuffled order, binary target, prior = 0.5, smoothing a = 1.</p>
+<div class="table-wrap"><table>
+<tr><th>Order</th><th>City</th><th>y</th><th>Earlier rows with the same city</th><th>Ordered encoding</th><th>Naive mean encoding (leaks)</th></tr>
+<tr><td>1</td><td>Pune</td><td>1</td><td>none</td><td>(0 + 0.5)/(0 + 1) = <b>0.50</b></td><td>2/3 = 0.67</td></tr>
+<tr><td>2</td><td>Delhi</td><td>0</td><td>none</td><td>(0 + 0.5)/(0 + 1) = <b>0.50</b></td><td>1/2 = 0.50</td></tr>
+<tr><td>3</td><td>Pune</td><td>0</td><td>row 1 (y = 1)</td><td>(1 + 0.5)/(1 + 1) = <b>0.75</b></td><td>0.67</td></tr>
+<tr><td>4</td><td>Pune</td><td>1</td><td>rows 1, 3 (sum 1)</td><td>(1 + 0.5)/(2 + 1) = <b>0.50</b></td><td>0.67</td></tr>
+<tr><td>5</td><td>Delhi</td><td>1</td><td>row 2 (y = 0)</td><td>(0 + 0.5)/(1 + 1) = <b>0.25</b></td><td>0.50</td></tr>
+</table></div>
+<p>With the naive encoding every row's feature was computed using its own label. Take a category that appears once: its naive encoding <i>equals</i> its label — a perfect, useless predictor. With ordered statistics a row's own label never enters its feature, so what the model learns in training matches what it will see on new data. The cost: early rows in the permutation have noisy encodings, which is why CatBoost averages over several permutations.</p>
+<p><b>Symmetric tree example.</b> Depth 2 with questions Q1 = “amount &gt; 500?” and Q2 = “city_stat &gt; 0.4?”. A row's leaf index is just the two answers as bits: (no, no) → 00, (no, yes) → 01, (yes, no) → 10, (yes, yes) → 11. Prediction = lookup in a 4-entry table — very fast, cache-friendly, and the same question is applied to every row, which acts as regularisation.</p>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Prediction shift:</b> in classic boosting the gradients for training rows are computed by a model that has already seen those rows, so their distribution differs from the gradients on unseen data. Ordered boosting removes this bias; it matters most on small datasets. On large data CatBoost switches to the cheaper <code>boosting_type="Plain"</code>.</li>
+<li><b>Symmetric trees are weaker learners individually</b> (less flexible than free-form trees) — fine for boosting, and they give fast inference and robustness to hyperparameters. <code>grow_policy="Lossguide"</code> or <code>"Depthwise"</code> are available when needed.</li>
+<li><b>Key knobs:</b> <code>iterations</code> + <code>learning_rate</code> (with early stopping), <code>depth</code> (4–10), <code>l2_leaf_reg</code>, <code>random_strength</code> (noise added to split scores), <code>bagging_temperature</code> (Bayesian bootstrap), <code>border_count</code>, <code>one_hot_max_size</code> (low-cardinality features are one-hot encoded instead).</li>
+<li><b>Other built-ins:</b> text features, missing values (treated as min/max), monotone constraints, uncertainty estimates, GPU training, good default hyperparameters.</li>
+<li><b>Costs:</b> training is slower than LightGBM (permutations, combinations); models with many combinations can get large.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“What is special about CatBoost?” → ordered target statistics, ordered boosting, symmetric trees.</li><li>“What's wrong with ordinary target encoding?” → leakage of the row's own label.</li><li>“Compute the ordered statistic for this row.”</li><li>“What is prediction shift?”</li><li>“Why symmetric trees?”</li><li>“When would you choose CatBoost over LightGBM/XGBoost?” → many high-cardinality categoricals, small/medium data, little tuning time, fast inference.</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>One-hot or label-encoding categoricals yourself before CatBoost (pass them via <code>cat_features</code>) · saying “CatBoost handles categories automatically” without being able to explain how · forgetting the eval set and early stopping · assuming it's always the most accurate — on purely numeric data the three libraries are usually within noise of each other.</p></div>
 
 <h2 id="key">Must-know points for interviews</h2>
 <ul class="keypts">

@@ -16,6 +16,12 @@ An interactive, single-stop site for machine-learning, data-science and MLOps in
   - A shared-state Python playground.
   - A printable cheat sheet with an interactive model chooser.
 
+## Added in the depth update
+
+- Every model page has a **Layman → advanced** section: plain-English explanation, the algorithm step by step, a worked example by hand, what advanced interviewers probe, how the questioning escalates, and common mistakes.
+- 15 more interactive demos (least-squares squares, loss functions, optimiser paths, L1 vs L2 geometry, logistic training, tree and forest boundaries, AdaBoost rounds, Naive Bayes calculator, kernel trick, DBSCAN, dendrogram, ACF, XGBoost gain calculator, loss-curve doctor).
+- `situational.html`: 100 scenario questions with detailed answers.
+
 ## How the labs work
 
 Python runs in the browser through [Pyodide](https://pyodide.org) (v0.29.5) inside a Web Worker, so nothing needs installing. NumPy, pandas, scikit-learn, SciPy, statsmodels, matplotlib, XGBoost and LightGBM are available. Each lab has starter code, hints, a solution and an automatic checker. Progress, code and “known” questions are saved in `localStorage`.

@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PCA & dimensionality reduction · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="dim-reduction">
 <main>
 <div class="eyebrow">Unsupervised · Dimensionality reduction</div>
 <h1>PCA & dimensionality reduction</h1>
 <p class="lede">Squeezing many features into a few without losing what matters. <b>PCA</b> is the workhorse, <b>LDA</b> uses labels to separate classes, and <b>t-SNE / UMAP</b> draw beautiful 2-D maps for visualisation. Each model below gets its own plain-English idea and a “when it wins” box.</p>
-<div class="toc"><a href="#simple">Plain English</a><a href="#pitch">30-sec answer</a><a href="#models">Each model</a><a href="#when">When it wins</a><a href="#demo">Interactive PCA</a><a href="#k">How many components?</a><a href="#practice">Practical points & pitfalls</a><a href="#lda">Linear Discriminant Analysis</a><a href="#tsne">t-SNE and UMAP</a><a href="#compare">Comparison</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#pitch">30-sec answer</a><a href="#models">Each model</a><a href="#when">When it wins</a><a href="#demo">Interactive PCA</a><a href="#k">How many components?</a><a href="#practice">Practical points & pitfalls</a><a href="#lda">Linear Discriminant Analysis</a><a href="#tsne">t-SNE and UMAP</a><a href="#compare">Comparison</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>Photograph a teapot. A 3-D object becomes a 2-D picture, and some angles show its shape far better than others: from the side you see the spout and handle, from above just a circle. <b>PCA finds the best camera angle</b>, the direction in which the data is most spread out, then the next best angle at right angles to it, and so on. Keep the top few angles and you keep most of the information with far fewer numbers.</p>
@@ -58,6 +58,49 @@
 <li>Usually run PCA to about 50 dimensions first to speed things up and reduce noise.</li>
 </ul>
 <div class="callout win"><div class="tag">🏆 Wins when…</div><p>You need to <b>see</b> the structure of high-dimensional data or embeddings: single-cell biology, word or image embeddings, checking whether customer segments separate, or debugging what a neural net has learned. Prefer UMAP for big data.</p></div>
+
+<h2 id="deep">How PCA works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>Imagine photographing a 3-D object. Some camera angles show almost everything about its shape; others show a useless thin sliver. PCA finds the best camera angles for your data: the direction along which the points are most spread out (PC1), then the best direction at right angles to that (PC2), and so on. If the first few directions already show nearly all the spread, you can drop the rest and describe each row with a handful of numbers instead of hundreds, losing very little.</p>
+<p>When two features move together (height and weight), they are partly saying the same thing. PCA replaces them with one “size” axis that captures the shared part and a second, much less important axis for the leftover.</p>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li><b>Standardise</b> each feature (subtract the mean, divide by the standard deviation) so units don't decide the answer.</li>
+<li><b>Compute the covariance matrix</b> — how each pair of features varies together.</li>
+<li><b>Find its eigenvectors and eigenvalues.</b> Eigenvectors are the new axes (principal components); each eigenvalue is the variance of the data along that axis.</li>
+<li><b>Sort</b> by eigenvalue, largest first. Explained variance ratio = eigenvalue ÷ sum of eigenvalues.</li>
+<li><b>Keep the top k</b> (enough to explain, say, 95%, or chosen by cross-validating the downstream model).</li>
+<li><b>Project:</b> new coordinates = centred data × chosen eigenvectors.</li>
+<li><b>At prediction time</b> apply the <i>same</i> means, scales and eigenvectors learned from training data.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>Two centred features with covariance matrix \(\Sigma=\begin{pmatrix}2&1\\1&2\end{pmatrix}\).</p>
+<div class="table-wrap"><table>
+<tr><th>Step</th><th>Calculation</th><th>Result</th></tr>
+<tr><td>Eigenvalues</td><td>solve (2 − λ)² − 1 = 0 → 2 − λ = ±1</td><td>λ₁ = 3, λ₂ = 1</td></tr>
+<tr><td>PC1 direction</td><td>(Σ − 3I)v = 0 → v₁ = v₂</td><td>(1, 1)/√2 = (0.707, 0.707)</td></tr>
+<tr><td>PC2 direction</td><td>perpendicular to PC1</td><td>(1, −1)/√2 = (0.707, −0.707)</td></tr>
+<tr><td>Explained variance</td><td>3/(3 + 1) and 1/(3 + 1)</td><td>75% and 25%</td></tr>
+<tr><td>Project the point (2, 0)</td><td>PC1 score = 2 × 0.707 + 0 × 0.707</td><td>1.414 (PC2 score also 1.414)</td></tr>
+<tr><td>Reconstruct from PC1 only</td><td>1.414 × (0.707, 0.707)</td><td>(1, 1) — error vector (1, −1), length 1.414</td></tr>
+</table></div>
+<p>Interpretation: PC1 = “the two features rise together” and carries three-quarters of the information; total variance is preserved (2 + 2 = 3 + 1). Keeping only PC1 turns (2, 0) into (1, 1): the part of the point that lay along PC2 is what you lose.</p>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Two equivalent definitions:</b> directions of maximum variance <i>and</i> the rank-k linear projection with minimum squared reconstruction error (Eckart–Young).</li>
+<li><b>SVD:</b> for centred X = USVᵀ, the columns of V are the components, eigenvalues are s²/(n − 1), scores are US. Libraries use SVD (stable; randomized SVD for big data) rather than forming the covariance matrix.</li>
+<li><b>Covariance vs correlation PCA:</b> standardising = PCA on the correlation matrix. Skip it only when features share units and their variances are meaningful.</li>
+<li><b>Signs and rotations:</b> the sign of a component is arbitrary; components with nearly equal eigenvalues are unstable (any rotation within their plane is as good).</li>
+<li><b>Unsupervised blind spot:</b> large variance ≠ predictive. The signal can sit in a low-variance direction, so PCA before a classifier can hurt — validate it. PLS and LDA use the target.</li>
+<li><b>Outliers</b> inflate variance and can capture a component on their own (robust PCA).</li>
+<li><b>Linear only:</b> a curved manifold (Swiss roll) needs kernel PCA, autoencoders, UMAP.</li>
+<li><b>Whitening:</b> dividing scores by √eigenvalue gives uncorrelated unit-variance features.</li>
+<li><b>Leakage:</b> fit PCA inside the cross-validation pipeline, on training folds only.</li>
+<li><b>t-SNE / UMAP are for looking, not measuring:</b> cluster sizes and distances between clusters in the picture are not meaningful; results change with perplexity / n_neighbors and the random seed.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“What is PCA?”</li><li>“Why standardise first?”</li><li>“What are eigenvalues/eigenvectors here?”</li><li>“How many components do you keep?”</li><li>“Compute the components of this 2×2 covariance matrix.”</li><li>“Can PCA hurt a model?”</li><li>“PCA vs LDA vs t-SNE?”</li><li>“How is PCA related to SVD / to an autoencoder?”</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Running PCA on unscaled data · fitting it on train + test together · calling PCA feature selection (it builds new mixed features; no original column is dropped) · reading meaning into t-SNE distances · using PCA on one-hot/categorical data without thought (MCA is the analogue) · assuming the top components are the predictive ones.</p></div>
 
 <h2 id="when">Which one should you pick?</h2>
 <div class="table-wrap"><table class="vs">

@@ -1,0 +1,218 @@
+@@@linear-regression
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>You have dots on a chart (flat size vs price). You want one straight line that lets you read off a price for any size. Many lines are possible, so you need a rule for “best”. The rule: for every dot, measure how far the line misses it vertically (the <b>residual</b>), square that miss so that positive and negative misses don't cancel and big misses hurt more, and add them all up. The best line has the smallest total. That's all “ordinary least squares” means.</p>
+<p>The line has two knobs: the <b>intercept</b> (where it starts) and the <b>slope</b> (how much price rises per extra square foot). With several features you get one slope per feature, and each slope means “effect of this feature when the others are held fixed”.</p>
+<div class="widget" data-demo="olsfit"><div class="widget-title">Find the least-squares line yourself</div><div class="widget-sub">Drag the sliders to shrink the pink squares, then press “Snap to best fit” to see how close you got.</div></div>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li><b>Write the model:</b> \(\hat y=\beta_0+\beta_1x_1+\dots+\beta_px_p\).</li>
+<li><b>Write the cost:</b> \(\text{SSE}=\sum_i(y_i-\hat y_i)^2\). It is a bowl-shaped (convex) function of the β's, so it has exactly one lowest point.</li>
+<li><b>Find the bottom of the bowl.</b> Two routes:
+<ul><li><i>Calculus (closed form):</i> set the slope of the bowl to zero in every direction → \(\hat\beta=(X^TX)^{-1}X^Ty\). For one feature this reduces to \(\beta_1=\frac{\sum(x_i-\bar x)(y_i-\bar y)}{\sum(x_i-\bar x)^2}\) and \(\beta_0=\bar y-\beta_1\bar x\).</li>
+<li><i>Gradient descent:</i> start anywhere, repeatedly step downhill: \(\beta\leftarrow\beta-\eta\cdot\tfrac{2}{n}X^T(X\beta-y)\).</li></ul></li>
+<li><b>Check the fit:</b> R², RMSE on held-out data.</li>
+<li><b>Check the assumptions</b> with residual plots before trusting coefficients and p-values.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>Five points: (1, 2), (2, 3), (3, 5), (4, 4), (5, 6) — the same ones as in the demo above.</p>
+<div class="table-wrap"><table>
+<tr><th>Step</th><th>Calculation</th><th>Result</th></tr>
+<tr><td>Means</td><td>\(\bar x=15/5,\ \bar y=20/5\)</td><td>\(\bar x=3,\ \bar y=4\)</td></tr>
+<tr><td>\(S_{xy}=\sum(x-\bar x)(y-\bar y)\)</td><td>(−2)(−2) + (−1)(−1) + (0)(1) + (1)(0) + (2)(2)</td><td>9</td></tr>
+<tr><td>\(S_{xx}=\sum(x-\bar x)^2\)</td><td>4 + 1 + 0 + 1 + 4</td><td>10</td></tr>
+<tr><td>Slope</td><td>\(\beta_1=S_{xy}/S_{xx}\)</td><td>0.9</td></tr>
+<tr><td>Intercept</td><td>\(\beta_0=4-0.9\times3\)</td><td>1.3</td></tr>
+<tr><td>Predictions</td><td>1.3 + 0.9x</td><td>2.2, 3.1, 4.0, 4.9, 5.8</td></tr>
+<tr><td>Residuals</td><td>y − ŷ</td><td>−0.2, −0.1, 1.0, −0.9, 0.2 (sum = 0)</td></tr>
+<tr><td>SSE</td><td>0.04 + 0.01 + 1 + 0.81 + 0.04</td><td>1.9</td></tr>
+<tr><td>SST</td><td>\(\sum(y-\bar y)^2\) = 4 + 1 + 1 + 0 + 4</td><td>10</td></tr>
+<tr><td>R²</td><td>1 − 1.9/10</td><td>0.81</td></tr>
+<tr><td>Residual std. error</td><td>\(\sqrt{\text{SSE}/(n-2)}=\sqrt{1.9/3}\)</td><td>0.80</td></tr>
+</table></div>
+<p>Read it aloud: “each extra unit of x adds 0.9 to y on average; the line explains 81% of the variation in y; a typical miss is about 0.8.” Notice the residuals sum to zero and the line passes through (3, 4) = \((\bar x,\bar y)\) — both always true when there's an intercept.</p>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Geometry:</b> ŷ is the projection of y onto the space spanned by the feature columns; residuals are orthogonal to every feature (\(X^Te=0\)).</li>
+<li><b>Probabilistic view:</b> least squares = maximum likelihood when errors are Gaussian. Change the noise assumption and the loss changes (Laplace → absolute error).</li>
+<li><b>Uncertainty:</b> \(\operatorname{Var}(\hat\beta)=\sigma^2(X^TX)^{-1}\). Correlated features make \(X^TX\) nearly singular → huge variances → unstable coefficients (multicollinearity).</li>
+<li><b>Numerics:</b> libraries don't invert \(X^TX\); they use QR or SVD. With p &gt; n or exact collinearity there are infinitely many solutions; the pseudo-inverse picks the minimum-norm one.</li>
+<li><b>Bias–variance:</b> OLS is unbiased but can have high variance; Ridge trades a little bias for much lower variance.</li>
+<li><b>Prediction vs inference:</b> for prediction you mainly need linearity and stable relationships; for inference (p-values, CIs) you also need independent, constant-variance, roughly normal errors.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol>
+<li>“What is linear regression?” → model + least squares.</li>
+<li>“How are the coefficients found?” → normal equation / gradient descent; when you'd use each.</li>
+<li>“What are the assumptions?” → LINE + no multicollinearity; which matter for what.</li>
+<li>“How do you check them, and what if they fail?” → residual plot, Q-Q, VIF, Breusch–Pagan, Durbin–Watson; transforms, robust SEs, WLS, Ridge.</li>
+<li>“Your R² is 0.95 — are you done?” → no: check leakage, residuals, out-of-sample error, adjusted R².</li>
+<li>“Two features are 0.98 correlated — what happens?” → unstable coefficients, fine predictions; drop/combine/Ridge.</li>
+</ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Saying “the data must be normal” (it's the <i>errors</i>, and only for inference) · claiming R² measures predictive quality on new data · interpreting a coefficient as causal · forgetting that “linear” means linear in the parameters, so polynomial regression is still linear regression · reporting training-set R² only.</p></div>
+
+@@@regularization
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>A flexible model given many features will happily use huge positive and negative weights that cancel each other out just to fit a few noisy rows. Regularisation says: “you may fit the data, but every bit of weight you use costs you.” The model now has to justify each weight with a real improvement in fit, so weak or redundant features get small weights (Ridge) or are dropped entirely (Lasso). The price knob is <b>α</b>: zero means no penalty (plain OLS); very large means “weights are so expensive that you just predict the average”.</p>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li><b>Standardise the features</b> (mean 0, std 1) so the penalty treats them equally.</li>
+<li><b>Add the penalty to the loss:</b> Ridge adds \(\alpha\sum\beta_j^2\); Lasso adds \(\alpha\sum|\beta_j|\); Elastic Net adds both.</li>
+<li><b>Minimise:</b> Ridge has a formula \((X^TX+\alpha I)^{-1}X^Ty\). Lasso is solved one coefficient at a time (coordinate descent): compute how strongly feature j correlates with what the other features haven't explained, then <i>soft-threshold</i> it — subtract α, and if the result crosses zero, set it to exactly zero.</li>
+<li><b>Choose α by cross-validation</b> on a log-spaced grid; refit on all training data.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>Use the data from the linear-regression page: after centring, \(S_{xy}=9\), \(S_{xx}=10\), n = 5, so OLS gives β = 9/10 = <b>0.9</b>.</p>
+<div class="table-wrap"><table>
+<tr><th>Method</th><th>Formula (one centred feature)</th><th>α</th><th>Coefficient</th></tr>
+<tr><td>OLS</td><td>\(S_{xy}/S_{xx}\)</td><td>0</td><td>0.90</td></tr>
+<tr><td>Ridge</td><td>\(S_{xy}/(S_{xx}+\alpha)\)</td><td>5</td><td>9/15 = 0.60</td></tr>
+<tr><td>Ridge</td><td></td><td>90</td><td>9/100 = 0.09 (tiny, never 0)</td></tr>
+<tr><td>Lasso (sklearn scaling)</td><td>\(\dfrac{S(S_{xy}/n,\ \alpha)}{S_{xx}/n}=\dfrac{\max(1.8-\alpha,0)}{2}\)</td><td>0.4</td><td>1.4/2 = 0.70</td></tr>
+<tr><td>Lasso</td><td></td><td>1.8 or more</td><td>exactly 0</td></tr>
+</table></div>
+<p>Ridge <b>divides</b> (shrinks proportionally, never reaching zero). Lasso <b>subtracts</b> a fixed amount and clips at zero — once α exceeds the feature's correlation with the target (1.8 here), the feature is switched off. That one line explains sparsity.</p>
+<div class="widget" data-demo="l1l2"><div class="widget-title">The diamond and the circle</div><div class="widget-sub">The classic picture drawn on interview whiteboards. Shrink the budget t and compare L1 with L2.</div></div>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Constrained vs penalised form:</b> minimising loss + α·penalty is equivalent to minimising loss subject to penalty ≤ t; each α corresponds to some t.</li>
+<li><b>Bayesian reading:</b> Ridge = Gaussian prior on weights, Lasso = Laplace prior; α = noise variance / prior variance.</li>
+<li><b>Ridge and SVD:</b> it shrinks the direction with singular value d by \(d^2/(d^2+\alpha)\) — low-variance directions (where OLS is unstable) get shrunk most.</li>
+<li><b>Effective degrees of freedom</b> of Ridge: \(\sum d_j^2/(d_j^2+\alpha)\), sliding from p down to 0.</li>
+<li><b>Lasso limits:</b> picks at most n features when p &gt; n; selection among correlated features is arbitrary; estimates are biased toward zero (hence “relaxed Lasso”, adaptive Lasso).</li>
+<li><b>Same idea elsewhere:</b> C in logistic regression/SVM (C = 1/α), weight decay in neural nets, λ and α on leaf weights in XGBoost, early stopping as implicit L2.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol>
+<li>“What is regularisation and why do we need it?”</li>
+<li>“L1 vs L2?” → sparsity vs smooth shrinkage.</li>
+<li>“<i>Why</i> does L1 give zeros?” → corners of the diamond / constant gradient / soft-thresholding.</li>
+<li>“Why scale first? Is the intercept penalised?”</li>
+<li>“How do you pick α? What is the one-standard-error rule?”</li>
+<li>“Two features are near-duplicates — what do Ridge and Lasso each do?” → split the weight vs pick one arbitrarily; Elastic Net keeps both.</li>
+</ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Forgetting to scale · tuning α on the test set · treating Lasso's selected features as “the true causes” · confusing sklearn's <code>alpha</code> (bigger = more penalty) with <code>C</code> (bigger = less penalty) · saying regularisation “reduces bias” (it increases bias, reduces variance).</p></div>
+
+@@@logistic-regression
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>You want a yes/no answer with a confidence: “will this customer churn?” Logistic regression first builds a <b>score</b> exactly like linear regression — a weighted sum of the features, where positive weights push toward “yes” and negative weights toward “no”. A score can be any number, so it's passed through an S-shaped squashing function (the <b>sigmoid</b>) that turns it into a probability between 0 and 1: score 0 → 50%, big positive → near 100%, big negative → near 0%. Training means finding the weights that make the predicted probabilities agree with what actually happened, penalising confident wrong answers the most.</p>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li><b>Score:</b> \(z=w^Tx+b\).</li>
+<li><b>Squash:</b> \(p=\sigma(z)=1/(1+e^{-z})\) = predicted P(y = 1).</li>
+<li><b>Measure error with log-loss:</b> if the truth is 1 the cost is \(-\log p\); if 0 it's \(-\log(1-p)\). Predicting 0.99 for a true 1 costs 0.01; predicting 0.01 costs 4.6.</li>
+<li><b>Compute the gradient:</b> for each weight it's the average of \((p-y)\times x\) — “how wrong were we, times how much this feature was involved”.</li>
+<li><b>Update:</b> \(w\leftarrow w-\eta\cdot\text{gradient}\); repeat until the loss stops falling (libraries use faster solvers such as L-BFGS, same idea).</li>
+<li><b>Decide:</b> predict “yes” if p ≥ threshold (0.5 by default; tune it for your costs).</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand (one gradient step)</h3>
+<p>Data: hours studied x = 1, 2, 3, 4 with outcomes y = 0, 0, 1, 1. Start at w = 0, b = 0, learning rate η = 1.</p>
+<div class="table-wrap"><table>
+<tr><th>Step</th><th>Calculation</th><th>Result</th></tr>
+<tr><td>Predictions</td><td>σ(0) for every row</td><td>p = 0.5, 0.5, 0.5, 0.5</td></tr>
+<tr><td>Loss</td><td>−ln(0.5)</td><td>0.693</td></tr>
+<tr><td>Errors p − y</td><td></td><td>0.5, 0.5, −0.5, −0.5</td></tr>
+<tr><td>Gradient for w</td><td>mean[(p − y)·x] = (0.5 + 1.0 − 1.5 − 2.0)/4</td><td>−0.5</td></tr>
+<tr><td>Gradient for b</td><td>mean[p − y]</td><td>0</td></tr>
+<tr><td>Update</td><td>w = 0 − 1×(−0.5), b = 0 − 0</td><td>w = 0.5, b = 0</td></tr>
+<tr><td>New predictions</td><td>σ(0.5), σ(1), σ(1.5), σ(2)</td><td>0.62, 0.73, 0.82, 0.88</td></tr>
+<tr><td>New loss</td><td>−[ln 0.38 + ln 0.27 + ln 0.82 + ln 0.88]/4</td><td>0.654 ↓</td></tr>
+</table></div>
+<p>The loss fell from 0.693 to 0.654. The weight became positive (more hours → more likely to pass) but the two low-hour students are still predicted above 0.5 — the next steps will push b negative to fix that. Watch exactly this process in two dimensions:</p>
+<div class="widget" data-demo="logit2d"><div class="widget-title">Training logistic regression by gradient descent</div><div class="widget-sub">Step through the updates. Then toggle to perfectly separable data and run 300 steps several times: ‖w‖ never stops growing.</div></div>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Where the sigmoid comes from:</b> assume the log-odds \(\ln\frac{p}{1-p}\) are linear in x; solve for p and you get the sigmoid. It is a generalised linear model with a Bernoulli outcome and logit link.</li>
+<li><b>Log-loss = negative log-likelihood</b> of Bernoulli data; it is convex in w (Hessian \(X^TSX\) is PSD), so there are no local minima.</li>
+<li><b>No closed form</b> because the gradient equation is non-linear in w → Newton/IRLS, L-BFGS, SAGA.</li>
+<li><b>Perfect separation</b> → weights diverge; regularise (sklearn does by default: C = 1).</li>
+<li><b>Coefficients are log-odds ratios</b>; \(e^{w}\) is the odds multiplier per unit of the feature. Standard errors come from the inverse Hessian (Wald tests).</li>
+<li><b>Calibration:</b> a well-specified, unweighted model is calibrated on average; class weights and resampling shift the intercept and break calibration.</li>
+<li><b>Changing the base rate</b> only shifts the intercept by the log-odds difference — useful after undersampling negatives.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol>
+<li>“Classification or regression? Why the name?”</li>
+<li>“Why sigmoid? Why not fit a straight line to 0/1?” → unbounded outputs, wrong error distribution.</li>
+<li>“Why log-loss and not MSE?” → non-convex + vanishing gradients with MSE.</li>
+<li>“Interpret a coefficient of 0.7.” → odds ×2.</li>
+<li>“Training won't converge / coefficients are huge — why?” → separation, unscaled features, collinearity.</li>
+<li>“1% positives — what changes?” → metric, class weights, threshold, calibration.</li>
+</ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Interpreting a coefficient as a change in probability (it's log-odds) · assuming threshold 0.5 is always right · saying it “assumes normality” · forgetting sklearn regularises by default, so coefficients aren't plain MLE · using accuracy on imbalanced data.</p></div>
+
+@@@knn
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>“Tell me who your neighbours are and I'll tell you who you are.” To classify a new point, find the k training points that look most like it and let them vote. To predict a number, average their values. There's no formula to learn and no training step — the stored data <i>is</i> the model. Everything depends on two choices: what “looks like” means (the distance) and how many neighbours get a vote (k).</p>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li><b>Scale</b> the features so each contributes fairly to distance.</li>
+<li><b>Store</b> the training set (optionally in a KD-tree / ball tree for faster search).</li>
+<li>For a query: <b>compute the distance</b> to every stored point.</li>
+<li><b>Sort and keep the k nearest.</b></li>
+<li><b>Vote</b> (majority, or weighted by 1/distance) or <b>average</b> for regression.</li>
+<li>Choose k and the metric by <b>cross-validation</b>.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>Query point q = (3, 3). Training points and classes:</p>
+<div class="table-wrap"><table>
+<tr><th>Point</th><th>Class</th><th>Euclidean distance to (3, 3)</th><th>Rank</th></tr>
+<tr><td>(2, 4)</td><td>A</td><td>\(\sqrt{1+1}=1.41\)</td><td>1</td></tr>
+<tr><td>(4, 4)</td><td>B</td><td>1.41</td><td>1</td></tr>
+<tr><td>(3, 5)</td><td>B</td><td>2.00</td><td>3</td></tr>
+<tr><td>(1, 1)</td><td>A</td><td>\(\sqrt{4+4}=2.83\)</td><td>4</td></tr>
+<tr><td>(5, 1)</td><td>A</td><td>2.83</td><td>4</td></tr>
+</table></div>
+<ul><li><b>k = 1:</b> a tie between the two nearest points (A and B) — the answer depends on tie-breaking. Fragile.</li><li><b>k = 3:</b> neighbours A, B, B → <b>B</b> wins 2–1; P(B) = 0.67.</li><li><b>k = 5:</b> A, B, B, A, A → <b>A</b> wins 3–2. Same query, different answer: k matters.</li><li><b>k = 5 with distance weights:</b> A = 1/1.41 + 1/2.83 + 1/2.83 = 1.41; B = 1/1.41 + 1/2 = 1.21 → A, but much closer than the raw 3–2 count suggests.</li></ul>
+<p>Now multiply the first coordinate by 1000 (say it was metres instead of kilometres): distances are dominated by that feature and the ranking changes completely. That's why scaling is not optional.</p>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Bias–variance through k:</b> 1/k acts like model complexity. k = 1 → zero training error, jagged boundary; k = n → constant prediction.</li>
+<li><b>Curse of dimensionality:</b> in high dimensions the nearest and farthest neighbours are almost equally far, so “nearest” carries little information.</li>
+<li><b>Cost:</b> O(1) training; O(n·d) per prediction by brute force. KD-trees help only up to roughly 20 dimensions. Production similarity search uses approximate methods (HNSW, FAISS/IVF, ScaNN).</li>
+<li><b>Theory:</b> as n → ∞, 1-NN error ≤ 2 × Bayes error; kNN with k → ∞, k/n → 0 is consistent.</li>
+<li><b>Irrelevant features</b> hurt badly because every feature enters the distance equally — feature selection or metric learning matters more here than for trees.</li>
+<li><b>Probabilities</b> are vote fractions: coarse (multiples of 1/k) and poorly calibrated for small k.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“How does kNN work? Why ‘lazy’?”</li><li>“How do you pick k? What happens at the extremes?”</li><li>“Why scale? Which distance for text / categorical data?”</li><li>“It's too slow with 50 million rows — now what?” → ANN indexes, dimensionality reduction, prototypes.</li><li>“Why does it degrade with 500 features?” → curse of dimensionality.</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Confusing kNN (supervised) with K-means (clustering) · forgetting to scale · fitting the scaler on the full data before CV · using even k for binary problems · claiming kNN “trains fast” without mentioning the slow prediction.</p></div>
+
+@@@naive-bayes
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>Think like a detective updating a belief. Before reading an email you already know roughly 40% of mail is spam (the <b>prior</b>). Then each clue adjusts that belief: the word “free” shows up in spam far more often than in normal mail, so it pushes toward spam; “meeting” pushes the other way. Naive Bayes simply multiplies your starting belief by how typical each clue is for spam, does the same for not-spam, and picks whichever total is bigger. It is “naive” because it treats the clues as unrelated to each other — a simplification that is wrong but surprisingly harmless for choosing the class.</p>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li><b>Training = counting.</b> For each class, count how often it occurs (prior) and how often each feature value appears within it (likelihoods). Add a small constant α to every count so nothing has probability zero (Laplace smoothing).</li>
+<li><b>Prediction:</b> for each class compute prior × product of the likelihoods of the observed features. In practice, add logs instead of multiplying to avoid underflow.</li>
+<li><b>Pick the class with the highest score.</b> Divide by the sum of scores if you need a probability.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>10 training emails: 4 spam, 6 ham. “free” appears in 3 spam and 1 ham; “meeting” appears in 0 spam and 3 ham. New email: contains “free”, does not contain “meeting”. Bernoulli NB with α = 1 (two outcomes per word, so add 2 to the denominator):</p>
+<div class="table-wrap"><table>
+<tr><th>Quantity</th><th>Spam</th><th>Ham</th></tr>
+<tr><td>Prior</td><td>4/10 = 0.4</td><td>6/10 = 0.6</td></tr>
+<tr><td>P(free = yes | class)</td><td>(3+1)/(4+2) = 0.667</td><td>(1+1)/(6+2) = 0.25</td></tr>
+<tr><td>P(meeting = yes | class)</td><td>(0+1)/(4+2) = 0.167</td><td>(3+1)/(6+2) = 0.5</td></tr>
+<tr><td>P(meeting = no | class)</td><td>0.833</td><td>0.5</td></tr>
+<tr><td>Score = prior × P(free) × P(no meeting)</td><td>0.4 × 0.667 × 0.833 = 0.222</td><td>0.6 × 0.25 × 0.5 = 0.075</td></tr>
+<tr><td>Posterior</td><td>0.222 / (0.222 + 0.075) = <b>0.75</b></td><td>0.25</td></tr>
+</table></div>
+<p>Without smoothing, P(meeting | spam) would be 0/4 = 0, so <i>any</i> email containing “meeting” would get spam score exactly 0, no matter how many spammy words it also had. Try it:</p>
+<div class="widget" data-demo="nbcalc"><div class="widget-title">Naive Bayes spam calculator</div><div class="widget-sub">Tick words, move the prior, and set α to 0 to trigger the zero-frequency problem.</div></div>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Generative model:</b> it models how each class produces features, P(x | y), then inverts with Bayes' rule; logistic regression models P(y | x) directly.</li>
+<li><b>Linear in log space:</b> the log-odds is a sum of per-feature terms → a linear decision boundary for Bernoulli/Multinomial NB; Gaussian NB with class-specific variances gives a quadratic boundary.</li>
+<li><b>Why it works despite wrong assumptions:</b> correlated features double-count evidence, which distorts probabilities (pushed toward 0/1) but usually not the arg-max.</li>
+<li><b>Variants:</b> Multinomial (counts), Bernoulli (presence, penalises absence), Gaussian (continuous), Complement (imbalanced text), Categorical.</li>
+<li><b>Sample efficiency:</b> needs O(log d) examples to approach its asymptotic error vs O(d) for logistic regression (Ng & Jordan) — better with tiny data, worse with plenty.</li>
+<li><b>Priors can be overridden</b> when deployment base rates differ from training.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“State Bayes' theorem. What's naive about Naive Bayes?”</li><li>“Why does it still work?”</li><li>“What if a word never appeared in a class?” → Laplace smoothing.</li><li>“Why log probabilities?” → underflow.</li><li>“NB vs logistic regression — when each?”</li><li>“Can you trust its probabilities?” → no, calibrate.</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Saying features must be independent overall (it's independent <i>given the class</i>) · forgetting smoothing · multiplying raw probabilities in code · using Gaussian NB on word counts · quoting NB probabilities as real risk estimates.</p></div>

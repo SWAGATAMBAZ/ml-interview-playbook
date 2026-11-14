@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ridge, Lasso & Elastic Net · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="regularization">
 <main>
 <div class="eyebrow">Supervised · Regression · Regularisation</div>
 <h1>Ridge, Lasso & Elastic Net</h1>
 <p class="lede">Three ways to stop a linear model from over-trusting its training data: Ridge shrinks every weight, Lasso pushes useless weights to exactly zero, and Elastic Net blends the two. Interviewers love asking <i>why</i> Lasso zeroes features and Ridge doesn't.</p>
-<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#demo">Coefficient paths</a><a href="#compare">Side-by-side</a><a href="#hp">Hyperparameters</a><a href="#practice">Practical tips & gotchas</a><a href="#maths">Optional maths</a><a href="#code">Code</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#demo">Coefficient paths</a><a href="#compare">Side-by-side</a><a href="#hp">Hyperparameters</a><a href="#practice">Practical tips & gotchas</a><a href="#maths">Optional maths</a><a href="#code">Code</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>Plain linear regression is an eager student who'll use <i>any</i> clue to fit the training data perfectly, including coincidences. Regularisation adds a <b>“complexity tax”</b>: every bit of weight a feature gets costs a penalty, so the model only gives weight to features that truly earn it.</p>
@@ -27,6 +27,48 @@
 
 <div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
 <p>“Regularisation adds a penalty on coefficient size to the loss, trading a little bias for a big drop in variance. Ridge (L2) penalises squared weights. It shrinks all coefficients smoothly and handles multicollinearity by sharing weight among correlated features. Lasso (L1) penalises absolute weights, which drives some exactly to zero, so it does feature selection, but among correlated features it tends to pick one arbitrarily. Elastic Net mixes both, so you get sparsity plus stable, grouped selection. I standardise features, tune alpha (and l1_ratio) with cross-validation, and never penalise the intercept.”</p></div>
+
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>A flexible model given many features will happily use huge positive and negative weights that cancel each other out just to fit a few noisy rows. Regularisation says: “you may fit the data, but every bit of weight you use costs you.” The model now has to justify each weight with a real improvement in fit, so weak or redundant features get small weights (Ridge) or are dropped entirely (Lasso). The price knob is <b>α</b>: zero means no penalty (plain OLS); very large means “weights are so expensive that you just predict the average”.</p>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li><b>Standardise the features</b> (mean 0, std 1) so the penalty treats them equally.</li>
+<li><b>Add the penalty to the loss:</b> Ridge adds \(\alpha\sum\beta_j^2\); Lasso adds \(\alpha\sum|\beta_j|\); Elastic Net adds both.</li>
+<li><b>Minimise:</b> Ridge has a formula \((X^TX+\alpha I)^{-1}X^Ty\). Lasso is solved one coefficient at a time (coordinate descent): compute how strongly feature j correlates with what the other features haven't explained, then <i>soft-threshold</i> it — subtract α, and if the result crosses zero, set it to exactly zero.</li>
+<li><b>Choose α by cross-validation</b> on a log-spaced grid; refit on all training data.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>Use the data from the linear-regression page: after centring, \(S_{xy}=9\), \(S_{xx}=10\), n = 5, so OLS gives β = 9/10 = <b>0.9</b>.</p>
+<div class="table-wrap"><table>
+<tr><th>Method</th><th>Formula (one centred feature)</th><th>α</th><th>Coefficient</th></tr>
+<tr><td>OLS</td><td>\(S_{xy}/S_{xx}\)</td><td>0</td><td>0.90</td></tr>
+<tr><td>Ridge</td><td>\(S_{xy}/(S_{xx}+\alpha)\)</td><td>5</td><td>9/15 = 0.60</td></tr>
+<tr><td>Ridge</td><td></td><td>90</td><td>9/100 = 0.09 (tiny, never 0)</td></tr>
+<tr><td>Lasso (sklearn scaling)</td><td>\(\dfrac{S(S_{xy}/n,\ \alpha)}{S_{xx}/n}=\dfrac{\max(1.8-\alpha,0)}{2}\)</td><td>0.4</td><td>1.4/2 = 0.70</td></tr>
+<tr><td>Lasso</td><td></td><td>1.8 or more</td><td>exactly 0</td></tr>
+</table></div>
+<p>Ridge <b>divides</b> (shrinks proportionally, never reaching zero). Lasso <b>subtracts</b> a fixed amount and clips at zero — once α exceeds the feature's correlation with the target (1.8 here), the feature is switched off. That one line explains sparsity.</p>
+<div class="widget" data-demo="l1l2"><div class="widget-title">The diamond and the circle</div><div class="widget-sub">The classic picture drawn on interview whiteboards. Shrink the budget t and compare L1 with L2.</div></div>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Constrained vs penalised form:</b> minimising loss + α·penalty is equivalent to minimising loss subject to penalty ≤ t; each α corresponds to some t.</li>
+<li><b>Bayesian reading:</b> Ridge = Gaussian prior on weights, Lasso = Laplace prior; α = noise variance / prior variance.</li>
+<li><b>Ridge and SVD:</b> it shrinks the direction with singular value d by \(d^2/(d^2+\alpha)\) — low-variance directions (where OLS is unstable) get shrunk most.</li>
+<li><b>Effective degrees of freedom</b> of Ridge: \(\sum d_j^2/(d_j^2+\alpha)\), sliding from p down to 0.</li>
+<li><b>Lasso limits:</b> picks at most n features when p &gt; n; selection among correlated features is arbitrary; estimates are biased toward zero (hence “relaxed Lasso”, adaptive Lasso).</li>
+<li><b>Same idea elsewhere:</b> C in logistic regression/SVM (C = 1/α), weight decay in neural nets, λ and α on leaf weights in XGBoost, early stopping as implicit L2.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol>
+<li>“What is regularisation and why do we need it?”</li>
+<li>“L1 vs L2?” → sparsity vs smooth shrinkage.</li>
+<li>“<i>Why</i> does L1 give zeros?” → corners of the diamond / constant gradient / soft-thresholding.</li>
+<li>“Why scale first? Is the intercept penalised?”</li>
+<li>“How do you pick α? What is the one-standard-error rule?”</li>
+<li>“Two features are near-duplicates — what do Ridge and Lasso each do?” → split the weight vs pick one arbitrarily; Elastic Net keeps both.</li>
+</ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Forgetting to scale · tuning α on the test set · treating Lasso's selected features as “the true causes” · confusing sklearn's <code>alpha</code> (bigger = more penalty) with <code>C</code> (bigger = less penalty) · saying regularisation “reduces bias” (it increases bias, reduces variance).</p></div>
 
 <h2 id="key">Must-know points for interviews</h2>
 <ul class="keypts">

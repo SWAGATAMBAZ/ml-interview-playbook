@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Linear regression · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="linear-regression">
 <main>
 <div class="eyebrow">Supervised · Regression · The model every interview starts with</div>
 <h1>Linear regression</h1>
 <p class="lede">Predict a number, like price or demand, as a weighted sum of features. It's the simplest model, which is exactly why interviewers use it: to check you understand loss, assumptions, multicollinearity and how to read coefficients.</p>
-<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#assumptions">Assumptions</a><a href="#demo">See each violation</a><a href="#diagnostics">Diagnostics & fixes cheat-table</a><a href="#inference">Interpreting coefficients & inference</a><a href="#metrics">R², adjusted R² and error metrics</a><a href="#hp">Hyperparameters</a><a href="#improve">How to improve a linear model</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#code">Code</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#assumptions">Assumptions</a><a href="#demo">See each violation</a><a href="#diagnostics">Diagnostics & fixes cheat-table</a><a href="#inference">Interpreting coefficients & inference</a><a href="#metrics">R², adjusted R² and error metrics</a><a href="#hp">Hyperparameters</a><a href="#improve">How to improve a linear model</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#code">Code</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>Plot house size against price and you get a cloud of dots. Linear regression draws the <b>one straight line that sits closest to all the dots</b>. “Closest” means the gaps between dots and line, squared and added up, are as small as possible.</p>
@@ -27,6 +27,58 @@
 
 <div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
 <p>“Linear regression models the target as an intercept plus a weighted sum of the features. It picks the weights that minimise the sum of squared errors, which is ordinary least squares. That has a closed-form solution, or it can be solved by gradient descent at scale. If the assumptions hold (a linear relationship, independent errors, constant error variance, no perfect multicollinearity and roughly normal errors), the coefficients are unbiased and their confidence intervals and p-values are valid. I check this with residual plots, handle multicollinearity with VIF or Ridge, and judge the fit with RMSE or MAE on held-out data rather than R² alone.”</p></div>
+
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>You have dots on a chart (flat size vs price). You want one straight line that lets you read off a price for any size. Many lines are possible, so you need a rule for “best”. The rule: for every dot, measure how far the line misses it vertically (the <b>residual</b>), square that miss so that positive and negative misses don't cancel and big misses hurt more, and add them all up. The best line has the smallest total. That's all “ordinary least squares” means.</p>
+<p>The line has two knobs: the <b>intercept</b> (where it starts) and the <b>slope</b> (how much price rises per extra square foot). With several features you get one slope per feature, and each slope means “effect of this feature when the others are held fixed”.</p>
+<div class="widget" data-demo="olsfit"><div class="widget-title">Find the least-squares line yourself</div><div class="widget-sub">Drag the sliders to shrink the pink squares, then press “Snap to best fit” to see how close you got.</div></div>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li><b>Write the model:</b> \(\hat y=\beta_0+\beta_1x_1+\dots+\beta_px_p\).</li>
+<li><b>Write the cost:</b> \(\text{SSE}=\sum_i(y_i-\hat y_i)^2\). It is a bowl-shaped (convex) function of the β's, so it has exactly one lowest point.</li>
+<li><b>Find the bottom of the bowl.</b> Two routes:
+<ul><li><i>Calculus (closed form):</i> set the slope of the bowl to zero in every direction → \(\hat\beta=(X^TX)^{-1}X^Ty\). For one feature this reduces to \(\beta_1=\frac{\sum(x_i-\bar x)(y_i-\bar y)}{\sum(x_i-\bar x)^2}\) and \(\beta_0=\bar y-\beta_1\bar x\).</li>
+<li><i>Gradient descent:</i> start anywhere, repeatedly step downhill: \(\beta\leftarrow\beta-\eta\cdot\tfrac{2}{n}X^T(X\beta-y)\).</li></ul></li>
+<li><b>Check the fit:</b> R², RMSE on held-out data.</li>
+<li><b>Check the assumptions</b> with residual plots before trusting coefficients and p-values.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>Five points: (1, 2), (2, 3), (3, 5), (4, 4), (5, 6) — the same ones as in the demo above.</p>
+<div class="table-wrap"><table>
+<tr><th>Step</th><th>Calculation</th><th>Result</th></tr>
+<tr><td>Means</td><td>\(\bar x=15/5,\ \bar y=20/5\)</td><td>\(\bar x=3,\ \bar y=4\)</td></tr>
+<tr><td>\(S_{xy}=\sum(x-\bar x)(y-\bar y)\)</td><td>(−2)(−2) + (−1)(−1) + (0)(1) + (1)(0) + (2)(2)</td><td>9</td></tr>
+<tr><td>\(S_{xx}=\sum(x-\bar x)^2\)</td><td>4 + 1 + 0 + 1 + 4</td><td>10</td></tr>
+<tr><td>Slope</td><td>\(\beta_1=S_{xy}/S_{xx}\)</td><td>0.9</td></tr>
+<tr><td>Intercept</td><td>\(\beta_0=4-0.9\times3\)</td><td>1.3</td></tr>
+<tr><td>Predictions</td><td>1.3 + 0.9x</td><td>2.2, 3.1, 4.0, 4.9, 5.8</td></tr>
+<tr><td>Residuals</td><td>y − ŷ</td><td>−0.2, −0.1, 1.0, −0.9, 0.2 (sum = 0)</td></tr>
+<tr><td>SSE</td><td>0.04 + 0.01 + 1 + 0.81 + 0.04</td><td>1.9</td></tr>
+<tr><td>SST</td><td>\(\sum(y-\bar y)^2\) = 4 + 1 + 1 + 0 + 4</td><td>10</td></tr>
+<tr><td>R²</td><td>1 − 1.9/10</td><td>0.81</td></tr>
+<tr><td>Residual std. error</td><td>\(\sqrt{\text{SSE}/(n-2)}=\sqrt{1.9/3}\)</td><td>0.80</td></tr>
+</table></div>
+<p>Read it aloud: “each extra unit of x adds 0.9 to y on average; the line explains 81% of the variation in y; a typical miss is about 0.8.” Notice the residuals sum to zero and the line passes through (3, 4) = \((\bar x,\bar y)\) — both always true when there's an intercept.</p>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Geometry:</b> ŷ is the projection of y onto the space spanned by the feature columns; residuals are orthogonal to every feature (\(X^Te=0\)).</li>
+<li><b>Probabilistic view:</b> least squares = maximum likelihood when errors are Gaussian. Change the noise assumption and the loss changes (Laplace → absolute error).</li>
+<li><b>Uncertainty:</b> \(\operatorname{Var}(\hat\beta)=\sigma^2(X^TX)^{-1}\). Correlated features make \(X^TX\) nearly singular → huge variances → unstable coefficients (multicollinearity).</li>
+<li><b>Numerics:</b> libraries don't invert \(X^TX\); they use QR or SVD. With p &gt; n or exact collinearity there are infinitely many solutions; the pseudo-inverse picks the minimum-norm one.</li>
+<li><b>Bias–variance:</b> OLS is unbiased but can have high variance; Ridge trades a little bias for much lower variance.</li>
+<li><b>Prediction vs inference:</b> for prediction you mainly need linearity and stable relationships; for inference (p-values, CIs) you also need independent, constant-variance, roughly normal errors.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol>
+<li>“What is linear regression?” → model + least squares.</li>
+<li>“How are the coefficients found?” → normal equation / gradient descent; when you'd use each.</li>
+<li>“What are the assumptions?” → LINE + no multicollinearity; which matter for what.</li>
+<li>“How do you check them, and what if they fail?” → residual plot, Q-Q, VIF, Breusch–Pagan, Durbin–Watson; transforms, robust SEs, WLS, Ridge.</li>
+<li>“Your R² is 0.95 — are you done?” → no: check leakage, residuals, out-of-sample error, adjusted R².</li>
+<li>“Two features are 0.98 correlated — what happens?” → unstable coefficients, fine predictions; drop/combine/Ridge.</li>
+</ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Saying “the data must be normal” (it's the <i>errors</i>, and only for inference) · claiming R² measures predictive quality on new data · interpreting a coefficient as causal · forgetting that “linear” means linear in the parameters, so polynomial regression is still linear regression · reporting training-set R² only.</p></div>
 
 <h2 id="key">Must-know points for interviews</h2>
 <ul class="keypts">

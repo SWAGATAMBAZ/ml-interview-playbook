@@ -28,6 +28,7 @@
     { id: "system-design", file: "system-design.html", title: "ML system design", group: "Production" },
     { id: "labs", file: "labs.html", title: "Coding drills (Python)", group: "Practice" },
     { id: "playground", file: "playground.html", title: "Python playground", group: "Practice" },
+    { id: "situational", file: "situational.html", title: "100 situational questions", group: "Practice" },
     { id: "bank", file: "bank.html", title: "Question bank & mock interview", group: "Practice" },
     { id: "cheatsheet", file: "cheatsheet.html", title: "Cheat sheet & model chooser", group: "Practice" },
   ];

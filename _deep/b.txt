@@ -1,0 +1,195 @@
+@@@svm
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>Imagine red and blue marbles on a table and you must lay down a stick to separate them. Many positions work. The SVM chooses the position that leaves the <b>widest possible gap</b> between the stick and the nearest marbles on either side, because a wide gap is the safest bet for marbles added later. Only the marbles touching the edge of the gap matter — those are the <b>support vectors</b>; you could remove all the others and get the same stick.</p>
+<p>If no stick can separate them, two tricks help. First, allow a few marbles on the wrong side but charge a fine for each (the knob <b>C</b> sets the fine). Second, if the classes are tangled, flick the table so the marbles fly into the air and separate them with a flat sheet instead — that “lifting to a higher dimension” is what a <b>kernel</b> does.</p>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li><b>Scale</b> the features. Label classes −1 and +1.</li>
+<li>Describe the boundary as \(w^Tx+b=0\); the two gap edges are \(w^Tx+b=\pm1\); the gap width is \(2/\lVert w\rVert\).</li>
+<li><b>Optimise:</b> make \(\lVert w\rVert\) small (wide gap) while paying C for every point that is inside the gap or misclassified: minimise \(\tfrac12\lVert w\rVert^2+C\sum_i\max(0,\,1-y_i(w^Tx_i+b))\).</li>
+<li>For non-linear problems choose a <b>kernel</b> (RBF by default) — the optimiser then works with similarities K(xᵢ, xⱼ) between pairs of points instead of raw coordinates.</li>
+<li><b>Predict</b> with the sign of \(\sum_{i\in SV}\alpha_iy_iK(x_i,x)+b\) — a weighted vote of the support vectors.</li>
+<li><b>Tune C and gamma together</b> by cross-validation on log grids.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>Suppose the fitted boundary is w = (1, 1), b = −3, i.e. \(x_1+x_2=3\). Margin width = \(2/\sqrt{1^2+1^2}=1.41\).</p>
+<div class="table-wrap"><table>
+<tr><th>Point</th><th>Label y</th><th>f(x) = x₁ + x₂ − 3</th><th>y·f(x)</th><th>Hinge loss max(0, 1 − y·f)</th><th>Role</th></tr>
+<tr><td>(3, 3)</td><td>+1</td><td>3</td><td>3</td><td>0</td><td>Far on the correct side — irrelevant</td></tr>
+<tr><td>(2, 2)</td><td>+1</td><td>1</td><td>1</td><td>0</td><td>Exactly on the margin — support vector</td></tr>
+<tr><td>(1, 1)</td><td>−1</td><td>−1</td><td>1</td><td>0</td><td>On the other margin — support vector</td></tr>
+<tr><td>(2.5, 1)</td><td>+1</td><td>0.5</td><td>0.5</td><td>0.5</td><td>Correct but inside the gap — support vector, pays a fine</td></tr>
+<tr><td>(2, 0)</td><td>+1</td><td>−1</td><td>−1</td><td>2</td><td>Misclassified — support vector, pays a big fine</td></tr>
+</table></div>
+<p>Total objective = ½‖w‖² + C × (0.5 + 2) = 1 + 2.5C. A large C makes those fines dominate, so the optimiser will twist and narrow the gap to reduce them; a small C keeps the gap wide and tolerates them.</p>
+<div class="widget" data-demo="kernel"><div class="widget-title">Why kernels work: lifting the data</div><div class="widget-sub">Blue points sit between red points on a line — no single threshold separates them. Add one new feature and it becomes easy.</div></div>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Primal vs dual:</b> the dual problem has one variable αᵢ per training point and involves data only through dot products xᵢ·xⱼ — which is why swapping in a kernel is possible. KKT conditions: αᵢ = 0 for points outside the margin, 0 &lt; αᵢ &lt; C on it, αᵢ = C for violators.</li>
+<li><b>Kernel trick:</b> K(x, z) = φ(x)·φ(z) computes a dot product in a huge feature space without building φ. RBF: \(e^{-\gamma\lVert x-z\rVert^2}\); γ sets how local each point's influence is.</li>
+<li><b>Hinge loss + L2</b> is the unconstrained form; C is inverse regularisation, like logistic regression's C.</li>
+<li><b>Scaling:</b> kernel SVM training is roughly O(n²)–O(n³) and needs the n×n kernel matrix; use LinearSVC/SGD or kernel approximations (Nyström, random Fourier features) for large n.</li>
+<li><b>No probabilities:</b> outputs are signed distances; Platt scaling fits a sigmoid on them.</li>
+<li><b>SVR:</b> same idea with an ε-insensitive tube — errors smaller than ε cost nothing.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“What is a support vector? What is the margin?”</li><li>“Hard vs soft margin — what does C do?”</li><li>“Explain the kernel trick. What does gamma do?”</li><li>“High C and high gamma — what do you expect?” → overfitting.</li><li>“Why is the dual useful?”</li><li>“You have 5 million rows — would you use an RBF SVM?” → no; linear/approximate methods or boosting.</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Not scaling features · saying kernels “add dimensions to the data” without explaining it's done implicitly via similarities · tuning C and gamma separately · expecting <code>predict_proba</code> for free · using kernel SVMs on very large datasets.</p></div>
+
+@@@decision-trees
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>A decision tree is a flowchart of yes/no questions learned from data: “Is income above 50k?” → “Is age below 30?” → … → “approve”. To build it, the algorithm looks at all the rows and asks: <i>which single question splits them into two groups that are as “pure” as possible</i> — mostly approvals on one side, mostly rejections on the other? It asks that question first, then repeats the process separately inside each group, until the groups are pure or too small. To predict, you just follow the questions down to a leaf and read its majority answer.</p>
+<div class="widget" data-demo="treeviz"><div class="widget-title">Watch a tree carve up the feature space</div><div class="widget-sub">Each split is a horizontal or vertical cut. Increase max_depth: the regions fit the training dots better and better — and then start circling single noisy points.</div></div>
+<h3 id="l2">Level 2 · The algorithm step by step (CART)</h3>
+<ol>
+<li>Start with all rows in one node. Compute its <b>impurity</b> (Gini: \(1-\sum p_k^2\); regression: variance).</li>
+<li>For <b>every feature</b>, sort its values and try <b>every threshold</b> between adjacent values. For each, compute the size-weighted impurity of the two children.</li>
+<li>Keep the split with the <b>largest impurity decrease</b>.</li>
+<li><b>Recurse</b> on each child.</li>
+<li><b>Stop</b> when a node is pure, hits max_depth, has too few rows, or no split helps enough.</li>
+<li>Each leaf predicts its majority class (probability = class share) or its mean target.</li>
+<li>Optionally <b>prune</b> back with cost-complexity pruning (ccp_alpha) chosen by CV.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>A node has 10 loans: 5 defaults (D) and 5 repaid (R). Parent Gini = 1 − (0.5² + 0.5²) = 0.5. Two candidate splits:</p>
+<div class="table-wrap"><table>
+<tr><th>Split</th><th>Left child</th><th>Right child</th><th>Gini left</th><th>Gini right</th><th>Weighted Gini</th><th>Gini decrease</th><th>Information gain</th></tr>
+<tr><td>A: income &lt; 40k</td><td>4 D, 1 R</td><td>1 D, 4 R</td><td>1 − (0.8² + 0.2²) = 0.32</td><td>0.32</td><td>0.5×0.32 + 0.5×0.32 = 0.32</td><td>0.18</td><td>1 − 0.722 = 0.278</td></tr>
+<tr><td>B: missed payments ≥ 2</td><td>0 D, 3 R</td><td>5 D, 2 R</td><td>0 (pure)</td><td>1 − ((5/7)² + (2/7)²) = 0.408</td><td>0.3×0 + 0.7×0.408 = 0.286</td><td><b>0.214</b></td><td>1 − 0.7×0.863 = <b>0.396</b></td></tr>
+</table></div>
+<p>Split B wins under both criteria: it creates one completely pure group, even though the other side is still mixed. The tree takes B, then repeats the search inside the right child. For a <b>regression</b> tree replace Gini by variance: choose the split that most reduces the weighted variance of the target, and predict the leaf mean.</p>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Greedy, not optimal:</b> each split is the best right now; the globally best tree is NP-hard to find. A split with zero immediate gain (XOR) can be essential — a weakness of early stopping vs post-pruning.</li>
+<li><b>Variance:</b> a small change in data can change the root split and everything below → unstable → motivates bagging and boosting.</li>
+<li><b>Invariance:</b> any monotonic transform of a feature (scaling, log) leaves the tree unchanged.</li>
+<li><b>Limits:</b> axis-aligned boundaries (diagonals become staircases), piecewise-constant predictions (no extrapolation), bias toward features with many split points.</li>
+<li><b>Complexity:</b> training ≈ O(d · n log n) per level; prediction O(depth).</li>
+<li><b>Pruning maths:</b> minimise \(R(T)+\alpha|T|\); as α grows, the weakest subtree is collapsed first, producing a nested sequence of trees.</li>
+<li><b>Missing values / categoricals:</b> surrogate splits (CART), learned default direction (modern libraries), native category partitions (LightGBM/CatBoost).</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“How does a tree choose a split?”</li><li>“Gini vs entropy — compute one.”</li><li>“How does a regression tree split and predict?”</li><li>“Why do trees overfit? How do you control it?”</li><li>“Pre- vs post-pruning? What is ccp_alpha?”</li><li>“Why don't trees need scaling? Why can't they extrapolate?”</li><li>“Why is feature importance from trees biased?”</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Forgetting to weight child impurities by size · saying trees “need scaling” · one-hot encoding a 1,000-level categorical for a tree · trusting impurity-based importance blindly · presenting an unpruned tree's 100% training accuracy as success.</p></div>
+
+@@@random-forest
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>One deep decision tree is like one opinionated expert: sharp, but easily fooled by quirks of the cases they happened to see. A random forest builds hundreds of such experts and takes a vote. Two tricks make the experts disagree in useful ways: each one studies a <b>random sample of the cases</b> (drawn with replacement), and at every decision point each one may only consider a <b>random handful of the clues</b>. Individually they still overfit, but their mistakes point in different directions and cancel out in the vote, while what they agree on is the real signal.</p>
+<div class="widget" data-demo="treeviz" data-mode="forest"><div class="widget-title">From one overfit tree to a smooth forest</div><div class="widget-sub">Start with 1 deep tree (jagged, noisy islands). Slide n_estimators up and watch test accuracy climb and the boundary smooth out. Then untick the randomness to see why it matters.</div></div>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li>Repeat B times (e.g. 500):
+<ul><li>Draw a <b>bootstrap sample</b>: n rows sampled with replacement (≈ 63% unique rows; the other ≈ 37% are “out-of-bag” for this tree).</li>
+<li>Grow a <b>deep tree</b> on it. At <b>each split</b> pick <code>max_features</code> features at random (√d for classification) and choose the best split among only those.</li></ul></li>
+<li><b>Predict</b> by averaging the trees' probabilities (classification) or values (regression).</li>
+<li><b>Validate for free:</b> score each row using only the trees that never saw it (OOB score).</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p><b>Why decorrelation matters.</b> If each tree's prediction has variance σ² = 1 and any two trees have correlation ρ, the variance of the average of B trees is \(\rho\sigma^2+\frac{1-\rho}{B}\sigma^2\):</p>
+<div class="table-wrap"><table>
+<tr><th>Setting</th><th>ρ</th><th>B</th><th>Ensemble variance</th></tr>
+<tr><td>Single tree</td><td>—</td><td>1</td><td>1.000</td></tr>
+<tr><td>Plain bagging (similar trees)</td><td>0.6</td><td>100</td><td>0.6 + 0.4/100 = 0.604</td></tr>
+<tr><td>Bagging with infinite trees</td><td>0.6</td><td>∞</td><td>0.600 (stuck!)</td></tr>
+<tr><td>Random forest (feature subsampling)</td><td>0.2</td><td>100</td><td>0.2 + 0.8/100 = 0.208</td></tr>
+</table></div>
+<p>More trees only shrinks the second term. The first term, ρσ², is a floor that only <i>decorrelating</i> the trees can lower — that is the entire reason for <code>max_features</code>.</p>
+<p><b>A vote.</b> Five trees give P(fraud) = 0.9, 0.2, 0.7, 0.6, 0.8 for a transaction. Forest probability = 3.2/5 = 0.64 → fraud at threshold 0.5, even though one tree strongly disagreed.</p>
+<p><b>Bootstrap by hand.</b> Rows {1, 2, 3, 4, 5}; one bootstrap draw might be {2, 2, 5, 1, 5}. Rows 3 and 4 are out-of-bag for that tree and can be used to test it.</p>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Bias stays, variance falls:</b> averaging doesn't change the expected prediction, so base trees must be low-bias (deep). Shallow trees in a forest = underfitting that more trees can't fix.</li>
+<li><b>More trees never overfit</b> (error converges); depth/leaf-size settings can.</li>
+<li><b>max_features trade-off:</b> smaller → lower ρ but weaker trees. With many noise features, too-small values starve the trees of signal.</li>
+<li><b>OOB</b> ≈ cross-validation, but invalid for time-ordered or grouped data.</li>
+<li><b>Importance:</b> impurity-based is biased toward high-cardinality features and computed on training data; permutation importance and SHAP are safer; correlated features share or hide importance.</li>
+<li><b>Limitations:</b> no extrapolation, large memory, slower inference, probabilities pulled toward the middle.</li>
+<li><b>Relatives:</b> ExtraTrees (random thresholds), Isolation Forest (random splits for anomalies), quantile regression forests (prediction intervals).</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“What is bagging? How is a random forest different from bagged trees?”</li><li>“Why does averaging reduce variance? What limits it?”</li><li>“What is OOB error?”</li><li>“Can it overfit with more trees?”</li><li>“Which hyperparameters matter?”</li><li>“RF vs gradient boosting — when each?”</li><li>“Your importance plot ranks customer_id first — explain.”</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Saying random forests “reduce bias” · believing more trees cause overfitting · confusing row sampling (per tree) with feature sampling (per <i>split</i>) · using OOB on time series · quoting impurity importance as causal.</p></div>
+
+@@@boosting
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>Random forests ask many experts independently and average. Boosting builds a <b>team in sequence</b>: the first member makes a rough guess; the second looks only at what the first got wrong and tries to correct it; the third corrects what's still wrong, and so on. Each member is deliberately simple (a tiny tree), and each correction is applied cautiously (a small <b>learning rate</b>), so the team improves in many small, careful steps. Stop adding members when performance on unseen data stops improving — otherwise the team starts “correcting” random noise.</p>
+<h3 id="l2">Level 2 · The algorithm step by step (gradient boosting)</h3>
+<ol>
+<li><b>Start</b> with a constant prediction F₀: the mean of y (regression) or the log-odds of the positive rate (classification).</li>
+<li><b>Compute what's still wrong:</b> the residuals y − F (regression) or y − p (classification). In general: the negative gradient of the loss with respect to the current predictions.</li>
+<li><b>Fit a small regression tree</b> to those residuals.</li>
+<li><b>Add it</b>, scaled by the learning rate η: F ← F + η × tree.</li>
+<li><b>Repeat</b> steps 2–4 for M rounds; monitor a validation set and <b>stop early</b>.</li>
+</ol>
+<p><b>AdaBoost</b> is the older cousin: instead of fitting residuals it <b>re-weights the rows</b> — misclassified rows get heavier — and gives each weak learner a vote \(\alpha=\tfrac12\ln\frac{1-\varepsilon}{\varepsilon}\) based on its weighted error ε.</p>
+<h3 id="l3">Level 3 · Worked example by hand (regression, η = 0.5, stumps)</h3>
+<p>Four houses with prices y = 10, 20, 30, 40.</p>
+<div class="table-wrap"><table>
+<tr><th>Round</th><th>Current prediction F</th><th>Residuals y − F</th><th>Tree fitted to residuals</th><th>Update F + 0.5 × tree</th></tr>
+<tr><td>0</td><td>25, 25, 25, 25 (mean)</td><td>−15, −5, 5, 15</td><td>split {1,2} | {3,4}: leaves −10, +10</td><td>20, 20, 30, 30</td></tr>
+<tr><td>1</td><td>20, 20, 30, 30</td><td>−10, 0, 0, 10</td><td>split {1} | {2,3,4}: leaves −10, +3.33</td><td>15, 21.7, 31.7, 31.7</td></tr>
+<tr><td>2</td><td>15, 21.7, 31.7, 31.7</td><td>−5, −1.7, −1.7, 8.3</td><td>split {1,2,3} | {4}: leaves −2.8, +8.3</td><td>13.6, 20.3, 30.3, 35.8</td></tr>
+</table></div>
+<p>Mean squared error falls 125 → 50 → 27.8 → 7.7. Every round the residuals shrink, and each tree is trained on a <i>different target</i> — what's left over. With η = 1 the first update would jump straight to 15, 15, 35, 35: faster, but more prone to chasing noise.</p>
+<p><b>AdaBoost numbers:</b> a stump with weighted error ε = 0.3 gets vote α = ½ ln(0.7/0.3) = 0.42. Misclassified rows are multiplied by e^{0.42} = 1.53, correct rows by e^{−0.42} = 0.65; after renormalising, the mistakes hold exactly half of the total weight, so the next stump can't ignore them.</p>
+<div class="widget" data-demo="adaboost"><div class="widget-title">AdaBoost, one round at a time</div><div class="widget-sub">Watch the weights (dot sizes) shift onto the hard points near the diagonal and the staircase boundary sharpen.</div></div>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>“Gradient” in what space?</b> In the space of predictions: the vector of residuals is the direction that most reduces the loss; each tree approximates that direction as a function of x so it generalises. Boosting = gradient descent in function space.</li>
+<li><b>Any differentiable loss</b> plugs in: squared, absolute, Huber, quantile, log-loss, Poisson, ranking. AdaBoost = exponential loss, hence its outlier sensitivity.</li>
+<li><b>Leaf values</b> are re-optimised for the actual loss (a line search per leaf), not just the mean residual.</li>
+<li><b>Regularisers:</b> learning rate (shrinkage), number of trees (early stopping), tree depth (interaction order), row/column subsampling (stochastic gradient boosting), min samples per leaf.</li>
+<li><b>Bias–variance:</b> reduces bias mainly; shrinkage + subsampling reduce variance. Unlike a forest, more rounds eventually overfit.</li>
+<li><b>Sequential</b> by nature: trees can't be trained in parallel (only split-finding inside a tree can).</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“Bagging vs boosting?”</li><li>“Walk me through gradient boosting for regression.”</li><li>“What changes for classification?” → log-odds, residual = y − p.</li><li>“Why is it called <i>gradient</i> boosting?”</li><li>“Learning rate vs number of trees?”</li><li>“How does AdaBoost differ?”</li><li>“Validation loss rises after 300 rounds — what do you do?”</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Saying each tree is trained on “the errors” without being able to say errors of what (the current ensemble's predictions) · claiming boosting can't overfit · confusing AdaBoost's row weights with gradient boosting's residuals · tuning n_estimators without early stopping · using deep trees as weak learners.</p></div>
+
+@@@xgboost
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>XGBoost, LightGBM and CatBoost are all gradient boosting (a team of small trees, each correcting the previous ones' mistakes) with engineering and maths upgrades that make it faster, more accurate and harder to overfit:</p>
+<ul>
+<li><b>XGBoost</b> — a more careful rulebook: each new tree is charged for every leaf it adds and for large leaf values, so it only grows where the improvement is worth it. It also uses curvature information to take better-sized steps.</li>
+<li><b>LightGBM</b> — speed: it groups feature values into ~255 buckets instead of testing every value, and always grows whichever leaf helps most.</li>
+<li><b>CatBoost</b> — categories: it turns categorical columns into numbers without letting a row peek at its own label, and uses very regular (symmetric) trees.</li>
+</ul>
+<h3 id="l2">Level 2 · One XGBoost round, step by step</h3>
+<ol>
+<li>For every row compute the <b>gradient</b> g (how wrong, and in which direction) and <b>hessian</b> h (how sure) of the loss at the current prediction. Squared error: g = ŷ − y, h = 1. Log-loss: g = p − y, h = p(1 − p).</li>
+<li>For a candidate leaf, add them up: G = Σg, H = Σh. The best value for that leaf is \(w^*=-\dfrac{G}{H+\lambda}\).</li>
+<li>Score a candidate split by <b>Gain</b> \(=\tfrac12\Big[\dfrac{G_L^2}{H_L+\lambda}+\dfrac{G_R^2}{H_R+\lambda}-\dfrac{(G_L+G_R)^2}{H_L+H_R+\lambda}\Big]-\gamma\).</li>
+<li>Choose the split with the highest gain; rows with missing values are sent to whichever side gives more gain. Grow to max_depth, then remove splits whose gain is negative.</li>
+<li>Add the tree × learning rate to the ensemble. Repeat; stop early on a validation set.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>Same four houses as on the boosting page: y = 10, 20, 30, 40; current prediction 25 for all; squared error.</p>
+<div class="table-wrap"><table>
+<tr><th>Quantity</th><th>Calculation</th><th>Result</th></tr>
+<tr><td>Gradients g = ŷ − y</td><td>25 − (10, 20, 30, 40)</td><td>15, 5, −5, −15; hessians all 1</td></tr>
+<tr><td>Candidate split {1,2} | {3,4}</td><td>G_L = 20, H_L = 2; G_R = −20, H_R = 2</td><td></td></tr>
+<tr><td>Gain (λ = 1, γ = 0)</td><td>½ [400/3 + 400/3 − 0²/5]</td><td>133.3</td></tr>
+<tr><td>Leaf weights</td><td>−20/(2+1), +20/(2+1)</td><td>−6.67, +6.67</td></tr>
+<tr><td>Same with λ = 0</td><td>−20/2, +20/2</td><td>−10, +10 (plain gradient boosting)</td></tr>
+<tr><td>Alternative split {1} | {2,3,4}</td><td>½ [225/2 + 225/4 − 0]</td><td>84.4 → worse, rejected</td></tr>
+<tr><td>With γ = 150</td><td>133.3 − 150</td><td>negative → split pruned, tree stays a single leaf</td></tr>
+</table></div>
+<p>So λ shrinks leaf values toward zero (−6.67 instead of −10), and γ is a toll each split must pay. Explore the formula:</p>
+<div class="widget" data-demo="gaincalc"><div class="widget-title">XGBoost split-gain calculator</div><div class="widget-sub">Defaults reproduce the worked example. Raise λ or γ and watch the split get weaker, then pruned.</div></div>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Derivation:</b> second-order Taylor expansion of the loss around the current prediction → a quadratic in each leaf weight → closed-form optimum and gain. This is a Newton step; classic gradient boosting uses only first-order information.</li>
+<li><b>min_child_weight</b> = minimum H in a leaf. For log-loss H = Σp(1−p), so it also refuses leaves made only of very confident rows.</li>
+<li><b>Split finding:</b> exact (sort every feature), approximate with weighted quantile sketch, or histograms (<code>tree_method="hist"</code>). LightGBM adds histogram subtraction, GOSS (keep large-gradient rows, sample the rest) and EFB (bundle mutually exclusive sparse features).</li>
+<li><b>Growth policy:</b> level-wise (XGBoost default) vs leaf-wise (LightGBM: lower loss per leaf, needs num_leaves/min_data_in_leaf control) vs symmetric (CatBoost: same split across a level, strong regulariser, very fast inference).</li>
+<li><b>CatBoost's ordered target statistics and ordered boosting</b> remove the target leakage (“prediction shift”) that ordinary target encoding and boosting introduce.</li>
+<li><b>Practical extras:</b> monotone constraints, custom objectives (supply g and h), scale_pos_weight, native missing-value handling, GPU training, SHAP via TreeSHAP.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“How is XGBoost different from gradient boosting?”</li><li>“What do lambda, gamma and min_child_weight do?”</li><li>“Derive the leaf weight / gain.”</li><li>“How does it handle missing values?”</li><li>“LightGBM vs XGBoost vs CatBoost?” → leaf-wise + histograms + GOSS/EFB; ordered boosting + categoricals.</li><li>“How do you tune it?” → learning rate + early stopping, then structure, sampling, regularisation.</li><li>“Why do boosted trees beat neural nets on tabular data?”</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Describing XGBoost as “just faster GBM” without the regularised objective · setting num_leaves above 2^max_depth in LightGBM · one-hot encoding high-cardinality columns for LightGBM/CatBoost · tuning n_estimators by grid instead of early stopping · trusting probabilities after scale_pos_weight without recalibrating.</p></div>

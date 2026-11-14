@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>XGBoost · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="xgboost">
 <main>
 <div class="eyebrow">Supervised · Boosting · The tabular-data workhorse</div>
 <h1>XGBoost</h1>
 <p class="lede">“eXtreme Gradient Boosting”: a team of small decision trees, built one after another, where each new tree fixes the mistakes of the team so far. It has brakes built in to stop overfitting and engineering that makes it fast. For tables of data it's the model most interviewers expect you to know inside out.</p>
-<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#hp">Hyperparameters</a><a href="#tune">Tuning recipe</a><a href="#maths">Optional maths</a><a href="#code">Code</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#hp">Hyperparameters</a><a href="#tune">Tuning recipe</a><a href="#maths">Optional maths</a><a href="#code">Code</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>Think of a student preparing for an exam with practice tests. After the first test they don't re-study everything. They look only at the questions they got wrong and study those. After the next test they again focus on what is <i>still</i> wrong. After many rounds, very few mistakes are left.</p>
@@ -29,6 +29,49 @@
 
 <div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
 <p>“XGBoost is gradient-boosted decision trees with regularisation and heavy engineering. Trees are added one at a time, and each one fits the remaining errors of the ensemble. Compared with classic gradient boosting, it uses both the slope and the curvature of the loss to set better leaf values. It also penalises complex trees, prunes splits that don't reduce the loss enough, and learns where to send missing values. On top of that it's parallel, histogram-based and runs on GPU. I tune the learning rate with early stopping, then depth and min_child_weight, then subsampling and regularisation, and I explain the model with SHAP.”</p></div>
+
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>XGBoost, LightGBM and CatBoost are all gradient boosting (a team of small trees, each correcting the previous ones' mistakes) with engineering and maths upgrades that make it faster, more accurate and harder to overfit:</p>
+<ul>
+<li><b>XGBoost</b> — a more careful rulebook: each new tree is charged for every leaf it adds and for large leaf values, so it only grows where the improvement is worth it. It also uses curvature information to take better-sized steps.</li>
+<li><b>LightGBM</b> — speed: it groups feature values into ~255 buckets instead of testing every value, and always grows whichever leaf helps most.</li>
+<li><b>CatBoost</b> — categories: it turns categorical columns into numbers without letting a row peek at its own label, and uses very regular (symmetric) trees.</li>
+</ul>
+<h3 id="l2">Level 2 · One XGBoost round, step by step</h3>
+<ol>
+<li>For every row compute the <b>gradient</b> g (how wrong, and in which direction) and <b>hessian</b> h (how sure) of the loss at the current prediction. Squared error: g = ŷ − y, h = 1. Log-loss: g = p − y, h = p(1 − p).</li>
+<li>For a candidate leaf, add them up: G = Σg, H = Σh. The best value for that leaf is \(w^*=-\dfrac{G}{H+\lambda}\).</li>
+<li>Score a candidate split by <b>Gain</b> \(=\tfrac12\Big[\dfrac{G_L^2}{H_L+\lambda}+\dfrac{G_R^2}{H_R+\lambda}-\dfrac{(G_L+G_R)^2}{H_L+H_R+\lambda}\Big]-\gamma\).</li>
+<li>Choose the split with the highest gain; rows with missing values are sent to whichever side gives more gain. Grow to max_depth, then remove splits whose gain is negative.</li>
+<li>Add the tree × learning rate to the ensemble. Repeat; stop early on a validation set.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>Same four houses as on the boosting page: y = 10, 20, 30, 40; current prediction 25 for all; squared error.</p>
+<div class="table-wrap"><table>
+<tr><th>Quantity</th><th>Calculation</th><th>Result</th></tr>
+<tr><td>Gradients g = ŷ − y</td><td>25 − (10, 20, 30, 40)</td><td>15, 5, −5, −15; hessians all 1</td></tr>
+<tr><td>Candidate split {1,2} | {3,4}</td><td>G_L = 20, H_L = 2; G_R = −20, H_R = 2</td><td></td></tr>
+<tr><td>Gain (λ = 1, γ = 0)</td><td>½ [400/3 + 400/3 − 0²/5]</td><td>133.3</td></tr>
+<tr><td>Leaf weights</td><td>−20/(2+1), +20/(2+1)</td><td>−6.67, +6.67</td></tr>
+<tr><td>Same with λ = 0</td><td>−20/2, +20/2</td><td>−10, +10 (plain gradient boosting)</td></tr>
+<tr><td>Alternative split {1} | {2,3,4}</td><td>½ [225/2 + 225/4 − 0]</td><td>84.4 → worse, rejected</td></tr>
+<tr><td>With γ = 150</td><td>133.3 − 150</td><td>negative → split pruned, tree stays a single leaf</td></tr>
+</table></div>
+<p>So λ shrinks leaf values toward zero (−6.67 instead of −10), and γ is a toll each split must pay. Explore the formula:</p>
+<div class="widget" data-demo="gaincalc"><div class="widget-title">XGBoost split-gain calculator</div><div class="widget-sub">Defaults reproduce the worked example. Raise λ or γ and watch the split get weaker, then pruned.</div></div>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Derivation:</b> second-order Taylor expansion of the loss around the current prediction → a quadratic in each leaf weight → closed-form optimum and gain. This is a Newton step; classic gradient boosting uses only first-order information.</li>
+<li><b>min_child_weight</b> = minimum H in a leaf. For log-loss H = Σp(1−p), so it also refuses leaves made only of very confident rows.</li>
+<li><b>Split finding:</b> exact (sort every feature), approximate with weighted quantile sketch, or histograms (<code>tree_method="hist"</code>). LightGBM adds histogram subtraction, GOSS (keep large-gradient rows, sample the rest) and EFB (bundle mutually exclusive sparse features).</li>
+<li><b>Growth policy:</b> level-wise (XGBoost default) vs leaf-wise (LightGBM: lower loss per leaf, needs num_leaves/min_data_in_leaf control) vs symmetric (CatBoost: same split across a level, strong regulariser, very fast inference).</li>
+<li><b>CatBoost's ordered target statistics and ordered boosting</b> remove the target leakage (“prediction shift”) that ordinary target encoding and boosting introduce.</li>
+<li><b>Practical extras:</b> monotone constraints, custom objectives (supply g and h), scale_pos_weight, native missing-value handling, GPU training, SHAP via TreeSHAP.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“How is XGBoost different from gradient boosting?”</li><li>“What do lambda, gamma and min_child_weight do?”</li><li>“Derive the leaf weight / gain.”</li><li>“How does it handle missing values?”</li><li>“LightGBM vs XGBoost vs CatBoost?” → leaf-wise + histograms + GOSS/EFB; ordered boosting + categoricals.</li><li>“How do you tune it?” → learning rate + early stopping, then structure, sampling, regularisation.</li><li>“Why do boosted trees beat neural nets on tabular data?”</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Describing XGBoost as “just faster GBM” without the regularised objective · setting num_leaves above 2^max_depth in LightGBM · one-hot encoding high-cardinality columns for LightGBM/CatBoost · tuning n_estimators by grid instead of early stopping · trusting probabilities after scale_pos_weight without recalibrating.</p></div>
 
 <h2 id="key">Must-know points for interviews</h2>
 <ul class="keypts">

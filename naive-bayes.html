@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Naive Bayes · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="naive-bayes">
 <main>
 <div class="eyebrow">Supervised · Probabilistic · Generative classifier</div>
 <h1>Naive Bayes</h1>
 <p class="lede">A probability-based classifier that “counts and multiplies”. It's absurdly fast, works with tiny data and remains a strong baseline for text such as spam filtering, sentiment and document tagging. Interviewers check whether you understand the “naive” assumption and smoothing.</p>
-<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#bayes">Bayes' theorem</a><a href="#variants">Variants</a><a href="#smoothing">Laplace</a><a href="#example">Worked example</a><a href="#hp">Hyperparameters</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#bayes">Bayes' theorem</a><a href="#variants">Variants</a><a href="#smoothing">Laplace</a><a href="#example">Worked example</a><a href="#hp">Hyperparameters</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>An email arrives containing “free”, “winner” and “click here”. Is it spam? Naive Bayes starts from <b>how common spam is in general</b> (say 30%), then, for each word, asks <b>“how much more often does this word appear in spam than in normal mail?”</b> and nudges the guess up or down. It multiplies all these nudges together and picks the class with the higher final score.</p>
@@ -27,6 +27,41 @@
 
 <div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
 <p>“Naive Bayes applies Bayes' theorem with the naive assumption that features are conditionally independent given the class. It predicts the class that maximises the prior times the product of per-feature likelihoods, computed as a sum of logs for numerical stability. Training is just counting, so it's extremely fast, needs little data and supports online updates. The variants are Gaussian for continuous features, Multinomial for word counts and Bernoulli for binary presence, with Laplace smoothing to avoid zero probabilities. Its class rankings are often good even though the independence assumption is violated, but its probabilities are poorly calibrated, usually too extreme.”</p></div>
+
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>Think like a detective updating a belief. Before reading an email you already know roughly 40% of mail is spam (the <b>prior</b>). Then each clue adjusts that belief: the word “free” shows up in spam far more often than in normal mail, so it pushes toward spam; “meeting” pushes the other way. Naive Bayes simply multiplies your starting belief by how typical each clue is for spam, does the same for not-spam, and picks whichever total is bigger. It is “naive” because it treats the clues as unrelated to each other — a simplification that is wrong but surprisingly harmless for choosing the class.</p>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li><b>Training = counting.</b> For each class, count how often it occurs (prior) and how often each feature value appears within it (likelihoods). Add a small constant α to every count so nothing has probability zero (Laplace smoothing).</li>
+<li><b>Prediction:</b> for each class compute prior × product of the likelihoods of the observed features. In practice, add logs instead of multiplying to avoid underflow.</li>
+<li><b>Pick the class with the highest score.</b> Divide by the sum of scores if you need a probability.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>10 training emails: 4 spam, 6 ham. “free” appears in 3 spam and 1 ham; “meeting” appears in 0 spam and 3 ham. New email: contains “free”, does not contain “meeting”. Bernoulli NB with α = 1 (two outcomes per word, so add 2 to the denominator):</p>
+<div class="table-wrap"><table>
+<tr><th>Quantity</th><th>Spam</th><th>Ham</th></tr>
+<tr><td>Prior</td><td>4/10 = 0.4</td><td>6/10 = 0.6</td></tr>
+<tr><td>P(free = yes | class)</td><td>(3+1)/(4+2) = 0.667</td><td>(1+1)/(6+2) = 0.25</td></tr>
+<tr><td>P(meeting = yes | class)</td><td>(0+1)/(4+2) = 0.167</td><td>(3+1)/(6+2) = 0.5</td></tr>
+<tr><td>P(meeting = no | class)</td><td>0.833</td><td>0.5</td></tr>
+<tr><td>Score = prior × P(free) × P(no meeting)</td><td>0.4 × 0.667 × 0.833 = 0.222</td><td>0.6 × 0.25 × 0.5 = 0.075</td></tr>
+<tr><td>Posterior</td><td>0.222 / (0.222 + 0.075) = <b>0.75</b></td><td>0.25</td></tr>
+</table></div>
+<p>Without smoothing, P(meeting | spam) would be 0/4 = 0, so <i>any</i> email containing “meeting” would get spam score exactly 0, no matter how many spammy words it also had. Try it:</p>
+<div class="widget" data-demo="nbcalc"><div class="widget-title">Naive Bayes spam calculator</div><div class="widget-sub">Tick words, move the prior, and set α to 0 to trigger the zero-frequency problem.</div></div>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Generative model:</b> it models how each class produces features, P(x | y), then inverts with Bayes' rule; logistic regression models P(y | x) directly.</li>
+<li><b>Linear in log space:</b> the log-odds is a sum of per-feature terms → a linear decision boundary for Bernoulli/Multinomial NB; Gaussian NB with class-specific variances gives a quadratic boundary.</li>
+<li><b>Why it works despite wrong assumptions:</b> correlated features double-count evidence, which distorts probabilities (pushed toward 0/1) but usually not the arg-max.</li>
+<li><b>Variants:</b> Multinomial (counts), Bernoulli (presence, penalises absence), Gaussian (continuous), Complement (imbalanced text), Categorical.</li>
+<li><b>Sample efficiency:</b> needs O(log d) examples to approach its asymptotic error vs O(d) for logistic regression (Ng & Jordan) — better with tiny data, worse with plenty.</li>
+<li><b>Priors can be overridden</b> when deployment base rates differ from training.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“State Bayes' theorem. What's naive about Naive Bayes?”</li><li>“Why does it still work?”</li><li>“What if a word never appeared in a class?” → Laplace smoothing.</li><li>“Why log probabilities?” → underflow.</li><li>“NB vs logistic regression — when each?”</li><li>“Can you trust its probabilities?” → no, calibrate.</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Saying features must be independent overall (it's independent <i>given the class</i>) · forgetting smoothing · multiplying raw probabilities in code · using Gaussian NB on word counts · quoting NB probabilities as real risk estimates.</p></div>
 
 <h2 id="key">Must-know points for interviews</h2>
 <ul class="keypts">

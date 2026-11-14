@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>K-Means clustering · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="kmeans">
 <main>
 <div class="eyebrow">Unsupervised · Clustering · Centroid-based</div>
 <h1>K-Means clustering</h1>
 <p class="lede">The go-to <b>unsupervised</b> algorithm. It groups similar points into K clusters with no labels needed. It's simple, fast and scales to millions of rows. Interviews test choosing K, initialisation, scaling and the shapes of data where it fails.</p>
-<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#algo">Lloyd's algorithm</a><a href="#demo">Step through it</a><a href="#init">Initialisation: k-means++</a><a href="#choosek">Choosing K</a><a href="#assumptions">Assumptions & when it fails</a><a href="#hp">Hyperparameters</a><a href="#variants">Variants</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#algo">Lloyd's algorithm</a><a href="#demo">Step through it</a><a href="#init">Initialisation: k-means++</a><a href="#choosek">Choosing K</a><a href="#assumptions">Assumptions & when it fails</a><a href="#hp">Hyperparameters</a><a href="#variants">Variants</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>You want to open <b>3 delivery hubs</b> for customers spread across a city. Drop 3 pins on the map at random. Every customer goes to their <b>nearest pin</b>. Then move each pin to the <b>centre of the crowd</b> standing at it. Customers re-check which pin is now nearest, and the pins move again. Repeat until nobody switches. The pins have settled in the middle of 3 natural groups.</p>
@@ -28,6 +28,41 @@
 
 <div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
 <p>“K-means partitions data into K clusters by minimising the within-cluster sum of squared distances to each cluster's centroid. Lloyd's algorithm alternates two steps: assign points to the nearest centroid, then recompute each centroid as the mean. Every step lowers the objective, so it always converges, but only to a local optimum, so I use k-means++ initialisation and several restarts. I choose K with the elbow method, silhouette score and business sense. It assumes roughly spherical, similar-sized clusters, needs scaled features, is sensitive to outliers, and every point is forced into some cluster. For odd shapes or noise I'd use DBSCAN, and for soft or elliptical clusters, a Gaussian Mixture Model.”</p></div>
+
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>You have unlabelled dots and want K groups. Put K pins down. Each dot joins the pin nearest to it. Then move each pin to the middle (average position) of the dots that chose it. Some dots are now closer to a different pin, so let them switch, move the pins again, and keep going until nobody switches. The pins are the <b>centroids</b>; the groups are the <b>clusters</b>. The quality score is “how far, in total, are dots from their own pin” — smaller is tighter.</p>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li><b>Scale</b> the features (otherwise the biggest-unit feature decides everything).</li>
+<li><b>Choose K</b> and <b>initialise</b> K centroids with k-means++ (first one random; each next one picked with probability proportional to its squared distance from the nearest centroid already chosen).</li>
+<li><b>Assignment step:</b> give every point the label of its nearest centroid (squared Euclidean distance).</li>
+<li><b>Update step:</b> move every centroid to the mean of its points.</li>
+<li><b>Repeat 3–4</b> until labels stop changing or the centroids move less than <code>tol</code>.</li>
+<li><b>Restart</b> from several initialisations (<code>n_init</code>) and keep the run with the lowest inertia.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>Six points on a line: 1, 2, 3, 10, 11, 12. K = 2. A deliberately bad start: centroids at 1 and 2.</p>
+<div class="table-wrap"><table>
+<tr><th>Iteration</th><th>Centroids</th><th>Assignment (nearest centroid)</th><th>New centroids (means)</th><th>Inertia after assignment</th></tr>
+<tr><td>1</td><td>c₁ = 1, c₂ = 2</td><td>{1} · {2, 3, 10, 11, 12}</td><td>c₁ = 1, c₂ = 38/5 = 7.6</td><td>0 + (0 + 1 + 64 + 81 + 100) = 246</td></tr>
+<tr><td>2</td><td>c₁ = 1, c₂ = 7.6</td><td>2 is 1 away from c₁ and 5.6 from c₂ → switches; 3 is 2 vs 4.6 → switches. {1, 2, 3} · {10, 11, 12}</td><td>c₁ = 2, c₂ = 11</td><td>(0 + 1 + 4) + (5.76 + 11.56 + 19.36) = 41.68</td></tr>
+<tr><td>3</td><td>c₁ = 2, c₂ = 11</td><td>nobody switches → <b>converged</b></td><td>unchanged</td><td>(1 + 0 + 1) + (1 + 0 + 1) = <b>4</b></td></tr>
+</table></div>
+<p>Inertia fell 246 → 41.68 → 4 and never went up — that monotone decrease is the convergence argument. Silhouette for the point 3: a = mean distance to its own cluster = (2 + 1)/2 = 1.5; b = mean distance to the other cluster = (7 + 8 + 9)/3 = 8; s = (8 − 1.5)/8 = 0.81 → well clustered.</p>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Objective:</b> minimise \(J=\sum_k\sum_{x\in C_k}\lVert x-\mu_k\rVert^2\). Each step is a coordinate-descent move: assignments optimal given centroids, centroids (means) optimal given assignments. J is bounded below and never increases, and there are finitely many partitions → convergence, but only to a <b>local</b> minimum (the global problem is NP-hard).</li>
+<li><b>Why the mean?</b> The mean minimises squared distances. Use the median and L1 distance and you get k-medians; restrict centres to data points and you get k-medoids (robust to outliers, any distance).</li>
+<li><b>Implicit geometry:</b> boundaries between clusters are straight lines halfway between centroids (a Voronoi partition), so clusters are convex; elongated, ring-shaped or very unequal-size groups get cut wrongly.</li>
+<li><b>Relation to GMM:</b> K-means = EM for a Gaussian mixture with equal spherical covariances and hard assignments.</li>
+<li><b>Empty clusters</b> can occur; implementations re-seed them with the farthest point.</li>
+<li><b>Scale:</b> O(n·K·d) per iteration; MiniBatchKMeans or Elkan's triangle-inequality trick for big data; PCA first when d is large.</li>
+<li><b>Choosing K is not automatic:</b> inertia always falls as K grows; use the elbow, silhouette, gap statistic, stability and what the business can act on.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“Explain K-means.”</li><li>“Does it always converge? To the best answer?”</li><li>“How do you choose K?”</li><li>“What is k-means++?”</li><li>“When does K-means fail, and what would you use instead?” → non-spherical, unequal density, outliers → GMM, DBSCAN/HDBSCAN, k-medoids.</li><li>“How do you evaluate clusters with no labels?”</li><li>“How would you cluster mixed numeric + categorical data?”</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Forgetting to scale · choosing K by “lowest inertia” · running one initialisation · using K-means on one-hot categorical data with Euclidean distance · confusing K-means with kNN · presenting clusters as “the truth” without profiling them and checking stability.</p></div>
 
 <h2 id="key">Must-know points for interviews</h2>
 <ul class="keypts">

@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Hierarchical, DBSCAN, GMM & anomaly detection · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="clustering">
 <main>
 <div class="eyebrow">Unsupervised · Clustering beyond K-means · Outliers</div>
 <h1>Hierarchical, DBSCAN, GMM & anomaly detection</h1>
 <p class="lede">Beyond K-means: four tools for finding groups and oddities in unlabelled data. <b>Hierarchical</b> clustering builds a family tree of groups, <b>DBSCAN</b> finds dense crowds of any shape, <b>Gaussian Mixtures</b> give soft, probabilistic clusters, and <b>anomaly detectors</b> flag the points that fit nowhere. Each model below gets its own plain-English explanation and a “when it wins” box.</p>
-<div class="toc"><a href="#simple">Plain English</a><a href="#pitch">30-sec answer</a><a href="#models">Each model</a><a href="#when">When it wins</a><a href="#hier">Hierarchical</a><a href="#dbscan">DBSCAN</a><a href="#compare">Which clustering algorithm?</a><a href="#anomaly">Anomaly / outlier detection</a><a href="#hp">Hyperparameters</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#pitch">30-sec answer</a><a href="#models">Each model</a><a href="#when">When it wins</a><a href="#hier">Hierarchical</a><a href="#dbscan">DBSCAN</a><a href="#compare">Which clustering algorithm?</a><a href="#anomaly">Anomaly / outlier detection</a><a href="#hp">Hyperparameters</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>Imagine a satellite photo of people in a park at night. <b>Hierarchical</b> clustering starts with every person alone, keeps merging the two closest groups, and records the full family tree. <b>DBSCAN</b> says “a cluster is wherever people are packed tightly together”, so crowds can be any shape and the loners are noise. <b>GMM</b> assumes each crowd is a fuzzy oval and says “this person is 70% crowd A, 30% crowd B”. <b>Anomaly detection</b> ignores the crowds and finds the people who are strangely far from everyone.</p></div>
@@ -61,6 +61,45 @@
 <li>Labels are usually rare, so evaluate on whatever labelled incidents exist (precision@k) and tune the threshold to the team's investigation capacity.</li>
 </ul>
 <div class="callout win"><div class="tag">🏆 Wins when…</div><p><b>Fraud, intrusion, sensor faults or quality defects</b> with few or no labels. Start with Isolation Forest at scale, use LOF for local, density-varying outliers, and switch to a supervised classifier once enough confirmed anomalies exist.</p></div>
+
+<h2 id="deep">How each one works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<ul>
+<li><b>Hierarchical clustering:</b> start with every point alone, then repeatedly marry the two closest groups until one family remains. The family tree (dendrogram) records at what distance each marriage happened; you choose the number of clusters afterwards by cutting the tree at a height.</li>
+<li><b>DBSCAN:</b> clusters are crowded areas separated by empty areas. A point in a crowd is a “core”; crowds that touch join into one cluster; points in no crowd are noise.</li>
+<li><b>Gaussian mixtures:</b> the data are a blend of a few bell-shaped blobs. Each point gets a <i>probability</i> of belonging to each blob rather than a hard label.</li>
+<li><b>Isolation Forest:</b> odd points are easy to fence off. Keep cutting the data with random lines; anything that ends up alone after only a few cuts is an anomaly.</li>
+</ul>
+<div class="widget" data-demo="dendro"><div class="widget-title">Read a dendrogram</div><div class="widget-sub">Seven points on a line. Switch the linkage and move the cut height to see how many clusters you get.</div></div>
+<div class="widget" data-demo="dbscan"><div class="widget-title">DBSCAN: eps and min_samples</div><div class="widget-sub">Large dots are core points, small dots border points, crosses noise. Shrink eps until clusters shatter; grow it until they merge.</div></div>
+<h3 id="l2">Level 2 · The algorithms step by step</h3>
+<p><b>Agglomerative:</b> (1) compute all pairwise distances; (2) merge the two closest clusters, where “closest” is defined by the linkage; (3) update distances from the new cluster to the others; (4) repeat until one cluster; (5) cut the dendrogram.</p>
+<p><b>DBSCAN:</b> (1) for each point, count neighbours within <code>eps</code>; (2) points with ≥ <code>min_samples</code> neighbours (itself included) are core; (3) pick an unvisited core point, start a cluster, and add everything reachable through chains of core points; (4) non-core points within eps of a core become border points of that cluster; (5) the rest are noise (label −1).</p>
+<p><b>GMM (EM):</b> (1) initialise means, covariances, weights (often from K-means); (2) <b>E-step</b> — for each point compute the probability it came from each Gaussian; (3) <b>M-step</b> — recompute each Gaussian's weight, mean and covariance using those probabilities as soft counts; (4) repeat until the log-likelihood stops improving.</p>
+<p><b>Isolation Forest:</b> (1) take a random subsample (256 rows); (2) build a tree by choosing a random feature and a random split value between its min and max, recursively, until points are isolated; (3) repeat for many trees; (4) score = how short a point's average path is compared with the expected path for a random point.</p>
+<h3 id="l3">Level 3 · Worked examples by hand</h3>
+<p><b>Linkage.</b> Points on a line: 1, 2, 6, 7, 15.</p>
+<div class="table-wrap"><table>
+<tr><th>Merge</th><th>Single linkage (closest pair)</th><th>Complete linkage (farthest pair)</th></tr>
+<tr><td>1st, 2nd</td><td>{1, 2} at 1 · {6, 7} at 1</td><td>same</td></tr>
+<tr><td>3rd</td><td>{1, 2} + {6, 7} at 6 − 2 = <b>4</b></td><td>{1, 2} + {6, 7} at 7 − 1 = <b>6</b> (vs {6, 7} + {15} at 15 − 6 = 9)</td></tr>
+<tr><td>4th</td><td>+ {15} at 15 − 7 = <b>8</b></td><td>+ {15} at 15 − 1 = <b>14</b></td></tr>
+</table></div>
+<p>Cutting at height 5: single linkage gives 2 clusters ({1, 2, 6, 7}, {15}); complete linkage gives 3 ({1, 2}, {6, 7}, {15}). Same data, different answer — linkage is a modelling choice.</p>
+<p><b>DBSCAN.</b> Points 1, 2, 3, 10, 11, 20 with eps = 1.5, min_samples = 3. Neighbours of 2: {1, 2, 3} → 3 points → <b>core</b>. Point 1 has {1, 2} → not core, but it is within eps of core point 2 → <b>border</b>; same for 3. Points 10 and 11 have only {10, 11} → not core and not near any core → <b>noise</b>; 20 → noise. Result: one cluster {1, 2, 3} and three noise points. With min_samples = 2, {10, 11} would become a second cluster.</p>
+<p><b>GMM E-step.</b> Two components N(0, 1) and N(4, 1), equal weights. For x = 1: densities ∝ e^(−0.5) = 0.607 and e^(−4.5) = 0.011 → responsibilities 0.607/0.618 = <b>0.982</b> and <b>0.018</b>. For x = 2 (exactly halfway): 0.5 and 0.5. K-means would give x = 1 a hard label; the mixture says “98% blob A”.</p>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Hierarchical:</b> O(n²) memory and O(n² log n)–O(n³) time; merges are greedy and irreversible; Ward minimises the increase in within-cluster variance (K-means-like, Euclidean only); single linkage suffers chaining; cophenetic correlation measures how well the tree preserves distances.</li>
+<li><b>DBSCAN:</b> one global eps cannot fit clusters of different densities → HDBSCAN (builds a hierarchy over all eps values and keeps the most stable clusters) or OPTICS; choose eps from the knee of the sorted k-distance plot; border points can depend on visit order; distances concentrate in high dimensions.</li>
+<li><b>GMM:</b> EM increases the likelihood every iteration but only reaches a local optimum; a component can collapse onto one point (likelihood → ∞) so covariances are regularised (<code>reg_covar</code>); choose K and covariance type with BIC; “full” covariance costs O(d²) parameters per component.</li>
+<li><b>Isolation Forest:</b> score \(s=2^{-E[h(x)]/c(n)}\) — near 1 anomalous, well below 0.5 normal; axis-parallel cuts can miss anomalies that are only unusual in combination (Extended Isolation Forest); <code>contamination</code> only sets the threshold.</li>
+<li><b>LOF vs Isolation Forest:</b> LOF compares local densities (finds a point that is odd relative to its neighbourhood); Isolation Forest is global and far more scalable.</li>
+<li><b>Evaluation without labels:</b> silhouette / Davies–Bouldin for compact clusters (they favour convex shapes, so they under-rate DBSCAN results), stability under resampling, and usefulness to the downstream task.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“K-means failed on my data — what else is there?”</li><li>“How do you read a dendrogram? Which linkage?”</li><li>“Explain core, border and noise points.”</li><li>“How do you pick eps?”</li><li>“K-means vs GMM?” → hard vs soft, spherical vs elliptical.</li><li>“Explain EM.”</li><li>“How would you detect fraud with no labels?” → Isolation Forest / LOF, threshold by review capacity, feedback loop to supervised.</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Not scaling before any distance-based method · using DBSCAN on data with very different densities and blaming the algorithm · judging DBSCAN with silhouette · treating the contamination parameter as something the model learns · forgetting that hierarchical clustering does not scale past a few tens of thousands of points.</p></div>
 
 <h2 id="when">Which one should you pick?</h2>
 <div class="table-wrap"><table class="vs">

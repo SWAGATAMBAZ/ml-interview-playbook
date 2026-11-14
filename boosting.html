@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AdaBoost & Gradient Boosting · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="boosting">
 <main>
 <div class="eyebrow">Supervised · Ensemble · Boosting fundamentals</div>
 <h1>AdaBoost & Gradient Boosting</h1>
 <p class="lede">The idea behind XGBoost, LightGBM and CatBoost: build many weak models <b>one after another</b>, each one fixing what the previous ones got wrong. This page covers the two classic versions, <b>AdaBoost</b> and <b>Gradient Boosting</b>. The modern libraries have their own pages: <a href="xgboost.html">XGBoost</a>, <a href="lightgbm.html">LightGBM</a>, <a href="catboost.html">CatBoost</a>.</p>
-<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#demo">Watch it learn</a><a href="#losses">Common loss functions</a><a href="#reg">Regularising a booster</a><a href="#hp">Hyperparameters</a><a href="#tuning">A tuning recipe that works</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#demo">Watch it learn</a><a href="#losses">Common loss functions</a><a href="#reg">Regularising a booster</a><a href="#hp">Hyperparameters</a><a href="#tuning">A tuning recipe that works</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>A student takes a mock test, studies <b>only the questions they got wrong</b>, takes another test, studies the new mistakes, and so on. Each round is a small, targeted improvement, and the final knowledge is the sum of all the rounds. But study the same mock paper for too long and you just memorise its answers, which is overfitting.</p>
@@ -36,6 +36,42 @@
 
 <div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
 <p>“Boosting builds an additive model sequentially: each weak learner focuses on what the current ensemble gets wrong, which mainly reduces bias. AdaBoost re-weights misclassified samples and weights each learner by its accuracy. It's equivalent to minimising exponential loss, which makes it sensitive to outliers and label noise. Gradient boosting generalises the idea: each tree fits the negative gradient of any differentiable loss, so it's gradient descent in function space, and for squared error that's simply fitting the residuals. The key controls are the learning rate, the number of trees chosen by early stopping, tree depth and subsampling. XGBoost, LightGBM and CatBoost are optimised, regularised implementations of gradient boosting.”</p></div>
+
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>Random forests ask many experts independently and average. Boosting builds a <b>team in sequence</b>: the first member makes a rough guess; the second looks only at what the first got wrong and tries to correct it; the third corrects what's still wrong, and so on. Each member is deliberately simple (a tiny tree), and each correction is applied cautiously (a small <b>learning rate</b>), so the team improves in many small, careful steps. Stop adding members when performance on unseen data stops improving — otherwise the team starts “correcting” random noise.</p>
+<h3 id="l2">Level 2 · The algorithm step by step (gradient boosting)</h3>
+<ol>
+<li><b>Start</b> with a constant prediction F₀: the mean of y (regression) or the log-odds of the positive rate (classification).</li>
+<li><b>Compute what's still wrong:</b> the residuals y − F (regression) or y − p (classification). In general: the negative gradient of the loss with respect to the current predictions.</li>
+<li><b>Fit a small regression tree</b> to those residuals.</li>
+<li><b>Add it</b>, scaled by the learning rate η: F ← F + η × tree.</li>
+<li><b>Repeat</b> steps 2–4 for M rounds; monitor a validation set and <b>stop early</b>.</li>
+</ol>
+<p><b>AdaBoost</b> is the older cousin: instead of fitting residuals it <b>re-weights the rows</b> — misclassified rows get heavier — and gives each weak learner a vote \(\alpha=\tfrac12\ln\frac{1-\varepsilon}{\varepsilon}\) based on its weighted error ε.</p>
+<h3 id="l3">Level 3 · Worked example by hand (regression, η = 0.5, stumps)</h3>
+<p>Four houses with prices y = 10, 20, 30, 40.</p>
+<div class="table-wrap"><table>
+<tr><th>Round</th><th>Current prediction F</th><th>Residuals y − F</th><th>Tree fitted to residuals</th><th>Update F + 0.5 × tree</th></tr>
+<tr><td>0</td><td>25, 25, 25, 25 (mean)</td><td>−15, −5, 5, 15</td><td>split {1,2} | {3,4}: leaves −10, +10</td><td>20, 20, 30, 30</td></tr>
+<tr><td>1</td><td>20, 20, 30, 30</td><td>−10, 0, 0, 10</td><td>split {1} | {2,3,4}: leaves −10, +3.33</td><td>15, 21.7, 31.7, 31.7</td></tr>
+<tr><td>2</td><td>15, 21.7, 31.7, 31.7</td><td>−5, −1.7, −1.7, 8.3</td><td>split {1,2,3} | {4}: leaves −2.8, +8.3</td><td>13.6, 20.3, 30.3, 35.8</td></tr>
+</table></div>
+<p>Mean squared error falls 125 → 50 → 27.8 → 7.7. Every round the residuals shrink, and each tree is trained on a <i>different target</i> — what's left over. With η = 1 the first update would jump straight to 15, 15, 35, 35: faster, but more prone to chasing noise.</p>
+<p><b>AdaBoost numbers:</b> a stump with weighted error ε = 0.3 gets vote α = ½ ln(0.7/0.3) = 0.42. Misclassified rows are multiplied by e^{0.42} = 1.53, correct rows by e^{−0.42} = 0.65; after renormalising, the mistakes hold exactly half of the total weight, so the next stump can't ignore them.</p>
+<div class="widget" data-demo="adaboost"><div class="widget-title">AdaBoost, one round at a time</div><div class="widget-sub">Watch the weights (dot sizes) shift onto the hard points near the diagonal and the staircase boundary sharpen.</div></div>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>“Gradient” in what space?</b> In the space of predictions: the vector of residuals is the direction that most reduces the loss; each tree approximates that direction as a function of x so it generalises. Boosting = gradient descent in function space.</li>
+<li><b>Any differentiable loss</b> plugs in: squared, absolute, Huber, quantile, log-loss, Poisson, ranking. AdaBoost = exponential loss, hence its outlier sensitivity.</li>
+<li><b>Leaf values</b> are re-optimised for the actual loss (a line search per leaf), not just the mean residual.</li>
+<li><b>Regularisers:</b> learning rate (shrinkage), number of trees (early stopping), tree depth (interaction order), row/column subsampling (stochastic gradient boosting), min samples per leaf.</li>
+<li><b>Bias–variance:</b> reduces bias mainly; shrinkage + subsampling reduce variance. Unlike a forest, more rounds eventually overfit.</li>
+<li><b>Sequential</b> by nature: trees can't be trained in parallel (only split-finding inside a tree can).</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“Bagging vs boosting?”</li><li>“Walk me through gradient boosting for regression.”</li><li>“What changes for classification?” → log-odds, residual = y − p.</li><li>“Why is it called <i>gradient</i> boosting?”</li><li>“Learning rate vs number of trees?”</li><li>“How does AdaBoost differ?”</li><li>“Validation loss rises after 300 rounds — what do you do?”</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Saying each tree is trained on “the errors” without being able to say errors of what (the current ensemble's predictions) · claiming boosting can't overfit · confusing AdaBoost's row weights with gradient boosting's residuals · tuning n_estimators without early stopping · using deep trees as weak learners.</p></div>
 
 <h2 id="key">Must-know points for interviews</h2>
 <ul class="keypts">

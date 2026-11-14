@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Decision trees · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="decision-trees">
 <main>
 <div class="eyebrow">Supervised · Tree-based · Foundation of RF & boosting</div>
 <h1>Decision trees</h1>
 <p class="lede">A flowchart of yes/no questions learned from data. On its own it's the most explainable model there is, and it's the building block of Random Forest, XGBoost, LightGBM and CatBoost. Understand trees well and half of tabular ML follows.</p>
-<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#calc">Split calculator</a><a href="#regression">Regression trees</a><a href="#overfit">Overfitting & pruning</a><a href="#hp">Hyperparameters</a><a href="#props">Important properties</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#calc">Split calculator</a><a href="#regression">Regression trees</a><a href="#overfit">Overfitting & pruning</a><a href="#hp">Hyperparameters</a><a href="#props">Important properties</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>It's the game of <b>“20 questions”</b>. To decide whether a loan applicant is risky, the tree asks “Is income above ₹50k?”. If not, it asks “Missed any payment last year?”, and so on, until it reaches a box that says “risky” or “safe”.</p>
@@ -28,6 +28,42 @@
 
 <div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
 <p>“A decision tree recursively splits the data on the feature and threshold that most reduce impurity: Gini or entropy for classification, variance (MSE) for regression. This is CART, a greedy algorithm that builds binary splits. Leaves predict the majority class or the mean. Trees are interpretable, need no feature scaling, handle non-linearity and interactions naturally, and work with mixed feature types. Their weakness is high variance: a fully grown tree memorises noise, and small data changes can produce a completely different tree. So I limit max_depth and min_samples_leaf, or use cost-complexity pruning, and in practice use ensembles: bagging (Random Forest) to cut variance or boosting to cut bias.”</p></div>
+
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>A decision tree is a flowchart of yes/no questions learned from data: “Is income above 50k?” → “Is age below 30?” → … → “approve”. To build it, the algorithm looks at all the rows and asks: <i>which single question splits them into two groups that are as “pure” as possible</i> — mostly approvals on one side, mostly rejections on the other? It asks that question first, then repeats the process separately inside each group, until the groups are pure or too small. To predict, you just follow the questions down to a leaf and read its majority answer.</p>
+<div class="widget" data-demo="treeviz"><div class="widget-title">Watch a tree carve up the feature space</div><div class="widget-sub">Each split is a horizontal or vertical cut. Increase max_depth: the regions fit the training dots better and better — and then start circling single noisy points.</div></div>
+<h3 id="l2">Level 2 · The algorithm step by step (CART)</h3>
+<ol>
+<li>Start with all rows in one node. Compute its <b>impurity</b> (Gini: \(1-\sum p_k^2\); regression: variance).</li>
+<li>For <b>every feature</b>, sort its values and try <b>every threshold</b> between adjacent values. For each, compute the size-weighted impurity of the two children.</li>
+<li>Keep the split with the <b>largest impurity decrease</b>.</li>
+<li><b>Recurse</b> on each child.</li>
+<li><b>Stop</b> when a node is pure, hits max_depth, has too few rows, or no split helps enough.</li>
+<li>Each leaf predicts its majority class (probability = class share) or its mean target.</li>
+<li>Optionally <b>prune</b> back with cost-complexity pruning (ccp_alpha) chosen by CV.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>A node has 10 loans: 5 defaults (D) and 5 repaid (R). Parent Gini = 1 − (0.5² + 0.5²) = 0.5. Two candidate splits:</p>
+<div class="table-wrap"><table>
+<tr><th>Split</th><th>Left child</th><th>Right child</th><th>Gini left</th><th>Gini right</th><th>Weighted Gini</th><th>Gini decrease</th><th>Information gain</th></tr>
+<tr><td>A: income &lt; 40k</td><td>4 D, 1 R</td><td>1 D, 4 R</td><td>1 − (0.8² + 0.2²) = 0.32</td><td>0.32</td><td>0.5×0.32 + 0.5×0.32 = 0.32</td><td>0.18</td><td>1 − 0.722 = 0.278</td></tr>
+<tr><td>B: missed payments ≥ 2</td><td>0 D, 3 R</td><td>5 D, 2 R</td><td>0 (pure)</td><td>1 − ((5/7)² + (2/7)²) = 0.408</td><td>0.3×0 + 0.7×0.408 = 0.286</td><td><b>0.214</b></td><td>1 − 0.7×0.863 = <b>0.396</b></td></tr>
+</table></div>
+<p>Split B wins under both criteria: it creates one completely pure group, even though the other side is still mixed. The tree takes B, then repeats the search inside the right child. For a <b>regression</b> tree replace Gini by variance: choose the split that most reduces the weighted variance of the target, and predict the leaf mean.</p>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Greedy, not optimal:</b> each split is the best right now; the globally best tree is NP-hard to find. A split with zero immediate gain (XOR) can be essential — a weakness of early stopping vs post-pruning.</li>
+<li><b>Variance:</b> a small change in data can change the root split and everything below → unstable → motivates bagging and boosting.</li>
+<li><b>Invariance:</b> any monotonic transform of a feature (scaling, log) leaves the tree unchanged.</li>
+<li><b>Limits:</b> axis-aligned boundaries (diagonals become staircases), piecewise-constant predictions (no extrapolation), bias toward features with many split points.</li>
+<li><b>Complexity:</b> training ≈ O(d · n log n) per level; prediction O(depth).</li>
+<li><b>Pruning maths:</b> minimise \(R(T)+\alpha|T|\); as α grows, the weakest subtree is collapsed first, producing a nested sequence of trees.</li>
+<li><b>Missing values / categoricals:</b> surrogate splits (CART), learned default direction (modern libraries), native category partitions (LightGBM/CatBoost).</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“How does a tree choose a split?”</li><li>“Gini vs entropy — compute one.”</li><li>“How does a regression tree split and predict?”</li><li>“Why do trees overfit? How do you control it?”</li><li>“Pre- vs post-pruning? What is ccp_alpha?”</li><li>“Why don't trees need scaling? Why can't they extrapolate?”</li><li>“Why is feature importance from trees biased?”</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Forgetting to weight child impurities by size · saying trees “need scaling” · one-hot encoding a 1,000-level categorical for a tree · trusting impurity-based importance blindly · presenting an unpruned tree's 100% training accuracy as success.</p></div>
 
 <h2 id="key">Must-know points for interviews</h2>
 <ul class="keypts">

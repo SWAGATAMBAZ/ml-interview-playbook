@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Bagging & Random Forest · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="random-forest">
 <main>
 <div class="eyebrow">Supervised · Ensemble · Bagging</div>
 <h1>Bagging & Random Forest</h1>
 <p class="lede">Many deep decision trees, each trained on a slightly different random slice of the data, voting together. Random Forest is the most reliable “works out of the box” model for tabular data. Interviews probe bagging, why randomness helps, out-of-bag error and feature-importance traps.</p>
-<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#oob">Out-of-bag</a><a href="#importance">Feature importance</a><a href="#hp">Hyperparameters</a><a href="#extra">Extremely Randomised Trees</a><a href="#vs">Random Forest vs Gradient Boosting</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#oob">Out-of-bag</a><a href="#importance">Feature importance</a><a href="#hp">Hyperparameters</a><a href="#extra">Extremely Randomised Trees</a><a href="#vs">Random Forest vs Gradient Boosting</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>Ask one expert and you get one opinion, which might be wildly off. Ask <b>500 people</b>, each of whom has seen a <b>different random sample</b> of the evidence and was only allowed to look at <b>a few clues at a time</b>, and then average their answers. Individually they're erratic, but their mistakes point in different directions and cancel out. That's the wisdom of crowds.</p>
@@ -27,6 +27,44 @@
 
 <div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
 <p>“Random Forest is bagging of decision trees plus feature randomness. Each tree is trained on a bootstrap sample, and at every split it considers only a random subset of features. That decorrelates the trees, so averaging them cuts variance a lot while keeping the low bias of deep trees. It needs little tuning, no scaling, handles non-linearity and interactions, gives a free out-of-bag error estimate, and is hard to overfit by adding trees. Its weaknesses: impurity-based feature importance is biased toward high-cardinality features, so I use permutation importance or SHAP; it's slower and larger at inference than a single tree; and it can't extrapolate. Tuned boosting usually beats it on accuracy.”</p></div>
+
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>One deep decision tree is like one opinionated expert: sharp, but easily fooled by quirks of the cases they happened to see. A random forest builds hundreds of such experts and takes a vote. Two tricks make the experts disagree in useful ways: each one studies a <b>random sample of the cases</b> (drawn with replacement), and at every decision point each one may only consider a <b>random handful of the clues</b>. Individually they still overfit, but their mistakes point in different directions and cancel out in the vote, while what they agree on is the real signal.</p>
+<div class="widget" data-demo="treeviz" data-mode="forest"><div class="widget-title">From one overfit tree to a smooth forest</div><div class="widget-sub">Start with 1 deep tree (jagged, noisy islands). Slide n_estimators up and watch test accuracy climb and the boundary smooth out. Then untick the randomness to see why it matters.</div></div>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li>Repeat B times (e.g. 500):
+<ul><li>Draw a <b>bootstrap sample</b>: n rows sampled with replacement (≈ 63% unique rows; the other ≈ 37% are “out-of-bag” for this tree).</li>
+<li>Grow a <b>deep tree</b> on it. At <b>each split</b> pick <code>max_features</code> features at random (√d for classification) and choose the best split among only those.</li></ul></li>
+<li><b>Predict</b> by averaging the trees' probabilities (classification) or values (regression).</li>
+<li><b>Validate for free:</b> score each row using only the trees that never saw it (OOB score).</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p><b>Why decorrelation matters.</b> If each tree's prediction has variance σ² = 1 and any two trees have correlation ρ, the variance of the average of B trees is \(\rho\sigma^2+\frac{1-\rho}{B}\sigma^2\):</p>
+<div class="table-wrap"><table>
+<tr><th>Setting</th><th>ρ</th><th>B</th><th>Ensemble variance</th></tr>
+<tr><td>Single tree</td><td>—</td><td>1</td><td>1.000</td></tr>
+<tr><td>Plain bagging (similar trees)</td><td>0.6</td><td>100</td><td>0.6 + 0.4/100 = 0.604</td></tr>
+<tr><td>Bagging with infinite trees</td><td>0.6</td><td>∞</td><td>0.600 (stuck!)</td></tr>
+<tr><td>Random forest (feature subsampling)</td><td>0.2</td><td>100</td><td>0.2 + 0.8/100 = 0.208</td></tr>
+</table></div>
+<p>More trees only shrinks the second term. The first term, ρσ², is a floor that only <i>decorrelating</i> the trees can lower — that is the entire reason for <code>max_features</code>.</p>
+<p><b>A vote.</b> Five trees give P(fraud) = 0.9, 0.2, 0.7, 0.6, 0.8 for a transaction. Forest probability = 3.2/5 = 0.64 → fraud at threshold 0.5, even though one tree strongly disagreed.</p>
+<p><b>Bootstrap by hand.</b> Rows {1, 2, 3, 4, 5}; one bootstrap draw might be {2, 2, 5, 1, 5}. Rows 3 and 4 are out-of-bag for that tree and can be used to test it.</p>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Bias stays, variance falls:</b> averaging doesn't change the expected prediction, so base trees must be low-bias (deep). Shallow trees in a forest = underfitting that more trees can't fix.</li>
+<li><b>More trees never overfit</b> (error converges); depth/leaf-size settings can.</li>
+<li><b>max_features trade-off:</b> smaller → lower ρ but weaker trees. With many noise features, too-small values starve the trees of signal.</li>
+<li><b>OOB</b> ≈ cross-validation, but invalid for time-ordered or grouped data.</li>
+<li><b>Importance:</b> impurity-based is biased toward high-cardinality features and computed on training data; permutation importance and SHAP are safer; correlated features share or hide importance.</li>
+<li><b>Limitations:</b> no extrapolation, large memory, slower inference, probabilities pulled toward the middle.</li>
+<li><b>Relatives:</b> ExtraTrees (random thresholds), Isolation Forest (random splits for anomalies), quantile regression forests (prediction intervals).</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“What is bagging? How is a random forest different from bagged trees?”</li><li>“Why does averaging reduce variance? What limits it?”</li><li>“What is OOB error?”</li><li>“Can it overfit with more trees?”</li><li>“Which hyperparameters matter?”</li><li>“RF vs gradient boosting — when each?”</li><li>“Your importance plot ranks customer_id first — explain.”</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Saying random forests “reduce bias” · believing more trees cause overfitting · confusing row sampling (per tree) with feature sampling (per <i>split</i>) · using OOB on time series · quoting impurity importance as causal.</p></div>
 
 <h2 id="key">Must-know points for interviews</h2>
 <ul class="keypts">

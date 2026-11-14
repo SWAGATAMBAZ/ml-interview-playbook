@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ML fundamentals · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="fundamentals">
 <main>
@@ -56,6 +56,8 @@
 </table></div>
 <p><b>Loss vs metric:</b> the loss is what the optimiser minimises (must be differentiable/convenient); the metric is what the business cares about (F1, revenue, recall at k). They often differ — choose a loss that aligns with the metric and tune thresholds/hyperparameters on the metric.</p>
 
+<div class="widget" data-demo="losses"><div class="widget-title">Compare loss functions</div><div class="widget-sub">How hard each loss punishes an error of a given size. Switch between regression and classification losses.</div></div>
+
 <h2 id="opt">Optimisation basics</h2>
 <ul>
 <li><b>Gradient descent:</b> \(\theta\leftarrow\theta-\eta\nabla L\). Batch (all data, stable, slow), stochastic (one row, noisy, can escape shallow minima), mini-batch (standard).</li>
@@ -66,6 +68,11 @@
 <li><b>Coordinate descent</b> (Lasso), closed form (OLS, Ridge), EM (mixtures), greedy (trees).</li>
 </ul>
 <div class="widget" data-demo="gd"><div class="widget-title">Learning-rate intuition</div><div class="widget-sub">Gradient descent on a 1-D quadratic.</div></div>
+
+<div class="widget" data-demo="opt2d"><div class="widget-title">Why training does (or doesn't) converge</div><div class="widget-sub">A 2-D loss bowl. Raise the condition number (unscaled features), add gradient noise (small batches), change the learning rate and optimiser, and read the diagnosis.</div></div>
+<h3 id="curves">Loss-curve doctor</h3>
+<p>Interviewers often sketch a loss curve and ask “what's wrong?”. Click through the common shapes.</p>
+<div class="widget" data-demo="losscurves"><div class="widget-title">Diagnose a training run from its curves</div><div class="widget-sub">Each button shows a typical training/validation curve, what it means and the fix. More in <a href="situational.html">Situational questions</a>.</div></div>
 
 <h2 id="mle">MLE vs MAP</h2>
 <p><b>Maximum likelihood:</b> \(\hat\theta=\arg\max_\theta P(\text{data}\mid\theta)\). <b>Maximum a posteriori:</b> \(\hat\theta=\arg\max_\theta P(\text{data}\mid\theta)P(\theta)\) — MLE plus a prior, which acts as regularisation (Gaussian prior → L2, Laplace prior → L1). With lots of data the likelihood dominates and MAP → MLE. Full Bayesian inference keeps the whole posterior instead of a point estimate.</p>

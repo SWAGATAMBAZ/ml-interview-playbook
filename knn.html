@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>k-Nearest Neighbours · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="knn">
 <main>
 <div class="eyebrow">Supervised · Instance-based · Classification & regression</div>
 <h1>k-Nearest Neighbours (kNN)</h1>
 <p class="lede">The “ask your neighbours” model. It does no real training: to predict a new point, it finds the k most similar past examples and lets them vote. It's simple to explain, and it's great for probing your understanding of distance, scaling and the curse of dimensionality.</p>
-<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#how">How it works</a><a href="#distance">Distance metrics</a><a href="#demo">See k change the boundary</a><a href="#k">Choosing k</a><a href="#curse">The curse of dimensionality</a><a href="#hp">Hyperparameters</a><a href="#speed">Making it fast & robust</a><a href="#procon">Pros/cons</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#how">How it works</a><a href="#distance">Distance metrics</a><a href="#demo">See k change the boundary</a><a href="#k">Choosing k</a><a href="#curse">The curse of dimensionality</a><a href="#hp">Hyperparameters</a><a href="#speed">Making it fast & robust</a><a href="#procon">Pros/cons</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>To guess a house's price, an estate agent looks at the <b>5 most similar houses nearby</b> that sold recently and takes their average. To guess whether a new customer will like a film, you look at the <b>customers most like them</b> and see what they liked.</p>
@@ -27,6 +27,43 @@
 
 <div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
 <p>“kNN is a non-parametric, instance-based learner. It stores the training set and predicts by majority vote or averaging over the k nearest neighbours under a distance metric. Small k gives a flexible, noisy boundary (low bias, high variance), and large k gives a smooth one (high bias), so I pick k by cross-validation. Feature scaling is essential because distances are scale-dependent. It suffers from the curse of dimensionality, and prediction is slow because it compares against all points, so in practice I use KD-trees or ball trees for low dimensions and approximate nearest-neighbour indexes like FAISS or HNSW for large, high-dimensional data.”</p></div>
+
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>“Tell me who your neighbours are and I'll tell you who you are.” To classify a new point, find the k training points that look most like it and let them vote. To predict a number, average their values. There's no formula to learn and no training step — the stored data <i>is</i> the model. Everything depends on two choices: what “looks like” means (the distance) and how many neighbours get a vote (k).</p>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li><b>Scale</b> the features so each contributes fairly to distance.</li>
+<li><b>Store</b> the training set (optionally in a KD-tree / ball tree for faster search).</li>
+<li>For a query: <b>compute the distance</b> to every stored point.</li>
+<li><b>Sort and keep the k nearest.</b></li>
+<li><b>Vote</b> (majority, or weighted by 1/distance) or <b>average</b> for regression.</li>
+<li>Choose k and the metric by <b>cross-validation</b>.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>Query point q = (3, 3). Training points and classes:</p>
+<div class="table-wrap"><table>
+<tr><th>Point</th><th>Class</th><th>Euclidean distance to (3, 3)</th><th>Rank</th></tr>
+<tr><td>(2, 4)</td><td>A</td><td>\(\sqrt{1+1}=1.41\)</td><td>1</td></tr>
+<tr><td>(4, 4)</td><td>B</td><td>1.41</td><td>1</td></tr>
+<tr><td>(3, 5)</td><td>B</td><td>2.00</td><td>3</td></tr>
+<tr><td>(1, 1)</td><td>A</td><td>\(\sqrt{4+4}=2.83\)</td><td>4</td></tr>
+<tr><td>(5, 1)</td><td>A</td><td>2.83</td><td>4</td></tr>
+</table></div>
+<ul><li><b>k = 1:</b> a tie between the two nearest points (A and B) — the answer depends on tie-breaking. Fragile.</li><li><b>k = 3:</b> neighbours A, B, B → <b>B</b> wins 2–1; P(B) = 0.67.</li><li><b>k = 5:</b> A, B, B, A, A → <b>A</b> wins 3–2. Same query, different answer: k matters.</li><li><b>k = 5 with distance weights:</b> A = 1/1.41 + 1/2.83 + 1/2.83 = 1.41; B = 1/1.41 + 1/2 = 1.21 → A, but much closer than the raw 3–2 count suggests.</li></ul>
+<p>Now multiply the first coordinate by 1000 (say it was metres instead of kilometres): distances are dominated by that feature and the ranking changes completely. That's why scaling is not optional.</p>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Bias–variance through k:</b> 1/k acts like model complexity. k = 1 → zero training error, jagged boundary; k = n → constant prediction.</li>
+<li><b>Curse of dimensionality:</b> in high dimensions the nearest and farthest neighbours are almost equally far, so “nearest” carries little information.</li>
+<li><b>Cost:</b> O(1) training; O(n·d) per prediction by brute force. KD-trees help only up to roughly 20 dimensions. Production similarity search uses approximate methods (HNSW, FAISS/IVF, ScaNN).</li>
+<li><b>Theory:</b> as n → ∞, 1-NN error ≤ 2 × Bayes error; kNN with k → ∞, k/n → 0 is consistent.</li>
+<li><b>Irrelevant features</b> hurt badly because every feature enters the distance equally — feature selection or metric learning matters more here than for trees.</li>
+<li><b>Probabilities</b> are vote fractions: coarse (multiples of 1/k) and poorly calibrated for small k.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“How does kNN work? Why ‘lazy’?”</li><li>“How do you pick k? What happens at the extremes?”</li><li>“Why scale? Which distance for text / categorical data?”</li><li>“It's too slow with 50 million rows — now what?” → ANN indexes, dimensionality reduction, prototypes.</li><li>“Why does it degrade with 500 features?” → curse of dimensionality.</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Confusing kNN (supervised) with K-means (clustering) · forgetting to scale · fitting the scaler on the full data before CV · using even k for binary problems · claiming kNN “trains fast” without mentioning the slow prediction.</p></div>
 
 <h2 id="key">Must-know points for interviews</h2>
 <ul class="keypts">

@@ -519,6 +519,8 @@
     root.querySelectorAll("input").forEach(i => i.addEventListener("input", draw)); draw();
   };
 
+  window.MLP_D = { D, frame, dot, line, slider, seg, wireSeg, uid, rnd, gauss, fmt, Phi };
+
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("[data-demo]").forEach(el => {
       const f = D[el.dataset.demo];

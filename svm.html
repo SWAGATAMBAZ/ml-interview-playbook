@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Support Vector Machines · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/lab.js"></script>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="svm">
 <main>
 <div class="eyebrow">Supervised · Margin-based · Classification & regression</div>
 <h1>Support Vector Machines (SVM)</h1>
 <p class="lede">A classifier that draws the boundary with the <b>widest possible safety gap</b> between classes, and with the “kernel trick” it can bend that boundary into curves. It was the king of ML before boosting and deep learning, and is still asked about for its elegant ideas: margin, support vectors, C, gamma and kernels.</p>
-<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#demo">Margin and C</a><a href="#hp">Hyperparameters</a><a href="#svr">Support Vector Regression</a><a href="#practice">Practical notes</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#demo">Margin and C</a><a href="#hp">Hyperparameters</a><a href="#svr">Support Vector Regression</a><a href="#practice">Practical notes</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>Imagine red and blue marbles on a table, and you need to lay a ruler between them. Many positions work, but the safest one leaves the <b>widest empty “street”</b> on both sides, because new marbles are then less likely to land on the wrong side. SVM finds exactly that street.</p>
@@ -28,6 +28,44 @@
 
 <div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
 <p>“An SVM finds the hyperplane that maximises the margin between classes, and only the points on or inside the margin, the support vectors, define it. The soft-margin version uses hinge loss and a parameter C to trade margin width against training errors: large C means fewer violations and a risk of overfitting, small C means a wider, more regularised margin. The kernel trick replaces dot products with a kernel function such as RBF, giving non-linear boundaries without ever computing the high-dimensional features. For RBF, gamma controls how far each point's influence reaches. I scale features, tune C and gamma jointly, and use a linear SVM for large sparse text data. Kernel SVMs scale poorly beyond roughly 100k rows.”</p></div>
+
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>Imagine red and blue marbles on a table and you must lay down a stick to separate them. Many positions work. The SVM chooses the position that leaves the <b>widest possible gap</b> between the stick and the nearest marbles on either side, because a wide gap is the safest bet for marbles added later. Only the marbles touching the edge of the gap matter — those are the <b>support vectors</b>; you could remove all the others and get the same stick.</p>
+<p>If no stick can separate them, two tricks help. First, allow a few marbles on the wrong side but charge a fine for each (the knob <b>C</b> sets the fine). Second, if the classes are tangled, flick the table so the marbles fly into the air and separate them with a flat sheet instead — that “lifting to a higher dimension” is what a <b>kernel</b> does.</p>
+<h3 id="l2">Level 2 · The algorithm step by step</h3>
+<ol>
+<li><b>Scale</b> the features. Label classes −1 and +1.</li>
+<li>Describe the boundary as \(w^Tx+b=0\); the two gap edges are \(w^Tx+b=\pm1\); the gap width is \(2/\lVert w\rVert\).</li>
+<li><b>Optimise:</b> make \(\lVert w\rVert\) small (wide gap) while paying C for every point that is inside the gap or misclassified: minimise \(\tfrac12\lVert w\rVert^2+C\sum_i\max(0,\,1-y_i(w^Tx_i+b))\).</li>
+<li>For non-linear problems choose a <b>kernel</b> (RBF by default) — the optimiser then works with similarities K(xᵢ, xⱼ) between pairs of points instead of raw coordinates.</li>
+<li><b>Predict</b> with the sign of \(\sum_{i\in SV}\alpha_iy_iK(x_i,x)+b\) — a weighted vote of the support vectors.</li>
+<li><b>Tune C and gamma together</b> by cross-validation on log grids.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked example by hand</h3>
+<p>Suppose the fitted boundary is w = (1, 1), b = −3, i.e. \(x_1+x_2=3\). Margin width = \(2/\sqrt{1^2+1^2}=1.41\).</p>
+<div class="table-wrap"><table>
+<tr><th>Point</th><th>Label y</th><th>f(x) = x₁ + x₂ − 3</th><th>y·f(x)</th><th>Hinge loss max(0, 1 − y·f)</th><th>Role</th></tr>
+<tr><td>(3, 3)</td><td>+1</td><td>3</td><td>3</td><td>0</td><td>Far on the correct side — irrelevant</td></tr>
+<tr><td>(2, 2)</td><td>+1</td><td>1</td><td>1</td><td>0</td><td>Exactly on the margin — support vector</td></tr>
+<tr><td>(1, 1)</td><td>−1</td><td>−1</td><td>1</td><td>0</td><td>On the other margin — support vector</td></tr>
+<tr><td>(2.5, 1)</td><td>+1</td><td>0.5</td><td>0.5</td><td>0.5</td><td>Correct but inside the gap — support vector, pays a fine</td></tr>
+<tr><td>(2, 0)</td><td>+1</td><td>−1</td><td>−1</td><td>2</td><td>Misclassified — support vector, pays a big fine</td></tr>
+</table></div>
+<p>Total objective = ½‖w‖² + C × (0.5 + 2) = 1 + 2.5C. A large C makes those fines dominate, so the optimiser will twist and narrow the gap to reduce them; a small C keeps the gap wide and tolerates them.</p>
+<div class="widget" data-demo="kernel"><div class="widget-title">Why kernels work: lifting the data</div><div class="widget-sub">Blue points sit between red points on a line — no single threshold separates them. Add one new feature and it becomes easy.</div></div>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Primal vs dual:</b> the dual problem has one variable αᵢ per training point and involves data only through dot products xᵢ·xⱼ — which is why swapping in a kernel is possible. KKT conditions: αᵢ = 0 for points outside the margin, 0 &lt; αᵢ &lt; C on it, αᵢ = C for violators.</li>
+<li><b>Kernel trick:</b> K(x, z) = φ(x)·φ(z) computes a dot product in a huge feature space without building φ. RBF: \(e^{-\gamma\lVert x-z\rVert^2}\); γ sets how local each point's influence is.</li>
+<li><b>Hinge loss + L2</b> is the unconstrained form; C is inverse regularisation, like logistic regression's C.</li>
+<li><b>Scaling:</b> kernel SVM training is roughly O(n²)–O(n³) and needs the n×n kernel matrix; use LinearSVC/SGD or kernel approximations (Nyström, random Fourier features) for large n.</li>
+<li><b>No probabilities:</b> outputs are signed distances; Platt scaling fits a sigmoid on them.</li>
+<li><b>SVR:</b> same idea with an ε-insensitive tube — errors smaller than ε cost nothing.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“What is a support vector? What is the margin?”</li><li>“Hard vs soft margin — what does C do?”</li><li>“Explain the kernel trick. What does gamma do?”</li><li>“High C and high gamma — what do you expect?” → overfitting.</li><li>“Why is the dual useful?”</li><li>“You have 5 million rows — would you use an RBF SVM?” → no; linear/approximate methods or boosting.</li></ol>
+<div class="callout trap"><div class="tag">⚠️ Mistakes that cost offers</div><p>Not scaling features · saying kernels “add dimensions to the data” without explaining it's done implicitly via similarities · tuning C and gamma separately · expecting <code>predict_proba</code> for free · using kernel SVMs on very large datasets.</p></div>
 
 <h2 id="key">Must-know points for interviews</h2>
 <ul class="keypts">
