@@ -8,6 +8,7 @@
     { id: "validation", file: "validation.html", title: "Cross-validation & tuning", group: "Foundations" },
     { id: "performance", file: "performance.html", title: "Improving models & explainability", group: "Foundations" },
     { id: "statistics", file: "statistics.html", title: "Statistics & A/B testing", group: "Foundations" },
+    { id: "core-stats", file: "core-stats.html", title: "Variance, correlation, similarity & simulation", group: "Foundations" },
     { id: "linear-regression", file: "linear-regression.html", title: "Linear regression", group: "Supervised models" },
     { id: "regularization", file: "regularization.html", title: "Ridge, Lasso & Elastic Net", group: "Supervised models" },
     { id: "logistic-regression", file: "logistic-regression.html", title: "Logistic regression", group: "Supervised models" },

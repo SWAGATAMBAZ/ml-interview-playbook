@@ -169,8 +169,8 @@ canvas{width:100%;display:block;border-radius:12px;background:var(--bg)}
 /* ===== ML Interview Playbook additions ===== */
 .brand .logo{background:conic-gradient(from 210deg,var(--accent),var(--green),var(--coral),var(--accent))}
 .search-btn{width:calc(100% - 12px);margin:0 6px 14px;display:flex;justify-content:space-between;align-items:center;color:var(--muted)}
-.katex{font-size:1.06em}
-.katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0}
+.katex{font-size:1.06em;position:relative}
+.katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0;position:relative}
 .callout.math .katex-display{margin:8px 0}
 .callout.say{background:var(--accent-soft);border-color:transparent}.callout.say .tag{color:var(--accent)}
 .lvl{font-family:var(--mono);font-size:11px;padding:1px 7px;border-radius:6px;margin-left:auto;white-space:nowrap;height:fit-content;margin-top:3px}

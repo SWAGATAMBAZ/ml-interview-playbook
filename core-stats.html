@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Variance, correlation, similarity & simulation · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/demos3.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="core-stats">
+<main>
+<div class="eyebrow">Foundations · The statistics every other topic quietly depends on</div>
+<h1>Variance, covariance, correlation, similarity &amp; simulation</h1>
+<p class="lede">Interviewers love these because they look simple and expose shaky foundations: “What's the difference between covariance and correlation?”, “How is correlation different from regression?”, “Is cosine similarity the same as correlation?”, “How is simulation different from machine learning?”. This page builds each idea from plain English to the formula, works one small dataset through by hand, lets you play with every concept, and ends with the probability and statistics questions that keep coming up.</p>
+<div class="toc"><a href="#variance">Variance & SD</a><a href="#covariance">Covariance</a><a href="#correlation">Correlation</a><a href="#worked">Worked example</a><a href="#playground">Playground</a><a href="#cosine">Cosine similarity</a><a href="#compare">Correlation vs regression vs cosine</a><a href="#distances">Choosing a similarity</a><a href="#pitfalls">Correlation pitfalls</a><a href="#simulation">Simulation vs ML</a><a href="#montecarlo">Monte Carlo</a><a href="#statsvsml">Statistics vs ML</a><a href="#prob">Probability toolkit</a><a href="#rtm">Regression to the mean</a><a href="#causal">Causation & bias</a><a href="#labs">Labs</a><a href="#qa">Interview Q&A</a></div>
+
+<h2 id="variance">Variance and standard deviation</h2>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Variance answers “how spread out are the values?”. Take each value's distance from the average, square it (so negatives don't cancel positives and big gaps count more), and average those squares. The standard deviation is the square root of that, which puts the answer back in the original units: “scores typically sit about 14 points from the average”.</p></div>
+<div class="callout math"><div class="tag">∑ Formulas</div>
+$$\text{population: }\sigma^2=\frac1N\sum_{i}(x_i-\mu)^2$$
+$$\text{sample: }s^2=\frac{1}{n-1}\sum_i(x_i-\bar x)^2,\qquad s=\sqrt{s^2}$$
+<p><b>Why n − 1?</b> The deviations are measured from \(\bar x\), which was fitted to the same data, so they are slightly too small; only n − 1 of them are free (they must sum to zero). Dividing by n − 1 (Bessel's correction) makes \(s^2\) an unbiased estimate of σ². NumPy's <code>np.var</code> defaults to dividing by n (<code>ddof=0</code>); pandas' <code>.var()</code> uses n − 1.</p></div>
+<div class="table-wrap"><table>
+<tr><th>Rule</th><th>Why it matters in interviews</th></tr>
+<tr><td>\(\operatorname{Var}(aX+b)=a^2\operatorname{Var}(X)\)</td><td>Shifting data doesn't change spread; rescaling multiplies variance by the square</td></tr>
+<tr><td>\(\operatorname{Var}(X+Y)=\operatorname{Var}X+\operatorname{Var}Y+2\operatorname{Cov}(X,Y)\)</td><td>Diversification: negatively correlated assets reduce portfolio variance</td></tr>
+<tr><td>\(\operatorname{Var}(\bar X)=\sigma^2/n\), so SE = \(\sigma/\sqrt n\)</td><td>Need 4× the data to halve the error of an average — sample-size and A/B questions</td></tr>
+<tr><td>\(\operatorname{Var}(X)=E[X^2]-(E[X])^2\)</td><td>Quick computation; shows variance ≥ 0</td></tr>
+</table></div>
+<p><b>Standard deviation vs standard error:</b> SD describes the spread of individual values; SE describes how precisely you know an <i>estimate</i> (such as the mean). SD stays the same as you collect more data; SE shrinks with √n.</p>
+
+<h2 id="covariance">Covariance</h2>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Covariance asks: when x is above its average, is y usually above its average too? For every row multiply “how far x is from its mean” by “how far y is from its mean”. If both are high together or low together the product is positive; if one is high when the other is low it's negative. Average those products. Positive covariance = they move together, negative = they move in opposite directions, near zero = no <i>linear</i> pattern.</p></div>
+<div class="callout math"><div class="tag">∑ Formula</div>$$\operatorname{Cov}(X,Y)=\frac{1}{n-1}\sum_i(x_i-\bar x)(y_i-\bar y)\qquad \operatorname{Cov}(X,X)=\operatorname{Var}(X)$$</div>
+<ul>
+<li><b>The catch:</b> covariance carries the units of x × units of y (hours × marks). Measure hours in minutes and covariance becomes 60 times larger even though the relationship is identical. So its <b>sign</b> is meaningful but its <b>size</b> is hard to read. Correlation fixes that.</li>
+<li><b>Covariance matrix:</b> for d features, the d × d matrix Σ with variances on the diagonal and covariances elsewhere. It's symmetric and positive semi-definite. It is the object PCA decomposes, the shape parameter of a multivariate normal / GMM, and what the Mahalanobis distance uses to account for correlated features.</li>
+<li>\(\operatorname{Cov}(aX+b,\,cY+d)=ac\,\operatorname{Cov}(X,Y)\).</li>
+</ul>
+
+<h2 id="correlation">Correlation</h2>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Correlation is covariance with the units removed: divide by both standard deviations and you get a number between −1 and +1. +1 means the points lie exactly on a rising straight line, −1 a falling one, 0 no straight-line pattern. It doesn't care whether x is in hours or minutes.</p></div>
+<div class="callout math"><div class="tag">∑ Pearson correlation</div>$$r=\frac{\operatorname{Cov}(X,Y)}{s_Xs_Y}=\frac{\sum(x_i-\bar x)(y_i-\bar y)}{\sqrt{\sum(x_i-\bar x)^2}\sqrt{\sum(y_i-\bar y)^2}}$$</div>
+<div class="table-wrap"><table>
+<tr><th>Type</th><th>Measures</th><th>Use when</th></tr>
+<tr><td>Pearson r</td><td>Strength of a <b>linear</b> relationship using raw values</td><td>Roughly linear, no extreme outliers</td></tr>
+<tr><td>Spearman ρ</td><td>Pearson on the <b>ranks</b> → any <b>monotonic</b> relationship</td><td>Curved but always increasing; outliers; ordinal data</td></tr>
+<tr><td>Kendall τ</td><td>Share of concordant minus discordant pairs</td><td>Small samples, many ties; easy probability interpretation</td></tr>
+<tr><td>Point-biserial / phi / Cramér's V</td><td>Numeric–binary / binary–binary / categorical–categorical association</td><td>Mixed variable types</td></tr>
+<tr><td>Mutual information</td><td>Any dependence, linear or not</td><td>Non-linear relationships, feature screening</td></tr>
+</table></div>
+<p><b>Reading a value:</b> r² is the share of variance in y that a straight line in x explains. r = 0.3 sounds respectable but explains only 9%; r = 0.7 explains 49%.</p>
+
+<h2 id="worked">One dataset, worked through by hand</h2>
+<p>Hours studied (x) and exam score (y) for five students. Every number below can be checked with a calculator — and the lab further down checks them in Python.</p>
+<div class="table-wrap"><table>
+<tr><th>Student</th><th>x</th><th>y</th><th>x − x̄</th><th>y − ȳ</th><th>(x − x̄)²</th><th>(y − ȳ)²</th><th>(x − x̄)(y − ȳ)</th></tr>
+<tr><td>1</td><td>2</td><td>50</td><td>−4</td><td>−15</td><td>16</td><td>225</td><td>60</td></tr>
+<tr><td>2</td><td>4</td><td>55</td><td>−2</td><td>−10</td><td>4</td><td>100</td><td>20</td></tr>
+<tr><td>3</td><td>6</td><td>65</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>4</td><td>8</td><td>70</td><td>2</td><td>5</td><td>4</td><td>25</td><td>10</td></tr>
+<tr><td>5</td><td>10</td><td>85</td><td>4</td><td>20</td><td>16</td><td>400</td><td>80</td></tr>
+<tr><td><b>Sum</b></td><td>30</td><td>325</td><td>0</td><td>0</td><td><b>40</b></td><td><b>750</b></td><td><b>170</b></td></tr>
+</table></div>
+<div class="table-wrap"><table>
+<tr><th>Quantity</th><th>Calculation</th><th>Result</th></tr>
+<tr><td>Means</td><td>30/5, 325/5</td><td>x̄ = 6, ȳ = 65</td></tr>
+<tr><td>Variance of x, y</td><td>40/4, 750/4</td><td>10 and 187.5 (SD 3.16 and 13.69)</td></tr>
+<tr><td>Covariance</td><td>170/4</td><td><b>42.5</b> (units: hours × marks)</td></tr>
+<tr><td>Pearson r</td><td>170 / √(40 × 750) = 170/173.2</td><td><b>0.981</b></td></tr>
+<tr><td>Regression of y on x</td><td>slope = 170/40; intercept = 65 − 4.25 × 6</td><td>ŷ = 39.5 + <b>4.25</b>x (each extra hour ≈ +4.25 marks)</td></tr>
+<tr><td>Regression of x on y</td><td>slope = 170/750</td><td>0.227 hours per mark — <i>not</i> 1/4.25</td></tr>
+<tr><td>R²</td><td>r², or 4.25 × 0.227</td><td>0.963</td></tr>
+<tr><td>Cosine similarity of the raw vectors</td><td>x·y = 2120; ‖x‖ = 14.83; ‖y‖ = 147.90</td><td><b>0.966</b> (≠ r, because it isn't centred)</td></tr>
+<tr><td>Cosine of the <i>centred</i> vectors</td><td>170 / (√40 × √750)</td><td>0.981 = <b>exactly r</b></td></tr>
+<tr><td>Spearman ρ</td><td>ranks of x and y are identical</td><td>1.0 (perfectly monotonic)</td></tr>
+</table></div>
+<p><b>Now change the units and see what survives:</b> measure study time in minutes (x × 60): covariance becomes 42.5 × 60 = 2,550, slope becomes 4.25/60 = 0.071 marks per minute, while r, R², Spearman and cosine are unchanged. Add 100 to every score: covariance, r and the slope are unchanged, the intercept rises by 100, and cosine drops to 0.933 because it measures the angle from the origin.</p>
+
+<h2 id="playground">Playground: covariance, correlation, cosine and regression together</h2>
+<div class="widget" data-demo="assoc"><div class="widget-title">One scatter, every measure</div><div class="widget-sub">Try each scenario, rescale x, add a constant to y — and watch which numbers move. Teal points add to covariance, coral points subtract.</div></div>
+
+<h2 id="cosine">Cosine similarity</h2>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p>Treat each row (a document, a user, an embedding) as an arrow from the origin. Cosine similarity asks only whether two arrows <b>point the same way</b>, ignoring how long they are. A 200-word review and a 2,000-word review that use words in the same proportions point the same way, so their cosine is close to 1, even though their raw counts are very different.</p></div>
+<div class="callout math"><div class="tag">∑ Formula</div>$$\cos\theta=\frac{A\cdot B}{\lVert A\rVert\,\lVert B\rVert}=\frac{\sum_iA_iB_i}{\sqrt{\sum A_i^2}\sqrt{\sum B_i^2}}\in[-1,1]\qquad\text{cosine distance}=1-\cos\theta$$
+<p>For non-negative data such as word counts it lies between 0 and 1. For unit-length (normalised) vectors, \(\lVert A-B\rVert^2=2-2\cos\theta\), so ranking by Euclidean distance and by cosine gives the same order — which is why embedding search normalises vectors and then uses the fast dot product.</p></div>
+<div class="widget" data-demo="cosvec"><div class="widget-title">Cosine similarity vs Euclidean distance</div><div class="widget-sub">Change only the length of B: the angle (and cosine) stays, the distance changes.</div></div>
+<p><b>Where it's used:</b> text similarity with TF-IDF vectors, semantic search and RAG retrieval with embeddings, user–user and item–item collaborative filtering, de-duplication, face/voice verification, kNN with high-dimensional sparse data.</p>
+
+<h2 id="compare">Correlation vs regression vs cosine similarity</h2>
+<p>The three are built from the same ingredients — sums of products — so interviewers ask how they differ. The short version: <b>correlation</b> measures how tightly two variables move together, <b>regression</b> builds a directional equation to predict one from the other, and <b>cosine similarity</b> compares the direction of two vectors without centring them.</p>
+<div class="table-wrap"><table>
+<tr><th></th><th>Correlation (Pearson r)</th><th>Regression (OLS slope)</th><th>Cosine similarity</th></tr>
+<tr><td>Question it answers</td><td>How strongly do X and Y move together linearly?</td><td>How much does Y change per unit of X, and what is Y for a given X?</td><td>Do two vectors point in the same direction?</td></tr>
+<tr><td>Formula</td><td>\(\frac{\sum(x-\bar x)(y-\bar y)}{\sqrt{\sum(x-\bar x)^2\sum(y-\bar y)^2}}\)</td><td>\(\frac{\sum(x-\bar x)(y-\bar y)}{\sum(x-\bar x)^2}=r\frac{s_y}{s_x}\)</td><td>\(\frac{\sum xy}{\sqrt{\sum x^2\sum y^2}}\)</td></tr>
+<tr><td>Centred?</td><td>Yes (subtracts means)</td><td>Yes (via the intercept)</td><td><b>No</b> — measured from the origin</td></tr>
+<tr><td>Symmetric?</td><td>Yes: r(X, Y) = r(Y, X)</td><td><b>No</b>: Y on X ≠ X on Y</td><td>Yes</td></tr>
+<tr><td>Units</td><td>None, −1 to 1</td><td>Units of Y per unit of X</td><td>None, −1 to 1</td></tr>
+<tr><td>Affected by rescaling X</td><td>No</td><td>Yes (slope ÷ factor)</td><td>Rescaling a whole vector: no. Rescaling one feature: yes</td></tr>
+<tr><td>Affected by adding a constant</td><td>No</td><td>Only the intercept</td><td><b>Yes</b></td></tr>
+<tr><td>Typical use</td><td>Feature screening, EDA, multicollinearity checks</td><td>Prediction, effect size, inference (CIs, p-values), controlling for other variables</td><td>Similarity between rows: documents, users, embeddings</td></tr>
+<tr><td>Compares</td><td>Two <b>variables</b> (columns) across many observations</td><td>A target column against one or more feature columns</td><td>Usually two <b>observations</b> (rows) across many features</td></tr>
+</table></div>
+<div class="callout interview"><div class="tag">💬 The links that impress interviewers</div><ul>
+<li><b>Pearson r is the cosine similarity of the mean-centred vectors.</b> Centre both columns and the two formulas are identical.</li>
+<li><b>Slope = r × s<sub>y</sub>/s<sub>x</sub>.</b> If both variables are standardised, the slope of y on x <i>equals</i> r.</li>
+<li><b>In simple regression R² = r²</b>, and the product of the two slopes (y on x, x on y) is r² — they are reciprocal only when |r| = 1.</li>
+<li><b>Regression through the origin</b> has slope \(\frac{x\cdot y}{x\cdot x}=\cos\theta\cdot\frac{\lVert y\rVert}{\lVert x\rVert}\) — the uncentred cousin, just as cosine is the uncentred cousin of r.</li>
+<li>Regression can include many predictors and estimates each effect <i>holding the others fixed</i>; correlation is always one pair at a time and can be confounded.</li>
+</ul></div>
+
+<h2 id="distances">Choosing a similarity or distance measure</h2>
+<div class="table-wrap"><table>
+<tr><th>Measure</th><th>Sensitive to</th><th>Good for</th></tr>
+<tr><td>Euclidean</td><td>Magnitude and scale of every feature</td><td>Scaled, dense, low-dimensional numeric data; K-means, kNN</td></tr>
+<tr><td>Manhattan (L1)</td><td>Magnitude, less dominated by one large difference</td><td>High-dimensional or grid-like data, outliers</td></tr>
+<tr><td>Cosine</td><td>Direction only</td><td>Text, embeddings, sparse counts, when length means “volume” not “type”</td></tr>
+<tr><td>Pearson correlation distance (1 − r)</td><td>Shape of the profile after removing each row's mean</td><td>User ratings where some people rate everything high (centred cosine), gene-expression profiles</td></tr>
+<tr><td>Jaccard</td><td>Overlap of sets</td><td>Binary/sets: tags, purchased items, shingles for near-duplicate detection</td></tr>
+<tr><td>Hamming</td><td>Number of differing positions</td><td>Equal-length codes, binary features</td></tr>
+<tr><td>Mahalanobis</td><td>Correlations between features (uses Σ⁻¹)</td><td>Correlated numeric features, multivariate outlier detection</td></tr>
+</table></div>
+
+<h2 id="pitfalls">How correlation misleads</h2>
+<ul>
+<li><b>Non-linearity:</b> y = x² on symmetric data has r ≈ 0 although y is fully determined by x. Zero correlation ≠ independence (except for jointly normal variables).</li>
+<li><b>Outliers:</b> one point can create or destroy a correlation. Plot first; compare with Spearman.</li>
+<li><b>Anscombe's quartet:</b> four datasets with the same means, variances, r and regression line, and totally different pictures.</li>
+<li><b>Restricted range:</b> correlating test scores with job performance only among <i>hired</i> people understates the relationship.</li>
+<li><b>Spurious correlation:</b> two trending time series (ice-cream sales and the population of a city) correlate strongly by sharing time. Difference them first.</li>
+<li><b>Confounding & Simpson's paradox:</b> a third variable drives both; the sign can even reverse within subgroups.</li>
+<li><b>Ecological fallacy:</b> correlation between group averages (countries) need not hold for individuals.</li>
+<li><b>Significance ≠ strength:</b> with a million rows, r = 0.01 is “significant” and practically meaningless.</li>
+</ul>
+
+<h2 id="simulation">Simulation vs machine learning</h2>
+<div class="callout layman"><div class="tag">🧒 In plain English</div><p><b>Simulation goes from rules to data:</b> you write down how you believe the system works (customers arrive at random, each checkout takes 2–5 minutes) and let the computer play it out thousands of times to see what happens — average queue length, chance of a stock-out. <b>Machine learning goes from data to rules:</b> you have records of what happened and let the algorithm learn a pattern that predicts outcomes for new cases. Simulation needs you to know the mechanism; ML needs you to have the data.</p></div>
+<div class="table-wrap"><table>
+<tr><th></th><th>Simulation</th><th>Machine learning</th></tr>
+<tr><td>Direction</td><td>Model of the mechanism → generated outcomes</td><td>Observed data → learned model</td></tr>
+<tr><td>Main input</td><td>Assumptions: structure, rules, parameter distributions</td><td>Historical (usually labelled) data</td></tr>
+<tr><td>Typical question</td><td>“What would happen if…?” — scenarios, policies never tried, risk distributions</td><td>“What will happen for this case?” — predictions similar to past cases</td></tr>
+<tr><td>Output</td><td>A distribution of outcomes under each scenario</td><td>A prediction (and possibly its uncertainty) per input</td></tr>
+<tr><td>Outside past experience</td><td>Can explore it, if the mechanism is right</td><td>Unreliable — extrapolation beyond the training distribution</td></tr>
+<tr><td>Validated by</td><td>Calibration against reality, face validity with experts, sensitivity analysis</td><td>Held-out data, cross-validation, online tests</td></tr>
+<tr><td>Main risk</td><td>Wrong assumptions → confidently wrong answers</td><td>Biased or unrepresentative data, leakage, drift</td></tr>
+<tr><td>Examples</td><td>Monte Carlo risk models, queueing/discrete-event simulation of a call centre, agent-based epidemic models, physics engines, A/B power by simulation</td><td>Churn prediction, fraud scoring, demand forecasting, recommendations</td></tr>
+</table></div>
+<p><b>Families of simulation:</b> <i>Monte Carlo</i> (random sampling to estimate a quantity or a distribution), <i>discrete-event</i> (queues, inventory, factories — events at points in time), <i>agent-based</i> (many interacting individuals: epidemics, markets, traffic), <i>system dynamics</i> (stocks and flows with feedback loops), <i>physics-based</i> (fluid dynamics, robotics).</p>
+<p><b>They work best together:</b></p>
+<ul>
+<li><b>ML feeds simulation:</b> a demand-forecasting model supplies the demand distribution to an inventory simulation that picks the reorder policy.</li>
+<li><b>Simulation feeds ML:</b> synthetic training data (rare fraud patterns, self-driving edge cases), and environments for reinforcement learning.</li>
+<li><b>ML replaces slow simulation:</b> a <i>surrogate model</i> trained on thousands of simulator runs answers in milliseconds — used for optimisation and design search.</li>
+<li><b>Digital twins</b> combine a simulator of a real asset with ML models continuously calibrated on its sensor data.</li>
+<li><b>Sim-to-real gap:</b> models trained purely on simulated data often fail on real data because the simulator misses real-world noise — fixed with domain randomisation and fine-tuning on real data.</li>
+<li><b>Statistics itself uses simulation:</b> bootstrap confidence intervals, permutation tests and power analysis by simulation are Monte Carlo methods.</li>
+</ul>
+
+<h2 id="montecarlo">Monte Carlo simulation</h2>
+<p>Estimate a quantity by generating many random samples from a known process and averaging. If X₁, …, Xₙ are simulated outcomes, \(\hat\mu=\frac1n\sum X_i\) has standard error \(\sigma/\sqrt n\) — so precision improves only with the square root of the number of runs, regardless of the problem's dimension (which is why Monte Carlo beats grid integration in high dimensions).</p>
+<div class="widget" data-demo="montecarlo"><div class="widget-title">Estimate π by throwing random darts</div><div class="widget-sub">The fraction of darts inside the quarter circle estimates π/4. Watch the error band narrow as 1/√n.</div></div>
+<p><b>Worked example:</b> P(sum of two dice ≥ 10). Exact answer: 6 of 36 outcomes = 0.1667. Simulating 1,000 rolls gives an estimate with standard error √(0.1667 × 0.8333 / 1000) ≈ 0.012, so you'd expect results between about 0.14 and 0.19; 100,000 rolls cut that to ±0.0024. In an interview, say both numbers — the estimate and its Monte Carlo error.</p>
+
+<h2 id="statsvsml">Statistical modelling vs machine learning</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>Classical statistics</th><th>Machine learning</th></tr>
+<tr><td>Main goal</td><td>Inference: understand relationships, quantify uncertainty, test hypotheses</td><td>Prediction: minimise error on new data</td></tr>
+<tr><td>Typical models</td><td>Linear/logistic regression, GLMs, ANOVA, survival models</td><td>Trees, ensembles, neural networks, kernel methods (plus the same linear models)</td></tr>
+<tr><td>Assumptions</td><td>Explicit: distributions, linearity, independence</td><td>Fewer; judged by validation performance</td></tr>
+<tr><td>Output</td><td>Coefficients with confidence intervals and p-values</td><td>Predictions; explanations added afterwards (SHAP)</td></tr>
+<tr><td>Data size</td><td>Works with small samples</td><td>Benefits from large data</td></tr>
+<tr><td>Validation</td><td>Goodness of fit, residual diagnostics</td><td>Hold-out sets, cross-validation</td></tr>
+</table></div>
+<p>The line is blurry — logistic regression is both — but the <i>goal</i> differs, and that drives choices: for “does this drug work?” you need unbiased effects and CIs; for “which customer will churn?” you need accuracy on next month's customers.</p>
+
+<h2 id="prob">Probability toolkit for interviews</h2>
+<div class="table-wrap"><table>
+<tr><th>Idea</th><th>Formula / rule</th><th>Classic question</th></tr>
+<tr><td>Conditional probability</td><td>\(P(A\mid B)=P(A\cap B)/P(B)\)</td><td>Two children, at least one is a boy: P(both boys) = 1/3</td></tr>
+<tr><td>Bayes' rule</td><td>\(P(A\mid B)=P(B\mid A)P(A)/P(B)\)</td><td>Rare disease, accurate test → most positives are false (base-rate fallacy)</td></tr>
+<tr><td>Independence vs mutually exclusive</td><td>Independent: P(A∩B) = P(A)P(B). Exclusive: P(A∩B) = 0</td><td>Exclusive events with non-zero probability are <i>dependent</i></td></tr>
+<tr><td>Complement for “at least one”</td><td>\(1-(1-p)^n\)</td><td>Birthday problem: with 23 people P(shared birthday) ≈ 0.507</td></tr>
+<tr><td>Expected value & linearity</td><td>E[X + Y] = E[X] + E[Y] always</td><td>Expected rolls to see a 6 = 1/p = 6 (geometric)</td></tr>
+<tr><td>Poisson process</td><td>P(k events) = e<sup>−λ</sup>λ<sup>k</sup>/k!</td><td>3 calls/hour → P(no call in 20 min) = e<sup>−1</sup> ≈ 0.37</td></tr>
+<tr><td>Law of total probability</td><td>\(P(B)=\sum_iP(B\mid A_i)P(A_i)\)</td><td>Overall defect rate from per-factory rates</td></tr>
+<tr><td>Maximum likelihood</td><td>Choose parameters that make the observed data most probable</td><td>7 heads in 10 flips → MLE of p = 0.7</td></tr>
+</table></div>
+
+<h2 id="rtm">Regression to the mean</h2>
+<p>Extreme measurements are partly luck, and luck doesn't repeat, so the next measurement of the same thing tends to be closer to average. The top 10% of students on one test score lower (on average) on the next; the worst-performing stores improve next quarter “after the new manager” even if the manager did nothing. Expected follow-up ≈ mean + reliability × (first score − mean).</p>
+<div class="widget" data-demo="regmean"><div class="widget-title">Regression to the mean</div><div class="widget-sub">Each person's score = true skill + luck. Select the top scorers on test 1 and see where they land on test 2.</div></div>
+<p><b>Why it matters in ML/DS:</b> evaluating an intervention only on the worst cases (lowest-engagement users, highest-risk patients) will show spurious improvement — use a randomised control group. It is also the origin of the word “regression”: Galton observed that the children of very tall parents were, on average, less tall.</p>
+
+<h2 id="causal">Correlation, causation and bias</h2>
+<ul>
+<li><b>Confounder:</b> causes both X and Y (temperature → ice-cream sales and drownings). Control for it. <b>Mediator:</b> on the path X → M → Y; controlling for it removes part of the effect you want. <b>Collider:</b> caused by both X and Y; controlling for it <i>creates</i> a spurious association (talent and looks appear negatively related among film stars).</li>
+<li><b>Establishing causation:</b> randomised experiments; otherwise quasi-experiments (difference-in-differences, regression discontinuity, instrumental variables, matching) with explicit assumptions; Bradford Hill-style evidence (dose–response, temporality, consistency).</li>
+<li><b>Sampling biases:</b> selection bias (non-random sample), survivorship bias (only the survivors are observed — returning planes, successful startups), non-response bias, convenience sampling, measurement bias, time-period bias.</li>
+<li><b>Sampling methods:</b> simple random, stratified (sample within groups to guarantee representation — like stratified CV), cluster (sample whole groups, cheaper but noisier), systematic (every k-th item).</li>
+</ul>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="cs-scratch" data-title="Variance, covariance, correlation and cosine from scratch">
+<div class="lab-task"><p>Using only basic NumPy operations (no <code>np.var</code>, <code>np.cov</code>, <code>np.corrcoef</code>), write <code>var(a)</code> (sample, n − 1), <code>cov(a, b)</code>, <code>pearson(a, b)</code> and <code>cosine(a, b)</code>. Then reproduce the worked example: x = hours, y = scores.</p></div>
+<div data-part="hint">pearson = cov(a, b) / √(var(a)·var(b)); cosine = a·b / (‖a‖·‖b‖) with <code>np.sqrt((a**2).sum())</code> for the norm.</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+
+def var(a):
+    return None  # TODO
+
+def cov(a, b):
+    return None  # TODO
+
+def pearson(a, b):
+    return None  # TODO
+
+def cosine(a, b):
+    return None  # TODO
+
+x = np.array([2, 4, 6, 8, 10.]); y = np.array([50, 55, 65, 70, 85.])
+print(var(x), var(y), cov(x, y), pearson(x, y), cosine(x, y))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+
+def var(a):
+    a = np.asarray(a, float)
+    return ((a - a.mean()) ** 2).sum() / (len(a) - 1)
+
+def cov(a, b):
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    return ((a - a.mean()) * (b - b.mean())).sum() / (len(a) - 1)
+
+def pearson(a, b):
+    return cov(a, b) / np.sqrt(var(a) * var(b))
+
+def cosine(a, b):
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    return (a * b).sum() / (np.sqrt((a ** 2).sum()) * np.sqrt((b ** 2).sum()))
+
+x = np.array([2, 4, 6, 8, 10.]); y = np.array([50, 55, 65, 70, 85.])
+print(f"var x = {var(x)}, var y = {var(y)}, cov = {cov(x, y)}")
+print(f"pearson r = {pearson(x, y):.4f}, cosine = {cosine(x, y):.4f}")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+rng = np.random.default_rng(0)
+a, b = rng.normal(size=50), rng.normal(size=50) + 0.5
+assert var(x) is not None and abs(var(x) - 10) < 1e-12 and abs(var(a) - np.var(a, ddof=1)) < 1e-12, "var should divide by n - 1"
+assert abs(cov(x, y) - 42.5) < 1e-12 and abs(cov(a, b) - np.cov(a, b)[0, 1]) < 1e-12, "cov is wrong"
+assert abs(pearson(a, b) - np.corrcoef(a, b)[0, 1]) < 1e-12, "pearson is wrong"
+assert abs(cosine(x, y) - 0.966386) < 1e-6, "cosine is wrong (it uses raw, uncentred vectors)"
+print("All four match the worked example and NumPy.")
+</script>
+</div>
+
+<div class="lab" data-id="cs-links" data-title="Prove the links: r = centred cosine, slope = r·sy/sx">
+<div class="lab-task"><p>For the random data below compute and store: <code>r</code> (Pearson), <code>cos_centred</code> (cosine of the mean-centred vectors), <code>slope</code> (OLS slope of y on x via <code>np.polyfit</code>), and <code>slope_from_r</code> = r·s<sub>y</sub>/s<sub>x</sub>. Then show what adding 100 to y does: store <code>cos_raw</code> and <code>cos_raw_shift</code> (cosine of x with y and with y + 100) and <code>r_shift</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+rng = np.random.default_rng(1)
+x = rng.uniform(0, 10, 200)
+y = 3 + 1.8 * x + rng.normal(0, 4, 200)
+cosine = lambda a, b: a @ b / np.linalg.norm(a) / np.linalg.norm(b)
+
+r = cos_centred = slope = slope_from_r = None          # TODO
+cos_raw = cos_raw_shift = r_shift = None               # TODO
+print(r, cos_centred, slope, slope_from_r)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+rng = np.random.default_rng(1)
+x = rng.uniform(0, 10, 200)
+y = 3 + 1.8 * x + rng.normal(0, 4, 200)
+cosine = lambda a, b: a @ b / np.linalg.norm(a) / np.linalg.norm(b)
+
+r = np.corrcoef(x, y)[0, 1]
+cos_centred = cosine(x - x.mean(), y - y.mean())
+slope = np.polyfit(x, y, 1)[0]
+slope_from_r = r * y.std(ddof=1) / x.std(ddof=1)
+cos_raw, cos_raw_shift, r_shift = cosine(x, y), cosine(x, y + 100), np.corrcoef(x, y + 100)[0, 1]
+print(f"r = {r:.4f} | centred cosine = {cos_centred:.4f}")
+print(f"OLS slope = {slope:.4f} | r·sy/sx = {slope_from_r:.4f}")
+print(f"raw cosine {cos_raw:.4f} → after y + 100: {cos_raw_shift:.4f}; r stays {r_shift:.4f}")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert None not in (r, cos_centred, slope, slope_from_r, cos_raw, cos_raw_shift, r_shift), "fill every variable"
+assert abs(r - cos_centred) < 1e-12, "r should equal the cosine of the centred vectors"
+assert abs(slope - slope_from_r) < 1e-9, "slope should equal r * sy / sx"
+assert abs(r - r_shift) < 1e-12 and abs(cos_raw - cos_raw_shift) > 1e-3, "shifting y changes cosine but not r"
+print("Links confirmed: Pearson = centred cosine; slope = r·sy/sx; cosine isn't shift-invariant.")
+</script>
+</div>
+
+<div class="lab" data-id="cs-dependence" data-title="Zero correlation, strong dependence">
+<div class="lab-task"><p>With y = x² + small noise and x symmetric around 0, compute Pearson <code>r</code>, Spearman <code>rho</code> (<code>scipy.stats.spearmanr</code>) and mutual information <code>mi</code> (<code>sklearn.feature_selection.mutual_info_regression</code>, <code>random_state=0</code>). Which measure notices that y depends on x?</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from scipy.stats import spearmanr
+from sklearn.feature_selection import mutual_info_regression
+rng = np.random.default_rng(2)
+x = rng.uniform(-3, 3, 1000)
+y = x ** 2 + rng.normal(0, 0.3, 1000)
+r = rho = mi = None   # TODO
+print(r, rho, mi)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from scipy.stats import spearmanr
+from sklearn.feature_selection import mutual_info_regression
+rng = np.random.default_rng(2)
+x = rng.uniform(-3, 3, 1000)
+y = x ** 2 + rng.normal(0, 0.3, 1000)
+r = np.corrcoef(x, y)[0, 1]
+rho = spearmanr(x, y).correlation
+mi = mutual_info_regression(x.reshape(-1, 1), y, random_state=0)[0]
+print(f"Pearson r = {r:.3f} | Spearman = {rho:.3f} | mutual information = {mi:.3f} nats")
+print("Pearson and Spearman both miss a non-monotonic relationship; mutual information catches it.")
+</script>
+<script type="text/x-python" data-part="check">
+assert None not in (r, rho, mi), "compute r, rho and mi"
+assert abs(r) < 0.1 and abs(rho) < 0.1, "both correlations should be near zero for a U shape"
+assert mi > 1.0, "mutual information should be large"
+print(f"r = {r:.3f}, but MI = {mi:.2f}: zero correlation is not independence.")
+</script>
+</div>
+
+<div class="lab" data-id="cs-montecarlo" data-title="Monte Carlo: the birthday problem">
+<div class="lab-task"><p>Estimate the probability that at least two of 23 people share a birthday by simulating 20,000 groups (birthdays uniform over 365 days; use <code>np.random.default_rng(0)</code>). Store the estimate in <code>p_sim</code>, its standard error in <code>se</code>, and the exact answer in <code>p_exact</code> = 1 − ∏(365 − i)/365.</p></div>
+<div data-part="hint">Draw a (20000, 23) integer array. A group has a shared birthday if <code>len(np.unique(row)) &lt; 23</code> — or sort each row and check for equal neighbours: <code>(np.diff(np.sort(B, axis=1), axis=1) == 0).any(axis=1)</code>.</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+rng = np.random.default_rng(0)
+n_sims, k = 20000, 23
+p_sim = se = p_exact = None   # TODO
+print(p_sim, se, p_exact)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+rng = np.random.default_rng(0)
+n_sims, k = 20000, 23
+B = rng.integers(0, 365, size=(n_sims, k))
+shared = (np.diff(np.sort(B, axis=1), axis=1) == 0).any(axis=1)
+p_sim = shared.mean()
+se = np.sqrt(p_sim * (1 - p_sim) / n_sims)
+p_exact = 1 - np.prod([(365 - i) / 365 for i in range(k)])
+print(f"simulated {p_sim:.4f} ± {1.96 * se:.4f} (95%) vs exact {p_exact:.4f}")
+</script>
+<script type="text/x-python" data-part="check">
+assert None not in (p_sim, se, p_exact), "compute p_sim, se and p_exact"
+assert abs(p_exact - 0.507297) < 1e-5, "exact answer is about 0.5073"
+assert abs(p_sim - p_exact) < 4 * se and 0.002 < se < 0.006, "simulation should agree with the exact value within its error"
+print("Simulation and exact answer agree within Monte Carlo error.")
+</script>
+</div>
+
+<div class="lab" data-id="cs-simulation" data-title="Simulation for a decision ML can't make: how much stock to order">
+<div class="lab-task"><p>A shop buys a perishable item at ₹6 and sells it at ₹10; unsold units are wasted. Daily demand ~ Normal(100, 20). There's no history of what happens at different order sizes, so there's nothing to train a model on — but we can <b>simulate</b>. For each order quantity q in 60…140, simulate 20,000 days and compute mean profit = 10·min(q, demand) − 6·q. Store the best q in <code>best_q</code> and the profit curve in a dict <code>profit</code>. Compare with the theory: q* = μ + σ·Φ⁻¹((10 − 6)/10) ≈ 94.9.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from scipy.stats import norm
+rng = np.random.default_rng(0)
+demand = rng.normal(100, 20, 20000).clip(0)
+profit = {}
+# TODO: fill profit[q] for q in range(60, 141)
+best_q = None
+print(best_q)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from scipy.stats import norm
+import matplotlib.pyplot as plt
+rng = np.random.default_rng(0)
+demand = rng.normal(100, 20, 20000).clip(0)          # the same simulated days for every q (common random numbers)
+profit = {q: (10 * np.minimum(q, demand) - 6 * q).mean() for q in range(60, 141)}
+best_q = max(profit, key=profit.get)
+q_star = 100 + 20 * norm.ppf((10 - 6) / 10)
+plt.figure(figsize=(6, 3)); plt.plot(list(profit), list(profit.values())); plt.axvline(q_star, ls="--", c="C3")
+plt.xlabel("order quantity"); plt.ylabel("mean daily profit (₹)"); plt.tight_layout(); plt.show()
+print(f"simulation picks q = {best_q} (₹{profit[best_q]:.1f}/day); theory q* = {q_star:.1f}")
+print("Ordering the mean demand (100) is not optimal: each unsold unit costs ₹6, each lost sale only ₹4.")
+</script>
+<script type="text/x-python" data-part="check">
+assert best_q is not None and len(profit) == 81, "profit should cover q = 60..140"
+assert abs(best_q - 94.9) <= 3, f"best q should be near 95, got {best_q}"
+assert profit[best_q] > profit[100], "the best order should beat ordering the mean demand"
+print("Simulation found the optimal policy without any training data.")
+</script>
+</div>
+
+<div class="lab" data-id="cs-rtm" data-title="Simulate regression to the mean">
+<div class="lab-task"><p>5,000 students: skill ~ N(0, 1); each test score = skill + noise ~ N(0, 1). Select the top 10% on test 1. Store their mean on test 1 in <code>m1</code> and on test 2 in <code>m2</code>. Since reliability is 0.5, theory says m2 ≈ 0.5 × m1.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+rng = np.random.default_rng(3)
+skill = rng.normal(size=5000)
+t1 = skill + rng.normal(size=5000)
+t2 = skill + rng.normal(size=5000)
+m1 = m2 = None   # TODO
+print(m1, m2)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+rng = np.random.default_rng(3)
+skill = rng.normal(size=5000)
+t1 = skill + rng.normal(size=5000)
+t2 = skill + rng.normal(size=5000)
+top = t1 >= np.quantile(t1, 0.9)
+m1, m2 = t1[top].mean(), t2[top].mean()
+print(f"top 10% on test 1: {m1:.2f} → test 2: {m2:.2f} (theory ≈ {0.5 * m1:.2f}); nobody got worse, the luck didn't repeat")
+</script>
+<script type="text/x-python" data-part="check">
+assert None not in (m1, m2), "compute m1 and m2"
+assert m1 > 2.2 and m2 < m1 * 0.6 and abs(m2 - 0.5 * m1) < 0.15, "m2 should be about half of m1"
+print("Regression to the mean reproduced.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="core-stats-b349401" data-l="1"><summary>What is variance, and why do we square the deviations?</summary><div class="ans"><p>Variance is the average squared distance of values from their mean — a measure of spread. Squaring makes all deviations positive (otherwise they sum to zero), penalises large deviations more, and gives convenient mathematics: variances of independent variables add, and squared error is differentiable. The cost is that variance is in squared units, so we usually report the standard deviation (its square root) for interpretation. Absolute deviations (MAD) are a robust alternative.</p></div></details>
+<details class="qa" data-id="core-stats-8d79ca6" data-l="2"><summary>Why does the sample variance divide by n − 1?</summary><div class="ans"><p>Deviations are measured from the sample mean, which is computed from the same data and sits closer to the data than the true mean does, so the sum of squared deviations is systematically too small. Only n − 1 deviations are free (they must sum to zero). Dividing by n − 1 corrects the bias exactly: E[s²] = σ². It matters for small n; for large n the difference is negligible. (The square root, s, is still slightly biased for σ.)</p></div></details>
+<details class="qa" data-id="core-stats-09a1783" data-l="1"><summary>Standard deviation vs standard error?</summary><div class="ans"><p>Standard deviation describes how spread out individual observations are. Standard error describes how uncertain an estimate is — for the mean, SE = SD/√n. More data doesn't change the SD of the population but shrinks the SE. Confidence intervals and tests use SE; descriptions of the data use SD.</p></div></details>
+<details class="qa" data-id="core-stats-bc653f4" data-l="1"><summary>What is covariance and what is its weakness?</summary><div class="ans"><p>The average product of the deviations of two variables from their means: positive when they tend to be above/below their means together, negative when they move oppositely, near zero with no linear relationship. Weakness: its magnitude depends on the units (multiply one variable by 1,000 and covariance grows 1,000-fold), so it can't tell you how strong the relationship is or compare pairs of variables. Only its sign is easy to read.</p></div></details>
+<details class="qa" data-id="core-stats-50d2d3f" data-l="1"><summary>What is the difference between covariance and correlation?</summary><div class="ans"><p>Correlation is covariance standardised by both standard deviations: r = Cov(X, Y)/(s_X s_Y). That makes it unit-free and bounded in [−1, 1], so it measures the strength (not just the direction) of a linear relationship and can be compared across variable pairs. Rescaling or shifting either variable leaves correlation unchanged; rescaling changes covariance. Covariance is still needed in its own right — e.g. the covariance matrix in PCA, portfolio variance, multivariate Gaussians.</p></div></details>
+<details class="qa" data-id="core-stats-52f5f72" data-l="2"><summary>How is correlation different from regression?</summary><div class="ans"><p>Correlation is a symmetric, unit-free summary of how tightly two variables move together linearly — r(X, Y) = r(Y, X), no prediction, no direction. Regression fits a directional equation to predict Y from X: the slope has units (Y per unit X), regressing Y on X differs from X on Y, it gives predictions and residuals, and with several predictors it estimates each effect holding the others fixed, with confidence intervals. They're linked: slope = r·s_y/s_x, and in simple regression R² = r². So with standardised variables the slope equals r.</p></div></details>
+<details class="qa" data-id="core-stats-7a974a3" data-l="2"><summary>What is cosine similarity and how is it different from Pearson correlation?</summary><div class="ans"><p>Cosine similarity is the cosine of the angle between two vectors: A·B/(‖A‖‖B‖). It ignores length and measures only direction, from −1 to 1. Pearson correlation is exactly the cosine similarity of the two vectors after subtracting each one's mean. So the difference is centring: cosine is affected by adding a constant to a vector, correlation isn't. Practically, cosine compares rows (documents, embeddings, users) where magnitude means “how much” rather than “what kind”; correlation compares variables.</p></div></details>
+<details class="qa" data-id="core-stats-893058a" data-l="2"><summary>How does cosine similarity relate to regression?</summary><div class="ans"><p>Both are built from dot products. Regression through the origin (no intercept) has slope x·y/x·x = cosθ·‖y‖/‖x‖ — cosine times a ratio of lengths. Ordinary regression with an intercept centres the data first, turning cosine into Pearson r, and its slope is r·s_y/s_x. But the purposes differ: cosine is a symmetric similarity score between two vectors with no units; regression is an asymmetric prediction model with units, residuals and inference. And note that cosine usually compares two observations across features, while regression relates columns across observations.</p></div></details>
+<details class="qa" data-id="core-stats-ad1cdc9" data-l="2"><summary>When would you use cosine similarity instead of Euclidean distance?</summary><div class="ans"><p>When direction matters but magnitude doesn't: text (document length shouldn't matter, only the mix of words), embeddings, user preference profiles, high-dimensional sparse vectors where Euclidean distances are dominated by vector length and concentrate. Use Euclidean when absolute size matters (physical measurements, scaled numeric features in K-means). For L2-normalised vectors the two give identical rankings since ‖A − B‖² = 2 − 2cosθ.</p></div></details>
+<details class="qa" data-id="core-stats-9fc45af" data-l="1"><summary>Does zero correlation mean the variables are independent?</summary><div class="ans"><p>No. Pearson correlation measures only linear association. y = x² with x symmetric around 0 has correlation ≈ 0 even though y is a function of x. Independence implies zero correlation, not the reverse — except when the variables are jointly normal. To detect non-linear dependence use scatter plots, Spearman (for monotonic), mutual information, distance correlation or a flexible model.</p></div></details>
+<details class="qa" data-id="core-stats-80c80a6" data-l="2"><summary>Pearson vs Spearman vs Kendall — when do you use each?</summary><div class="ans"><p>Pearson: linear relationships between roughly continuous, outlier-free variables. Spearman: Pearson on ranks — any monotonic relationship, robust to outliers, ordinal data. Kendall's τ: based on concordant/discordant pairs — better for small samples and many ties, with a direct probability interpretation. If Pearson and Spearman disagree a lot, look for outliers or curvature.</p></div></details>
+<details class="qa" data-id="core-stats-d253f05" data-l="2"><summary>A correlation of 0.3 is statistically significant. Is it a strong relationship?</summary><div class="ans"><p>Significance only says it's unlikely to be exactly zero; with a large sample even tiny correlations are significant. Strength: r = 0.3 means r² = 0.09 — a straight line explains 9% of the variance. Whether that's useful depends on the context (in noisy human behaviour it can be valuable; for prediction of an individual it's weak). Report the effect size and confidence interval, not just the p-value.</p></div></details>
+<details class="qa" data-id="core-stats-dee385f" data-l="2"><summary>Give ways a correlation can mislead you.</summary><div class="ans"><p>Non-linear relationships (r ≈ 0 despite dependence); outliers creating or masking correlation; confounders (both driven by a third variable); Simpson's paradox (reverses within subgroups); restricted range (only hired candidates); spurious correlation between trending time series; ecological fallacy (group-level correlation applied to individuals); reverse causation; and large samples making trivial correlations “significant”. Always plot the data — Anscombe's quartet shows four datasets with identical r and very different shapes.</p></div></details>
+<details class="qa" data-id="core-stats-b3e1cc0" data-l="2"><summary>What is a covariance matrix and where is it used in ML?</summary><div class="ans"><p>A d × d matrix with variances on the diagonal and pairwise covariances off the diagonal; symmetric and positive semi-definite. Uses: PCA (its eigenvectors are the principal components); multivariate normal distributions, GMMs, LDA/QDA; Mahalanobis distance for outliers; portfolio risk; detecting multicollinearity; Kalman filters. Estimating it is hard in high dimensions (d² parameters), so shrinkage estimators (Ledoit–Wolf) are used.</p></div></details>
+<details class="qa" data-id="core-stats-e55363b" data-l="2"><summary>What is Var(X + Y) and Var(X − Y)? Why does it matter?</summary><div class="ans"><p>Var(X ± Y) = Var(X) + Var(Y) ± 2Cov(X, Y). For independent variables the covariance term vanishes and variances add (even for a difference). Applications: an A/B test difference has variance σ²_A/n_A + σ²_B/n_B; paired designs reduce variance because the measurements are positively correlated; portfolios of negatively correlated assets have lower risk; averaging correlated models in an ensemble reduces variance less than averaging independent ones.</p></div></details>
+<details class="qa" data-id="core-stats-3762fa6" data-l="2"><summary>What is mutual information and how does it compare with correlation?</summary><div class="ans"><p>Mutual information measures how much knowing one variable reduces uncertainty about the other: I(X; Y) = KL(p(x, y) ‖ p(x)p(y)). It's zero only if the variables are independent and it captures any kind of dependence, linear or not, numeric or categorical. Downsides: it has no sign, its scale isn't bounded like r, and it's harder to estimate from data (needs binning or kNN estimators). Used in feature selection and decision-tree information gain.</p></div></details>
+<details class="qa" data-id="core-stats-9dfc88e" data-l="1"><summary>How is simulation different from machine learning?</summary><div class="ans"><p>Simulation goes from a model of how a system works to generated outcomes: you specify rules and parameter distributions and run them many times to see what happens, including in scenarios never observed. Machine learning goes from observed data to a learned model that predicts outcomes for new cases like those in the data. Simulation needs mechanism knowledge and is validated by calibration and sensitivity analysis; ML needs representative data and is validated on held-out data. Simulation is good for “what if we change the policy?”; ML is good for “what will happen for this customer?”. They're often combined: ML estimates simulation inputs, simulations generate training data, and ML surrogates replace slow simulators.</p></div></details>
+<details class="qa" data-id="core-stats-a050416" data-l="2"><summary>What is Monte Carlo simulation and how accurate is it?</summary><div class="ans"><p>Estimating a quantity (an expectation, probability, integral or distribution) by drawing many random samples from a known process and averaging the results. Its standard error is σ/√n — independent of dimension, but slow: 100 times more samples for one more decimal digit. Report the estimate with its Monte Carlo error. Improvements: variance reduction (antithetic variates, control variates, importance sampling, common random numbers when comparing options), quasi-random sequences.</p></div></details>
+<details class="qa" data-id="core-stats-669d294" data-l="2"><summary>When would you choose simulation over a predictive model?</summary><div class="ans"><p>When there's little or no historical data for the decision (a new warehouse layout, a pricing policy never tried); when you need to evaluate interventions and counterfactuals, not just predict; when the mechanism is well understood (queues, physics, inventory rules); when rare extreme events matter (risk, stress testing); or to quantify uncertainty propagation. Choose ML when you have plenty of representative data and the question is prediction within familiar conditions.</p></div></details>
+<details class="qa" data-id="core-stats-c5eef2d" data-l="3"><summary>What is a surrogate model and the sim-to-real gap?</summary><div class="ans"><p>A surrogate model is an ML model trained on input–output pairs from an expensive simulator, so it can approximate the simulator in milliseconds — used for optimisation, design exploration and real-time control. The sim-to-real gap is the drop in performance when a model trained on simulated data meets real data, because the simulator omits real-world noise, physics or behaviour. Mitigations: domain randomisation, calibrating the simulator against real data, and fine-tuning on a small real dataset.</p></div></details>
+<details class="qa" data-id="core-stats-9bca39c" data-l="2"><summary>How do you validate a simulation model?</summary><div class="ans"><p>Verification: does the code do what the model specifies (unit tests, extreme-value tests, comparison with analytical results for simple cases)? Validation: does the model match reality — reproduce historical outcomes, expert face validity, compare output distributions with observed data. Sensitivity analysis: which assumptions drive the results; uncertainty analysis on inputs. Run enough replications to make Monte Carlo error small and report it.</p></div></details>
+<details class="qa" data-id="core-stats-fb8d158" data-l="2"><summary>Bootstrap, permutation test and Monte Carlo — how are they related?</summary><div class="ans"><p>All three use repeated random sampling. Monte Carlo samples from a <i>known</i> model. The bootstrap samples with replacement from the <i>observed data</i>, treating it as the population, to estimate the sampling distribution of a statistic (standard errors, CIs). A permutation test shuffles labels to build the distribution of a statistic under the null hypothesis of no effect, giving a p-value without distributional assumptions.</p></div></details>
+<details class="qa" data-id="core-stats-00557f7" data-l="2"><summary>What is the difference between statistical modelling and machine learning?</summary><div class="ans"><p>Mostly the goal. Statistical modelling emphasises inference — interpretable parameters, uncertainty, hypothesis tests, explicit assumptions, often with small data. Machine learning emphasises predictive accuracy on new data, judged by validation, with flexible models and fewer assumptions, often with large data. The tools overlap (logistic regression is both) and the line is blurry, but the goal drives the choices of model, validation and what you report.</p></div></details>
+<details class="qa" data-id="core-stats-8c0d635" data-l="1"><summary>Mean vs median — when do you report each?</summary><div class="ans"><p>The mean uses every value and suits symmetric data and totals (revenue = mean × users); it's pulled by outliers and skew. The median is robust and describes the “typical” value in skewed data such as income, house prices or session time. In a right-skewed distribution mean &gt; median. Report both when they differ much, and choose by the question: total budget → mean; typical customer → median.</p></div></details>
+<details class="qa" data-id="core-stats-20c0f73" data-l="2"><summary>What is regression to the mean? Give an example where it misleads.</summary><div class="ans"><p>Extreme observations contain luck, which doesn't repeat, so re-measuring extreme cases yields values closer to the average. Example: the 50 worst-performing stores get a new training programme and improve next quarter — but they would have improved partly anyway. Students who score highest on one test score lower on the next. Fix: compare with a randomised control group selected the same way. Expected next value ≈ mean + reliability × (current − mean).</p></div></details>
+<details class="qa" data-id="core-stats-04b8e8f" data-l="2"><summary>Explain maximum likelihood estimation with a simple example.</summary><div class="ans"><p>Choose the parameter values that make the observed data most probable. Coin flipped 10 times, 7 heads: likelihood L(p) = p⁷(1 − p)³; maximise log L = 7 log p + 3 log(1 − p); derivative 7/p − 3/(1 − p) = 0 → p̂ = 0.7. MLE gives the sample mean for a normal mean, and minimising squared error in regression is MLE under Gaussian noise; log-loss is MLE for Bernoulli outcomes. MLEs are consistent and efficient for large samples but can overfit small ones — adding a prior gives MAP.</p></div></details>
+<details class="qa" data-id="core-stats-f43f6fd" data-l="2"><summary>Frequentist vs Bayesian statistics — what's the difference?</summary><div class="ans"><p>Frequentists treat parameters as fixed unknowns and probability as long-run frequency; they report point estimates, confidence intervals and p-values about the procedure. Bayesians treat parameters as random with a prior distribution, update it with the likelihood to get a posterior, and report credible intervals (“95% probability the effect lies here”) and probabilities of hypotheses. Bayesian methods incorporate prior knowledge and handle small samples and sequential decisions naturally, at the cost of choosing priors and heavier computation.</p></div></details>
+<details class="qa" data-id="core-stats-bfdcb0b" data-l="1"><summary>Two children, at least one is a boy. What is the probability both are boys?</summary><div class="ans"><p>Equally likely families: BB, BG, GB, GG. “At least one boy” rules out GG, leaving three, of which one is BB → 1/3. (If you're told the <i>elder</i> is a boy, the answer is 1/2 — the information changes the conditioning set.) The point interviewers want: define the sample space and condition on exactly what you know.</p></div></details>
+<details class="qa" data-id="core-stats-aeddb77" data-l="1"><summary>On average, how many rolls of a die until you see a 6? How many coin flips until two heads in a row?</summary><div class="ans"><p>Rolls to a 6: geometric with p = 1/6, mean 1/p = 6. Two heads in a row: let E be the expected flips from the start. Condition on the first flips: T (prob ½) wastes one flip → back to start; HT (prob ¼) wastes two; HH (prob ¼) finishes in two. E = ½(1 + E) + ¼(2 + E) + ¼·2 → E = 6. Setting up recursive expectations is the reusable trick.</p></div></details>
+<details class="qa" data-id="core-stats-c624b2c" data-l="2"><summary>Calls arrive at 3 per hour. What is the probability of no calls in 20 minutes?</summary><div class="ans"><p>Poisson process: in 20 minutes the expected count is λ = 3 × 1/3 = 1. P(0) = e^{−1} ≈ 0.368. Equivalently, inter-arrival times are exponential with rate 3/hour: P(wait &gt; 1/3 hour) = e^{−3 × 1/3}. The exponential is memoryless — having waited 10 minutes doesn't change the remaining wait distribution.</p></div></details>
+<details class="qa" data-id="core-stats-32c7fc5" data-l="2"><summary>What's the difference between independent and mutually exclusive events?</summary><div class="ans"><p>Independent: knowing one occurred doesn't change the probability of the other, P(A ∩ B) = P(A)P(B). Mutually exclusive: they can't both happen, P(A ∩ B) = 0. Two mutually exclusive events with non-zero probabilities are therefore strongly <i>dependent</i>: if A happened, B certainly didn't.</p></div></details>
+<details class="qa" data-id="core-stats-0eab5b3" data-l="2"><summary>What is the birthday problem and why do data scientists care?</summary><div class="ans"><p>With 23 people, the probability that at least two share a birthday is about 50.7%, because the number of pairs (253) grows quadratically. Computed via the complement: 1 − ∏(365 − i)/365. Relevance: hash collisions and ID collisions, how quickly duplicates appear when sampling, and the general lesson that “some coincidence among many comparisons” is likely — the same reason multiple testing produces false positives.</p></div></details>
+<details class="qa" data-id="core-stats-f1f4235" data-l="2"><summary>What is the difference between a confounder, a mediator and a collider?</summary><div class="ans"><p>Confounder: causes both treatment and outcome (age affects both exercise and health) — adjust for it to remove bias. Mediator: lies on the causal path from treatment to outcome (exercise → weight → health) — adjusting for it removes part of the effect you want to measure. Collider: caused by both treatment and outcome — adjusting for or selecting on it creates a spurious association (Berkson's paradox: among hospital patients, two unrelated diseases look negatively correlated). Draw the causal graph before choosing controls.</p></div></details>
+<details class="qa" data-id="core-stats-41e5fdb" data-l="2"><summary>What is survivorship bias? Give an ML example.</summary><div class="ans"><p>Drawing conclusions only from cases that “survived” a selection process. Classic: armour was proposed where returning planes had bullet holes — but planes hit elsewhere never returned. ML examples: training a churn model only on customers still active at a later date; a credit model trained only on approved loans; a stock-picking model trained on companies still listed today; evaluating a recommender only on items that were shown. Fix: reconstruct the full population at the decision point (point-in-time data).</p></div></details>
+<details class="qa" data-id="core-stats-2b32356" data-l="2"><summary>Statistical significance vs practical significance?</summary><div class="ans"><p>Statistical significance says an effect is unlikely to be exactly zero given the noise; with enough data, tiny effects become significant. Practical significance asks whether the effect is big enough to matter for the decision (cost, revenue, user experience). Report effect sizes with confidence intervals (e.g. +0.2 pp conversion, CI 0.05–0.35 pp, worth ₹X/month) and compare with a minimum effect of interest decided in advance.</p></div></details>
+<details class="qa" data-id="core-stats-80ea4ee" data-l="2"><summary>Parametric vs non-parametric tests — when do you use non-parametric ones?</summary><div class="ans"><p>Parametric tests (t-test, ANOVA) assume a distribution (roughly normal means, equal variances) and are more powerful when assumptions hold. Non-parametric tests (Mann–Whitney U, Wilcoxon signed-rank, Kruskal–Wallis, permutation tests) make fewer assumptions and work on ranks — use them for small samples from clearly non-normal data, ordinal data, or heavy outliers. With large samples, the CLT often makes t-tests on means fine even for skewed data.</p></div></details>
+<details class="qa" data-id="core-stats-bfe6efd" data-l="2"><summary>How do you check whether data are normally distributed, and does it matter?</summary><div class="ans"><p>Visual checks first: histogram and Q-Q plot (points on the line if normal). Formal tests (Shapiro–Wilk, Kolmogorov–Smirnov, Anderson–Darling) reject trivial deviations in large samples and lack power in small ones. Whether it matters depends on use: for linear regression it's the residuals, not features, and only for small-sample inference; t-tests on means rely on the CLT; many ML models assume nothing about normality.</p></div></details>
+<details class="qa" data-id="core-stats-98a9d1e" data-l="3"><summary>What is a heavy-tailed distribution and why should you care?</summary><div class="ans"><p>One where extreme values are far more likely than under a normal distribution (power laws, log-normal-like revenue, claim sizes, wealth). Consequences: the sample mean converges slowly and is dominated by a few observations; the variance may be huge or infinite; A/B tests on revenue need many more users; squared-error models chase outliers. Responses: use medians/quantiles, log transforms, winsorising, robust losses, bootstrap CIs, and analyse the tail separately.</p></div></details>
+<details class="qa" data-id="core-stats-a0083cc" data-l="2"><summary>What is the bias–variance decomposition of an estimator's error?</summary><div class="ans"><p>MSE(θ̂) = Bias(θ̂)² + Var(θ̂). An unbiased estimator isn't automatically best: a slightly biased one with much lower variance can have smaller MSE — the logic behind shrinkage (Ridge regression, James–Stein). An estimator is consistent if it converges to the true value as n grows. The same decomposition, applied to predictions, gives the bias–variance trade-off of ML models.</p></div></details>
+<details class="qa" data-id="core-stats-a9b3fa2" data-l="3"><summary>What is KL divergence, and how is it related to cross-entropy?</summary><div class="ans"><p>KL(P‖Q) = Σ p(x) log(p(x)/q(x)) measures how much extra information is needed when using Q to approximate P; it's ≥ 0, zero only when P = Q, and not symmetric. Cross-entropy H(P, Q) = H(P) + KL(P‖Q); since the true label distribution's entropy H(P) is fixed, minimising log-loss (cross-entropy) is the same as minimising KL from the data to the model. Also used in t-SNE, VAEs, drift detection (alongside PSI and Jensen–Shannon).</p></div></details>
+<details class="qa" data-id="core-stats-88398a5" data-l="2"><summary>Stratified vs cluster vs systematic sampling — when do you use each?</summary><div class="ans"><p>Stratified: split the population into groups (region, class) and sample within each — guarantees representation and reduces variance; the idea behind stratified train/test splits. Cluster: randomly pick whole groups (stores, schools) and survey everyone in them — cheaper logistics but higher variance because members of a cluster are similar. Systematic: every k-th unit from a list — simple, but dangerous if the list has a periodic pattern.</p></div></details>
+</div>
+</main>
+</body>
+</html>
