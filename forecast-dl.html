@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deep learning for forecasting: LSTM to foundation models · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/demos4.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="forecast-dl">
+<main>
+<div class="eyebrow">Forecasting · Level 4 · Neural networks for time series</div>
+<h1>Deep learning for forecasting: RNN, LSTM, GRU → N-BEATS, TFT, PatchTST → foundation models</h1>
+<p class="lede">How recurrent networks remember, why LSTMs were invented (vanishing gradients), how the gates work, and the modern line-up: DeepAR, N-BEATS/N-HiTS, the Temporal Fusion Transformer, PatchTST, the “are transformers effective?” critique, and pretrained foundation models such as TimesFM, Chronos and Moirai. Plus the honest part interviewers test: <b>when deep learning actually beats LightGBM and ETS, and when it doesn't</b>.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#pitch">30-sec answer</a><a href="#prep">Data prep</a><a href="#rnn">RNN</a><a href="#lstm">LSTM</a><a href="#demo">Gates demo</a><a href="#gru">GRU</a><a href="#seq2seq">Seq2seq</a><a href="#cnn">TCN</a><a href="#zoo">Modern models</a><a href="#transformers">Transformers & DLinear</a><a href="#fm">Foundation models</a><a href="#when">When DL wins</a><a href="#tips">Training tips</a><a href="#key">Must-know</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>A recurrent network reads a series one step at a time, like you reading a sentence, keeping a short <b>memory note</b> that it updates at every step. Plain RNNs have a leaky memory: after 20–30 steps, the early information has faded. An <b>LSTM</b> adds a separate long-term memory “conveyor belt” with three valves (gates): <b>forget</b> (erase old info), <b>input</b> (write new info) and <b>output</b> (decide what to reveal now). Because information can ride the conveyor belt untouched, it remembers much longer.</p>
+<p>Newer models skip the step-by-step reading: <b>N-BEATS</b> is a deep stack of simple fully-connected blocks, <b>transformers</b> look at all past steps at once with attention, and <b>foundation models</b> are pretrained on billions of time points so they can forecast a new series without any training (“zero-shot”), like a language model completing a sentence.</p></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“For deep forecasting I window the series into lookback/horizon pairs, normalise each window or series, and train a global model across many series. LSTMs solve the vanishing-gradient problem of RNNs with an additive cell state controlled by forget, input and output gates. In practice I'd consider DeepAR for probabilistic forecasts over many related series, N-BEATS/N-HiTS for strong univariate accuracy, TFT when there are many known-future and static covariates and interpretability matters, or a pretrained foundation model like Chronos or TimesFM as a zero-shot baseline. Deep models pay off with lots of related series, long histories and rich covariates; on a few short series, ETS or LightGBM usually win, and I'd always benchmark against seasonal naive.”</p></div>
+
+<h2 id="prep">Data preparation for neural forecasters</h2>
+<div class="widget" data-demo="windowing"><div class="widget-title">Windowing a series into training samples</div><div class="widget-sub">Each sample is (last L values → next H values). Neural nets are trained on many such windows from many series.</div></div>
+<ul>
+<li><b>Windowing:</b> lookback L (context) is a key hyperparameter — often 2–7× the horizon or several seasonal cycles.</li>
+<li><b>Scaling is essential:</b> neural nets need inputs on similar scales. Per-series standardisation or <b>per-window normalisation</b> (subtract the window mean, divide by its std, add back at the output) — formalised as <b>RevIN</b> (reversible instance normalisation) — also handles trend and level shifts.</li>
+<li><b>Covariates:</b> separate <i>past-observed</i>, <i>known-future</i> and <i>static</i> inputs; models like TFT and DeepAR treat them differently.</li>
+<li><b>Splits:</b> time-based train/validation/test with no window overlapping the boundary.</li>
+<li><b>Sampling:</b> sample windows across series (weight by importance or volume) instead of iterating series by series.</li>
+</ul>
+
+<h2 id="rnn">Recurrent neural networks and vanishing gradients</h2>
+<div class="callout math"><div class="tag">∑ A vanilla RNN</div>
+$$h_t=\tanh(W_hh_{t-1}+W_xx_t+b),\qquad \hat y_t=W_yh_t$$
+<p>Training uses backpropagation through time (BPTT). The gradient of a loss at time T with respect to an early hidden state is a product of Jacobians: \(\frac{\partial h_T}{\partial h_k}=\prod_{t=k+1}^{T}\operatorname{diag}(\tanh')\,W_h\). If the largest singular value is below 1, it shrinks exponentially (<b>vanishing</b> — can't learn long dependencies); above 1, it explodes (fix with gradient clipping).</p></div>
+
+<h2 id="lstm">LSTM: gates and an additive memory</h2>
+<div class="callout math"><div class="tag">∑ The LSTM cell (σ = sigmoid, ⊙ = element-wise product)</div>
+$$\begin{aligned}
+f_t&=\sigma(W_f[h_{t-1},x_t]+b_f) &&\text{forget gate: how much old memory to keep}\\
+i_t&=\sigma(W_i[h_{t-1},x_t]+b_i) &&\text{input gate: how much new info to write}\\
+\tilde c_t&=\tanh(W_c[h_{t-1},x_t]+b_c) &&\text{candidate memory}\\
+c_t&=f_t\odot c_{t-1}+i_t\odot\tilde c_t &&\text{cell state: additive update}\\
+o_t&=\sigma(W_o[h_{t-1},x_t]+b_o) &&\text{output gate}\\
+h_t&=o_t\odot\tanh(c_t) &&\text{hidden state / output}
+\end{aligned}$$
+<p><b>Why it fixes vanishing gradients:</b> \(\partial c_t/\partial c_{t-1}=f_t\) (plus small indirect terms). When the forget gate is near 1, gradients flow back through the cell state almost unchanged — the “constant error carousel”. Initialising the forget-gate bias to 1 or more is a standard trick.</p></div>
+<p><b>Parameters:</b> each of the 4 gates has a weight matrix of size k × (k + d) plus bias, so an LSTM layer has \(4(k(k+d)+k)\) parameters for hidden size k and input size d (e.g. k = 64, d = 1 → 16,896).</p>
+
+<h2 id="demo">Interactive: why the gates matter</h2>
+<div class="widget" data-demo="lstmcell"><div class="widget-title">Memory through time: LSTM cell vs plain RNN</div><div class="widget-sub">A signal is written once at the start. Move the forget and input gates and the RNN weight, and compare how long each remembers it and how fast its gradient decays.</div></div>
+
+<h2 id="gru">GRU: a lighter LSTM</h2>
+<p>The Gated Recurrent Unit merges the cell and hidden states and uses two gates: an <b>update gate</b> z (how much to replace the state, like forget + input combined) and a <b>reset gate</b> r (how much past state to use in the candidate). \(h_t=(1-z_t)\odot h_{t-1}+z_t\odot\tilde h_t\). About 25% fewer parameters than an LSTM, often similar accuracy; a good default when data are limited.</p>
+
+<h2 id="seq2seq">Sequence-to-sequence, teacher forcing and multi-step output</h2>
+<ul>
+<li><b>Encoder–decoder:</b> an encoder RNN reads the lookback window into a state; a decoder RNN generates the horizon step by step, optionally fed known-future covariates.</li>
+<li><b>Teacher forcing:</b> during training the decoder receives the <i>true</i> previous value; at inference it receives its own prediction — a train/test mismatch (exposure bias). Mitigate with scheduled sampling, or avoid it with a direct multi-output head.</li>
+<li><b>Multi-output (MIMO) head:</b> a dense layer outputs all H steps at once — simple and often best.</li>
+<li><b>Attention</b> lets the decoder look back at all encoder states instead of one bottleneck vector.</li>
+</ul>
+
+<h2 id="cnn">Convolutional models: TCN and WaveNet</h2>
+<p><b>Temporal Convolutional Networks</b> use <b>causal</b> convolutions (output at t sees only ≤ t) with <b>dilations</b> 1, 2, 4, 8… so the receptive field grows exponentially with depth. They train in parallel (no step-by-step recurrence), have stable gradients, and often match LSTMs. WaveNet is the audio ancestor.</p>
+
+<h2 id="zoo">The modern model line-up</h2>
+<div class="table-wrap"><table>
+<tr><th>Model</th><th>Idea</th><th>Strength</th><th>Use when</th></tr>
+<tr><td><b>DeepAR</b> (Amazon)</td><td>Global autoregressive LSTM that outputs distribution parameters (Gaussian, negative binomial, Student-t) at each step; sample paths for forecasts</td><td>Probabilistic, many related series, count data, cold start via covariates</td><td>Retail/demand with thousands of series</td></tr>
+<tr><td><b>N-BEATS</b></td><td>Stacks of fully-connected blocks, each producing a backcast (removed from input) and a forecast (summed); interpretable trend/seasonality basis option</td><td>Strong pure univariate accuracy (M4)</td><td>Univariate benchmark-quality forecasts</td></tr>
+<tr><td><b>N-HiTS</b></td><td>N-BEATS with multi-rate pooling and hierarchical interpolation</td><td>Long horizons, much faster</td><td>Long-horizon univariate</td></tr>
+<tr><td><b>TFT</b> (Temporal Fusion Transformer)</td><td>LSTM encoder–decoder + variable-selection networks + gating + interpretable multi-head attention; quantile outputs</td><td>Handles static, past and known-future covariates; interpretable variable importance and attention</td><td>Rich covariates, need for explanations</td></tr>
+<tr><td><b>Informer / Autoformer / FEDformer</b></td><td>Efficient attention for long sequences; decomposition blocks; frequency-domain attention</td><td>Long-sequence benchmarks</td><td>Research; long multivariate horizons</td></tr>
+<tr><td><b>PatchTST</b></td><td>Splits series into patches (like ViT tokens), channel-independent transformer</td><td>Strong on long-horizon benchmarks, efficient</td><td>Long-horizon multivariate</td></tr>
+<tr><td><b>iTransformer</b></td><td>Inverts the axes: each <i>variable</i> is a token, attention across variables</td><td>Multivariate correlations</td><td>Many correlated channels</td></tr>
+<tr><td><b>DLinear / NLinear</b></td><td>Decompose into trend + remainder; one linear layer each</td><td>Embarrassingly simple, beat many transformers</td><td>A must-have baseline</td></tr>
+<tr><td><b>TiDE, TSMixer</b></td><td>MLP encoder–decoder / MLP-Mixer over time and features</td><td>Fast, competitive with transformers</td><td>Covariate-rich, efficient</td></tr>
+</table></div>
+
+<h2 id="transformers">Transformers and the DLinear critique</h2>
+<p>The 2023 paper “Are Transformers Effective for Time Series Forecasting?” showed that a one-layer linear model on decomposed series (DLinear) beat several sophisticated transformers on standard long-horizon benchmarks. The reasons are worth stating in an interview:</p>
+<ul>
+<li>Self-attention is <b>permutation-invariant</b>; positional encodings only partially restore order, yet order is the whole point in time series.</li>
+<li>Many benchmarks are dominated by trend and seasonality that linear models capture well; point-wise tokens carry little semantic information.</li>
+<li>Over-parameterised models overfit small, non-stationary datasets.</li>
+</ul>
+<p>The field responded with <b>patching</b> (PatchTST), <b>channel independence</b>, instance normalisation and inverted tokens — and with much better baselines. Lesson: always include a linear and a seasonal-naive baseline.</p>
+
+<h2 id="fm">Time-series foundation models (2024–2026)</h2>
+<p>Pretrained on huge corpora of real and synthetic series, they forecast new series <b>zero-shot</b> (no training) or after light fine-tuning.</p>
+<div class="table-wrap"><table>
+<tr><th>Model</th><th>Approach</th></tr>
+<tr><td><b>TimesFM</b> (Google)</td><td>Decoder-only transformer over patches, pretrained on about 100 billion time points</td></tr>
+<tr><td><b>Chronos / Chronos-Bolt / Chronos-2</b> (Amazon)</td><td>Chronos scales and quantises values into tokens and trains a T5-style language model; Chronos-2 adds covariates and multivariate support</td></tr>
+<tr><td><b>Moirai</b> (Salesforce)</td><td>Masked encoder with “any-variate” attention, handling any number of variables and frequencies</td></tr>
+<tr><td><b>TiRex, Toto, Lag-Llama, TimeGPT, MOMENT</b></td><td>Other pretrained models (xLSTM-based, observability-focused, open and commercial)</td></tr>
+</table></div>
+<ul>
+<li><b>Benchmarks:</b> GIFT-Eval spans 97 tasks built from 55 datasets. Foundation models are strong at short horizons, but there is still a performance gap at medium and long horizons.</li>
+<li><b>Leaderboards move fast.</b> In 2025 Chronos-2 was reported ahead of TiRex and TimesFM-2.5 on GIFT-Eval; a 2026 comparison put TimesFM 3.0 first with Chronos-2 close behind; and Toto-2.0 topped the newer FUTURE-TS benchmark in June 2026. Treat vendor rankings as claims and backtest on your own data.</li>
+<li><b>Practical use:</b> a strong zero-shot baseline in minutes, a cold-start solution, or an ensemble member. Watch for leakage — benchmark data may be in the pretraining corpus — as well as latency and cost at scale, and limited handling of domain-specific covariates.</li>
+</ul>
+
+<h2 id="when">When does deep learning actually win?</h2>
+<div class="table-wrap"><table>
+<tr><th>Situation</th><th>Usually best</th></tr>
+<tr><td>Few series, short history, little covariate data</td><td>ETS / Theta / ARIMA (and seasonal naive)</td></tr>
+<tr><td>Many related series, tabular covariates, promotions, prices</td><td>Global LightGBM — robust, fast, explainable</td></tr>
+<tr><td>Very many series, long histories, need for probabilistic forecasts</td><td>DeepAR, TFT, N-HiTS, ensembles with GBMs</td></tr>
+<tr><td>High-frequency sensor/energy data, long horizons, multivariate</td><td>PatchTST, N-HiTS, TSMixer, TCN</td></tr>
+<tr><td>Raw sequential inputs (text, images, audio) mixed in</td><td>Neural networks</td></tr>
+<tr><td>No time to build features, need a quick strong baseline or cold start</td><td>Foundation model zero-shot (Chronos, TimesFM, Moirai)</td></tr>
+</table></div>
+<p><b>The interview-winning answer to “ARIMA or LSTM?”:</b> “It depends on the data volume and structure. For a single series with a few hundred points, ARIMA/ETS — an LSTM will overfit and won't beat it. For thousands of related series with covariates, a global model: I'd benchmark LightGBM first, then a deep model like DeepAR or TFT if it adds value in backtests. I'd decide on rolling-origin error per horizon and on operational cost, not on novelty.”</p>
+
+<h2 id="tips">Training tips that matter</h2>
+<ul>
+<li>Normalise per series or per window (RevIN); predict in normalised space and invert.</li>
+<li>Use a global model across series; sample windows; add series embeddings for IDs.</li>
+<li>Gradient clipping for RNNs; forget-gate bias ≈ 1; Adam with LR schedules; early stopping on a time-based validation set.</li>
+<li>Dropout (including recurrent dropout), weight decay, and ensembling over seeds/lookbacks — N-BEATS ensembles of 180 models were key to its M4 results.</li>
+<li>Choose the loss to match the decision: quantile loss for intervals, distribution heads (DeepAR) for sample paths.</li>
+<li>Libraries: <code>neuralforecast</code> (Nixtla), <code>darts</code>, <code>pytorch-forecasting</code>, <code>GluonTS</code>, <code>autogluon.timeseries</code>.</li>
+</ul>
+<script type="text/plain" class="snippet" data-title="python">
+# PyTorch LSTM forecaster (run locally — PyTorch isn't available in the in-browser labs)
+import torch, torch.nn as nn
+class LSTMForecaster(nn.Module):
+    def __init__(self, n_in=1, hidden=64, layers=2, horizon=12, dropout=0.2):
+        super().__init__()
+        self.lstm = nn.LSTM(n_in, hidden, layers, batch_first=True, dropout=dropout)
+        self.head = nn.Linear(hidden, horizon)            # direct multi-output head
+    def forward(self, x):                                 # x: (batch, lookback, n_in)
+        mu, sd = x.mean(1, keepdim=True), x.std(1, keepdim=True) + 1e-5
+        out, _ = self.lstm((x - mu) / sd)                 # per-window normalisation (RevIN-style)
+        return self.head(out[:, -1]) * sd[..., 0] + mu[..., 0]
+
+model = LSTMForecaster(); opt = torch.optim.Adam(model.parameters(), 1e-3)
+for xb, yb in loader:                                     # windows from many series
+    loss = nn.functional.l1_loss(model(xb), yb)
+    opt.zero_grad(); loss.backward()
+    nn.utils.clip_grad_norm_(model.parameters(), 1.0); opt.step()
+
+# Zero-shot with a foundation model (pip install chronos-forecasting)
+# from chronos import BaseChronosPipeline
+# pipe = BaseChronosPipeline.from_pretrained("amazon/chronos-bolt-small")
+# q, mean = pipe.predict_quantiles(torch.tensor(y), prediction_length=24, quantile_levels=[0.1, 0.5, 0.9])
+</script>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>RNN:</b> hidden state recurrence; BPTT; vanishing/exploding gradients.</li>
+<li><b>LSTM:</b> forget, input, output gates + additive cell state → long memory; 4× the parameters of an RNN.</li>
+<li><b>GRU:</b> update + reset gates; fewer parameters.</li>
+<li><b>Normalise windows/series</b>; train <b>global</b> models; use direct multi-output heads.</li>
+<li><b>DeepAR</b> = probabilistic global RNN; <b>N-BEATS/N-HiTS</b> = MLP stacks; <b>TFT</b> = covariates + interpretability; <b>PatchTST</b> = patched transformer.</li>
+<li><b>DLinear critique:</b> simple linear baselines beat many transformers.</li>
+<li><b>Foundation models:</b> zero-shot TimesFM, Chronos, Moirai; strong at short horizons; benchmark yourself.</li>
+<li><b>DL wins with scale</b> (many related series, long history, rich covariates); otherwise ETS/LightGBM.</li>
+</ul>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="fdl-window" data-title="Make supervised windows">
+<div class="lab-task"><p>Write <code>make_windows(y, L, H)</code> returning <code>X</code> of shape (n, L) and <code>Y</code> of shape (n, H), where row i is <code>y[i:i+L]</code> → <code>y[i+L:i+L+H]</code> and n = len(y) − L − H + 1.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+def make_windows(y, L, H):
+    return None, None  # TODO
+
+X, Y = make_windows(np.arange(10), 4, 2)
+print(X); print(Y)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+def make_windows(y, L, H):
+    y = np.asarray(y)
+    n = len(y) - L - H + 1
+    X = np.stack([y[i:i + L] for i in range(n)])
+    Y = np.stack([y[i + L:i + L + H] for i in range(n)])
+    return X, Y
+    # Vectorised alternative: np.lib.stride_tricks.sliding_window_view(y, L + H)
+
+X, Y = make_windows(np.arange(10), 4, 2)
+print(X); print(Y)
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+X, Y = make_windows(np.arange(10), 4, 2)
+assert X is not None and X.shape == (5, 4) and Y.shape == (5, 2), "shapes should be (5, 4) and (5, 2)"
+assert (X[0] == [0, 1, 2, 3]).all() and (Y[0] == [4, 5]).all() and (Y[-1] == [8, 9]).all(), "windows are misaligned"
+print("Windows built: no target value ever appears in its own input.")
+</script>
+</div>
+
+<div class="lab" data-id="fdl-lstm" data-title="An LSTM cell forward pass in NumPy">
+<div class="lab-task"><p>Implement <code>lstm_step(x, h, c, W, b)</code> where <code>W</code> has shape (4k, k + d) and <code>b</code> (4k,), with rows ordered <b>input, forget, candidate, output</b>, applied to <code>concat([h, x])</code>. Return <code>(h_new, c_new)</code>. Then run it over a sequence with <code>run(xs, W, b, k)</code> starting from zeros, returning the final h.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+sigmoid = lambda z: 1 / (1 + np.exp(-z))
+
+def lstm_step(x, h, c, W, b):
+    k = h.shape[0]
+    z = W @ np.concatenate([h, x]) + b
+    # TODO: split z into i, f, g, o; compute c_new and h_new
+    return None, None
+
+def run(xs, W, b, k):
+    h, c = np.zeros(k), np.zeros(k)
+    # TODO
+    return h
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+sigmoid = lambda z: 1 / (1 + np.exp(-z))
+
+def lstm_step(x, h, c, W, b):
+    k = h.shape[0]
+    z = W @ np.concatenate([h, x]) + b
+    i = sigmoid(z[:k]); f = sigmoid(z[k:2 * k]); g = np.tanh(z[2 * k:3 * k]); o = sigmoid(z[3 * k:])
+    c_new = f * c + i * g            # additive memory update
+    h_new = o * np.tanh(c_new)
+    return h_new, c_new
+
+def run(xs, W, b, k):
+    h, c = np.zeros(k), np.zeros(k)
+    for x in xs:
+        h, c = lstm_step(np.atleast_1d(x), h, c, W, b)
+    return h
+
+rng = np.random.default_rng(0); k, d = 3, 1
+W = rng.normal(0, 0.5, (4 * k, k + d)); b = np.zeros(4 * k)
+print("final h:", run(np.sin(np.arange(20) / 3), W, b, k).round(4))
+print("parameters:", W.size + b.size, "= 4·(k(k+d) + k)")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+sg = lambda z: 1 / (1 + np.exp(-z))
+rng = np.random.default_rng(42); k, d = 4, 2
+W = rng.normal(0, 0.6, (4 * k, k + d)); b = rng.normal(0, 0.1, 4 * k)
+x, h, c = rng.normal(size=d), rng.normal(size=k), rng.normal(size=k)
+z = W @ np.concatenate([h, x]) + b
+c_ref = sg(z[k:2*k]) * c + sg(z[:k]) * np.tanh(z[2*k:3*k]); h_ref = sg(z[3*k:]) * np.tanh(c_ref)
+hn, cn = lstm_step(x, h, c, W, b)
+assert hn is not None and np.allclose(cn, c_ref) and np.allclose(hn, h_ref), "gate order should be i, f, g, o"
+# forget gate ≈ 1, input gate ≈ 0 → the cell keeps its memory unchanged
+b2 = np.zeros(4 * k); b2[:k] = -50; b2[k:2*k] = 50
+_, c_keep = lstm_step(x, h, c, np.zeros_like(W), b2)
+assert np.allclose(c_keep, c), "with f=1 and i=0 the cell state must pass through untouched"
+assert run(np.zeros((5, d)), W, b, k).shape == (k,), "run should return the final hidden state"
+print("Correct LSTM cell — and the 'constant error carousel' works.")
+</script>
+</div>
+
+<div class="lab" data-id="fdl-mlp" data-title="A neural forecaster on windows (with normalisation)">
+<div class="lab-task"><p>Hourly-style series with trend, a 24-step and a 7-step cycle. Using <code>make_windows</code> (L = 48, H = 12), train <code>MLPRegressor(hidden_layer_sizes=(64,), max_iter=500, alpha=1e-3, random_state=0)</code> on windows whose targets end before t = 560, <b>subtracting each window's input mean</b> from inputs and targets (and adding it back after predicting). Evaluate on non-overlapping test windows with targets starting at 560, 572, …: store MAE in <code>mae_nn</code> and the seasonal-naive (lag 24) MAE in <code>mae_sn</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, warnings
+warnings.filterwarnings("ignore")
+from sklearn.neural_network import MLPRegressor
+rng = np.random.default_rng(0); N = 700; t = np.arange(N)
+y = 50 + 0.08 * t + 8 * np.sin(2 * np.pi * t / 24) + 4 * np.sin(2 * np.pi * t / 7) + rng.normal(0, 1.5, N)
+L, H = 48, 12
+
+def make_windows(y, L, H):
+    n = len(y) - L - H + 1
+    return np.stack([y[i:i + L] for i in range(n)]), np.stack([y[i + L:i + L + H] for i in range(n)])
+
+mae_nn = None  # TODO
+mae_sn = None  # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, warnings
+warnings.filterwarnings("ignore")
+from sklearn.neural_network import MLPRegressor
+rng = np.random.default_rng(0); N = 700; t = np.arange(N)
+y = 50 + 0.08 * t + 8 * np.sin(2 * np.pi * t / 24) + 4 * np.sin(2 * np.pi * t / 7) + rng.normal(0, 1.5, N)
+L, H = 48, 12
+
+def make_windows(y, L, H):
+    n = len(y) - L - H + 1
+    return np.stack([y[i:i + L] for i in range(n)]), np.stack([y[i + L:i + L + H] for i in range(n)])
+
+X, Y = make_windows(y, L, H)
+cut = 560 - L - H + 1                       # windows whose targets end before t = 560
+Xtr, Ytr = X[:cut], Y[:cut]
+Xte, Yte = X[560 - L::H], Y[560 - L::H]     # targets start at 560, 572, ...
+mu_tr = Xtr.mean(1, keepdims=True); mu_te = Xte.mean(1, keepdims=True)
+nn = MLPRegressor(hidden_layer_sizes=(64,), max_iter=500, alpha=1e-3, random_state=0).fit(Xtr - mu_tr, Ytr - mu_tr)
+pred = nn.predict(Xte - mu_te) + mu_te
+mae_nn = np.abs(pred - Yte).mean()
+mae_sn = np.abs(Xte[:, -24:-24 + H] - Yte).mean()
+print(f"MLP on normalised windows MAE {mae_nn:.2f} vs seasonal naive {mae_sn:.2f} (noise sd 1.5)")
+print("Normalising each window handles the trend that the network never saw at these levels.")
+</script>
+<script type="text/x-python" data-part="check">
+assert None not in (mae_nn, mae_sn), "compute both"
+assert mae_nn < 0.5 * mae_sn, "the network should clearly beat seasonal naive"
+print("A small neural forecaster works — and normalisation did the heavy lifting on the trend.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="forecast-dl-8312f7f" data-l="1"><summary>Why use an LSTM instead of a vanilla RNN?</summary><div class="ans"><p>Vanilla RNN gradients vanish (or explode) exponentially over time steps because of repeated multiplication by the recurrent Jacobian, so they can't learn long-range dependencies. LSTMs add a cell state updated additively and controlled by gates; with the forget gate near 1, gradients pass through many steps nearly unchanged.</p></div></details>
+<details class="qa" data-id="forecast-dl-47485ee" data-l="2"><summary>Explain each LSTM gate.</summary><div class="ans"><p>Forget gate f (sigmoid): fraction of the previous cell state to keep. Input gate i (sigmoid): how much of the new candidate (tanh of input and previous hidden state) to write. Output gate o (sigmoid): how much of tanh(cell state) to expose as the hidden state. Cell update: c = f⊙c₋₁ + i⊙c̃; output h = o⊙tanh(c).</p></div></details>
+<details class="qa" data-id="forecast-dl-39fed60" data-l="2"><summary>LSTM vs GRU?</summary><div class="ans"><p>GRU merges cell and hidden state and uses update and reset gates — fewer parameters (3 gate blocks vs 4), faster, often similar accuracy, better with less data. LSTM's separate memory and output gate give a bit more control for very long dependencies. Try both; differences are usually small compared with data preparation choices.</p></div></details>
+<details class="qa" data-id="forecast-dl-34c4304" data-l="2"><summary>How do you prepare data for an LSTM forecaster?</summary><div class="ans"><p>Window the series into (lookback, horizon) pairs; scale per series or per window (and invert); encode covariates as extra input channels, separating past-only from known-future; split by time without overlapping windows across boundaries; batch windows sampled across many series; shape inputs as (batch, time, features).</p></div></details>
+<details class="qa" data-id="forecast-dl-47694f4" data-l="2"><summary>What is teacher forcing and its downside?</summary><div class="ans"><p>Feeding the true previous target into the decoder during training. It speeds and stabilises training, but at inference the model sees its own (imperfect) predictions, a distribution shift called exposure bias that makes errors compound. Remedies: scheduled sampling, training on multi-step losses, or direct multi-output heads.</p></div></details>
+<details class="qa" data-id="forecast-dl-3667581" data-l="3"><summary>How does DeepAR produce probabilistic forecasts?</summary><div class="ans"><p>A global autoregressive RNN trained on many series; at each step it outputs parameters of a chosen likelihood (Gaussian, negative binomial for counts, Student-t) and is trained by maximising likelihood. At inference it samples a value, feeds it back, and repeats to generate many sample paths; quantiles of the paths give intervals. Series are scaled by their mean and covariates/embeddings enable cross-learning and cold start.</p></div></details>
+<details class="qa" data-id="forecast-dl-1345f2e" data-l="3"><summary>What is N-BEATS?</summary><div class="ans"><p>A deep stack of fully connected blocks with doubly residual connections: each block outputs a backcast (subtracted from its input so later blocks model what's left) and a partial forecast (summed across blocks). A generic version learns free bases; an interpretable version constrains blocks to polynomial trend and Fourier seasonality. It won top results on M4 without any time-series-specific components; N-HiTS adds multi-rate sampling for long horizons.</p></div></details>
+<details class="qa" data-id="forecast-dl-d498be4" data-l="3"><summary>What makes the Temporal Fusion Transformer suitable for business forecasting?</summary><div class="ans"><p>It distinguishes static, past-observed and known-future inputs; uses variable-selection networks and gating to suppress irrelevant inputs; an LSTM for local patterns and interpretable multi-head attention for long-range ones; and outputs multiple quantiles. It provides variable importances and attention patterns that help explain forecasts to stakeholders.</p></div></details>
+<details class="qa" data-id="forecast-dl-f61633f" data-l="3"><summary>Why did simple linear models beat transformers on long-horizon benchmarks?</summary><div class="ans"><p>Attention is permutation-invariant and point-wise tokens carry little information, so transformers struggled to exploit temporal order; the datasets are dominated by trend and seasonality that a linear map captures; and large models overfit non-stationary, modest-sized data. Patching, channel independence and instance normalisation (PatchTST) recovered transformer performance. The lesson is to include strong simple baselines.</p></div></details>
+<details class="qa" data-id="forecast-dl-1704074" data-l="2"><summary>What are time-series foundation models and when would you use one?</summary><div class="ans"><p>Large models (TimesFM, Chronos, Moirai and others) pretrained on billions of time points so they can forecast unseen series zero-shot. Use them as a fast strong baseline, for cold start or many heterogeneous series with little time to engineer features, or as an ensemble member. Validate on your own backtests — they're strongest at short horizons, may not use your domain covariates well, and inference cost/latency matters at scale.</p></div></details>
+<details class="qa" data-id="forecast-dl-ad7cd79" data-l="2"><summary>ARIMA or LSTM for a forecasting problem?</summary><div class="ans"><p>Depends on the data. A single or few series with hundreds of points and mostly linear autocorrelation: ARIMA/ETS — interpretable, fast, an LSTM would overfit. Thousands of related series, long histories, nonlinear effects and covariates: a global model — benchmark LightGBM, then deep models like DeepAR/TFT. Decide with rolling-origin backtests per horizon against seasonal naive, plus cost and maintainability.</p></div></details>
+<details class="qa" data-id="forecast-dl-c5b7d88" data-l="2"><summary>Why normalise each window, and what is RevIN?</summary><div class="ans"><p>Series and windows differ in level and scale and drift over time (non-stationarity); networks generalise poorly to input ranges they haven't seen. Subtracting the window mean (and dividing by its std), predicting in that space and adding the statistics back makes the model level-invariant. RevIN formalises this as reversible instance normalisation with learnable affine parameters.</p></div></details>
+<details class="qa" data-id="forecast-dl-bd7091d" data-l="3"><summary>How many parameters does an LSTM layer have?</summary><div class="ans"><p>4 × (k × (k + d) + k) for hidden size k and input size d — four gate blocks each with input weights, recurrent weights and a bias. For k = 64, d = 10: 4 × (64 × 74 + 64) = 19,200. (PyTorch keeps two bias vectors per gate, so it reports 4 × (k(k + d) + 2k).)</p></div></details>
+</div>
+</main>
+</body>
+</html>

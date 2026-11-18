@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Improving forecasts & the forecasting interview playbook · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/demos4.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="forecast-playbook">
+<main>
+<div class="eyebrow">Forecasting · Playbook · Read this the night before</div>
+<h1>Improving forecasts & the forecasting interview playbook</h1>
+<p class="lede">A practical checklist for making forecasts better, the bottlenecks that actually limit accuracy in production, how to choose a model and a metric, how to monitor forecasts after launch — and 30 situational questions with model answers. Time-series questions come up in nearly every data-science interview loop at companies such as Netflix, Uber and Meta; this page is built to make them easy points.</p>
+<div class="toc"><a href="#framework">Answer framework</a><a href="#improve">Improvement checklist</a><a href="#bottlenecks">Bottlenecks</a><a href="#choose">Model chooser</a><a href="#metrics">Metric guide</a><a href="#fva">Forecast value added</a><a href="#monitor">Monitoring</a><a href="#template">ARIMA vs LSTM answer</a><a href="#design">System design</a><a href="#labs">Lab</a><a href="#qa">30 situational Qs</a></div>
+
+<h2 id="framework">A framework for any forecasting interview question</h2>
+<ol class="steps">
+<li><b>Clarify the decision:</b> what will the forecast be used for (ordering, staffing, budgeting)? Which horizon, granularity, frequency of update, and cost of over- vs under-forecasting?</li>
+<li><b>Understand the data:</b> how many series, how long, how intermittent; trend, seasonalities, holidays, promotions, stock-outs, structural breaks; which covariates are known in advance.</li>
+<li><b>Baselines first:</b> naive, seasonal naive, ETS — set the bar.</li>
+<li><b>Pick model families to match the data:</b> classical per-series vs global ML vs deep vs foundation models.</li>
+<li><b>Validate honestly:</b> rolling-origin backtest at the real horizon with information available at each origin; metric aligned with cost; error per horizon and segment.</li>
+<li><b>Quantify uncertainty:</b> quantiles/intervals with checked coverage.</li>
+<li><b>Deploy and monitor:</b> retraining cadence, drift and bias alerts, fallbacks, human overrides tracked by forecast value added.</li>
+</ol>
+
+<h2 id="improve">Checklist: how to improve forecast accuracy</h2>
+<div class="grid">
+<div class="card"><div class="kicker">Data</div><h4>Fix the inputs first</h4><ul><li>Clean outliers and data errors; mark known events</li><li>Correct stock-out censoring (sales ≠ demand)</li><li>Fill gaps consistently; align time zones and calendars</li><li>Use data vintages available at each origin</li><li>More history only if it's still relevant (regime changes)</li></ul></div>
+<div class="card"><div class="kicker">Target</div><h4>Transform the problem</h4><ul><li>Log / Box-Cox for growing variance</li><li>Forecast per-day rates (adjust for trading days, month length)</li><li>Difference or use ratios for trends with trees</li><li>Choose the right aggregation level (daily → weekly)</li><li>Forecast drivers (traffic × conversion) if more stable</li></ul></div>
+<div class="card"><div class="kicker">Features</div><h4>Add information</h4><ul><li>Holidays with lead/lag windows, events, paydays</li><li>Price, discounts, promotions, marketing (known future)</li><li>Seasonal lags, rolling stats, Fourier terms</li><li>Weather forecasts (as available at origin)</li><li>Hierarchy and static attributes for global models</li></ul></div>
+<div class="card"><div class="kicker">Models</div><h4>Better and combined</h4><ul><li>Damped trends; multiplicative seasonality where appropriate</li><li>Global models across related series</li><li><b>Ensembles / combinations</b> — the most reliable gain</li><li>Direct models for long horizons</li><li>Reconcile across hierarchy (MinT)</li></ul></div>
+<div class="card"><div class="kicker">Training</div><h4>Tune the right thing</h4><ul><li>Tune on rolling-origin backtests, at the real horizon</li><li>Loss aligned with the metric (L1, Tweedie, quantile)</li><li>Weight series by business value</li><li>Sliding windows if old data hurt</li><li>Recency weighting of training rows</li></ul></div>
+<div class="card"><div class="kicker">Process</div><h4>Operational wins</h4><ul><li>Retrain/refresh more often (latest level matters)</li><li>Shorten data latency</li><li>Track and limit unhelpful manual overrides</li><li>Forecast at the decision's granularity and lead time</li><li>Bias correction from monitoring</li></ul></div>
+</div>
+
+<h2 id="bottlenecks">Common bottlenecks (and what to do)</h2>
+<div class="table-wrap"><table>
+<tr><th>Bottleneck</th><th>Symptom</th><th>Fix</th></tr>
+<tr><td>Inherent noise / low signal</td><td>Even good models barely beat seasonal naive</td><td>Aggregate (time or hierarchy), forecast distributions, improve decisions rather than chase accuracy</td></tr>
+<tr><td>Short history</td><td>&lt; 2 seasonal cycles; unstable seasonality estimates</td><td>Global models, hierarchy pooling, simple ETS, analogues</td></tr>
+<tr><td>Intermittency</td><td>Mostly zeros; MAPE blows up</td><td>Croston/TSB, Tweedie, aggregate, inventory-based evaluation</td></tr>
+<tr><td>Censored demand</td><td>Forecasts too low on popular items</td><td>Flag stock-outs, impute unconstrained demand</td></tr>
+<tr><td>Regime change / breaks</td><td>Sudden persistent errors in one direction</td><td>Changepoint detection, sliding windows, regime dummies, faster adaptation</td></tr>
+<tr><td>Unknown future covariates</td><td>Great backtest with actual weather, bad live</td><td>Backtest with covariate forecasts; use only known-future or lagged features</td></tr>
+<tr><td>Leakage</td><td>Offline error far below live error</td><td>Audit features at origin; rolling-origin CV; gaps for latency</td></tr>
+<tr><td>Long horizon</td><td>Error explodes after a few steps</td><td>Direct models, damped trends, aggregate horizons, scenarios</td></tr>
+<tr><td>Scale</td><td>Millions of series; per-series ARIMA too slow</td><td>Global GBM/deep models, statsforecast, distributed training</td></tr>
+<tr><td>Cold start</td><td>New products/stores have no history</td><td>Attribute-based global models, analogues, foundation models</td></tr>
+<tr><td>Data latency & revisions</td><td>Forecasts made on stale or revised data</td><td>Nowcasting, gaps in backtest, use vintages</td></tr>
+<tr><td>Wrong metric</td><td>“Accurate” forecasts but bad business outcomes</td><td>Cost-based or quantile metrics; weight by value</td></tr>
+</table></div>
+
+<h2 id="choose">Model chooser</h2>
+<div class="table-wrap"><table>
+<tr><th>Data situation</th><th>Start with</th><th>Then try</th></tr>
+<tr><td>One/few series, &lt; 200 points, clear seasonality</td><td>Seasonal naive, ETS, Theta</td><td>SARIMA, STL + ETS</td></tr>
+<tr><td>One series with known drivers (price, promos)</td><td>SARIMAX / regression with ARIMA errors</td><td>LightGBM with lags + drivers</td></tr>
+<tr><td>Multiple seasonalities (hourly, daily data)</td><td>MSTL, Fourier + ARIMA errors</td><td>TBATS, Prophet, LightGBM with calendar features</td></tr>
+<tr><td>Hundreds to millions of related series</td><td>Global LightGBM</td><td>DeepAR, N-HiTS, TFT; ensembles; reconciliation</td></tr>
+<tr><td>Intermittent demand</td><td>Croston / SBA / TSB</td><td>Global LightGBM with Tweedie loss</td></tr>
+<tr><td>Rich covariates, need explanations</td><td>LightGBM + SHAP</td><td>TFT</td></tr>
+<tr><td>Long-horizon multivariate sensor data</td><td>DLinear, seasonal naive</td><td>PatchTST, N-HiTS, TSMixer</td></tr>
+<tr><td>No time, no history, need a baseline today</td><td>Foundation model zero-shot</td><td>Fine-tune or ensemble with ETS/LightGBM</td></tr>
+<tr><td>Volatility of returns</td><td>GARCH</td><td>Realised-volatility models</td></tr>
+</table></div>
+
+<h2 id="metrics">Metric guide</h2>
+<div class="table-wrap"><table>
+<tr><th>Metric</th><th>Good for</th><th>Watch out</th></tr>
+<tr><td>MAE</td><td>Robust, interpretable in units; optimised by the median</td><td>Scale-dependent; favours zero on sparse items</td></tr>
+<tr><td>RMSE</td><td>Penalises large errors; optimised by the mean</td><td>Sensitive to outliers; scale-dependent</td></tr>
+<tr><td>MAPE</td><td>Business-friendly percentages</td><td>Undefined at zero; explodes near zero; penalises over-forecasts more</td></tr>
+<tr><td>sMAPE</td><td>Bounded percentage</td><td>Still unstable near zero; asymmetric despite the name</td></tr>
+<tr><td>WAPE / wMAPE = Σ|e| / Σ|y|</td><td>Aggregated retail accuracy; handles zeros at item level</td><td>Dominated by high-volume items</td></tr>
+<tr><td>MASE / RMSSE</td><td>Scale-free, compare across series; &lt; 1 beats naive</td><td>Less intuitive to stakeholders</td></tr>
+<tr><td>Bias (mean error, tracking signal)</td><td>Systematic over/under-forecasting</td><td>Must be watched alongside accuracy</td></tr>
+<tr><td>Pinball loss, coverage, CRPS</td><td>Probabilistic forecasts</td><td>Need quantiles/distributions</td></tr>
+<tr><td>Cost / service-level simulation</td><td>What the business actually feels</td><td>Requires an inventory/decision model</td></tr>
+</table></div>
+
+<h2 id="fva">Forecast value added (FVA)</h2>
+<p>FVA asks of every step in the forecasting process — statistical model, planner override, consensus meeting — “did it improve on the previous step?” Compute the error of each stage versus a naive baseline over the same backtest. Many organisations find that manual overrides add bias (optimistic upward adjustments) and reduce accuracy; tracking FVA lets you keep the overrides that help (known events) and drop those that don't.</p>
+
+<h2 id="monitor">Monitoring forecasts in production</h2>
+<ul>
+<li><b>Accuracy and bias</b> per horizon, segment and level, against the baseline — dashboards and alerts.</li>
+<li><b>Tracking signal</b> = cumulative error / MAD; |TS| &gt; 4 flags persistent bias.</li>
+<li><b>Interval coverage</b> drifting away from nominal.</li>
+<li><b>Input drift:</b> missing data, late feeds, covariate distribution shifts, new categories.</li>
+<li><b>Fallbacks:</b> when inputs are missing or the model fails, serve seasonal naive or the last good forecast.</li>
+<li><b>Retraining cadence:</b> refresh forecasts daily/weekly with the latest data; retrain the model less often; champion–challenger comparison before switching.</li>
+<li><b>Feedback loops:</b> forecasts drive orders, which drive availability, which drives sales — beware learning from your own decisions.</li>
+</ul>
+
+<h2 id="template">The “ARIMA vs LSTM?” answer template</h2>
+<div class="callout say"><div class="tag">🎯 Model answer</div>
+<p>“I wouldn't pick by preference — I'd pick by data and backtest. If it's one or a few series with a few hundred observations and mostly linear autocorrelation, ARIMA or ETS: they're data-efficient, interpretable, quick and give intervals; an LSTM would likely overfit. If there are thousands of related series, long histories, nonlinear covariate effects and probabilistic needs, a global model is better — I'd benchmark LightGBM with lag features first because it's strong and cheap, then deep models like DeepAR, N-HiTS or TFT if they add value. I'd decide with rolling-origin error per horizon against seasonal naive, and weigh the operational cost of the more complex model. Often an ensemble of a classical model and a global model wins.”</p></div>
+
+<h2 id="design">Forecasting as a system-design question</h2>
+<p>“Design a demand-forecasting system for 10,000 stores × 50,000 products”: clarify decisions (replenishment daily, 1–14 day horizon, quantiles for safety stock); data pipeline (sales, inventory/stock-outs, prices, promotions, calendar, store attributes) in a feature store with point-in-time correctness; global LightGBM per category with Tweedie or quantile loss, plus ETS fallbacks for sparse series and reconciliation across item–store–region; rolling backtests; batch inference nightly on a distributed platform; serving forecasts to the replenishment system; monitoring of accuracy, bias, coverage and data freshness; retraining weekly; planner overrides tracked with FVA. See also <a href="system-design.html">ML system design</a>.</p>
+
+<h2 id="labs">Lab</h2>
+<div class="lab" data-id="fpb-horizon" data-title="Backtest report: error per horizon and value added">
+<div class="lab-task"><p>A backtest DataFrame <code>bt</code> has columns <code>origin, h, y, model, snaive</code>. Compute <code>by_h</code>: a DataFrame indexed by <code>h</code> with columns <code>mae_model</code>, <code>mae_snaive</code> and <code>fva</code> = 1 − mae_model / mae_snaive (positive = the model adds value). Also compute overall <code>wape</code> of the model = Σ|y − model| / Σ|y|.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+rng = np.random.default_rng(0)
+rows = []
+for o in range(30):
+    for h in range(1, 15):
+        y = 100 + 10 * np.sin(2 * np.pi * (o + h) / 7) + rng.normal(0, 5)
+        rows.append({"origin": o, "h": h, "y": y,
+                     "model": y + rng.normal(0, 3 + 0.6 * h),          # degrades with horizon
+                     "snaive": y + rng.normal(0, 8)})                 # flat-ish error
+bt = pd.DataFrame(rows)
+
+by_h = None  # TODO
+wape = None  # TODO
+print(by_h)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, pandas as pd
+rng = np.random.default_rng(0)
+rows = []
+for o in range(30):
+    for h in range(1, 15):
+        y = 100 + 10 * np.sin(2 * np.pi * (o + h) / 7) + rng.normal(0, 5)
+        rows.append({"origin": o, "h": h, "y": y,
+                     "model": y + rng.normal(0, 3 + 0.6 * h),
+                     "snaive": y + rng.normal(0, 8)})
+bt = pd.DataFrame(rows)
+
+err = bt.assign(e_model=(bt.y - bt.model).abs(), e_snaive=(bt.y - bt.snaive).abs())
+by_h = err.groupby("h").agg(mae_model=("e_model", "mean"), mae_snaive=("e_snaive", "mean"))
+by_h["fva"] = 1 - by_h.mae_model / by_h.mae_snaive
+wape = err.e_model.sum() / bt.y.abs().sum()
+print(by_h.round(2))
+print(f"overall WAPE {wape:.1%}")
+print("The model adds value at short horizons but not beyond ~h=8 — one average number would hide that.")
+</script>
+<script type="text/x-python" data-part="check">
+assert by_h is not None and list(by_h.index) == list(range(1, 15)), "index by horizon 1..14"
+assert {"mae_model", "mae_snaive", "fva"} <= set(by_h.columns), "need the three columns"
+assert by_h.fva.iloc[0] > 0.4 and by_h.fva.iloc[-1] < 0, "FVA should be strongly positive at h=1 and negative at h=14"
+assert wape is not None and 0.03 < wape < 0.08, f"WAPE looks off: {wape}"
+print("Report error per horizon — it changes decisions about which model to use where.")
+</script>
+</div>
+
+<h2 id="qa">30 situational forecasting questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="forecast-playbook-4b55988" data-l="2"><summary>1. Your model has great backtest accuracy but performs much worse in production. What do you check?</summary><div class="ans"><p>Leakage first: features not available at the forecast origin (unshifted rolling stats, actual weather instead of forecasts, revised data, recorded stock-outs), random CV instead of rolling origin, scalers/encoders fitted on all data. Then data latency (production has a gap the backtest didn't), train/serve skew in feature computation, distribution shift since the backtest period, and whether backtests used the true horizon.</p></div></details>
+<details class="qa" data-id="forecast-playbook-5512dab" data-l="2"><summary>2. Forecasts are consistently too high. How do you diagnose and fix it?</summary><div class="ans"><p>Measure bias (mean error, tracking signal) by segment and horizon. Causes: a trend that has slowed (use damping), a level shift down (faster adaptation, sliding window), log-transform back-transformation bias in reverse, manual overrides, promotions in training but not in the future, censored demand mishandled, or a loss optimising the mean on skewed data. Fix the cause; as a stopgap apply bias correction from recent errors.</p></div></details>
+<details class="qa" data-id="forecast-playbook-afff035" data-l="2"><summary>3. You need to forecast daily sales for 50,000 SKUs across 500 stores. What's your approach?</summary><div class="ans"><p>Global LightGBM (possibly per category) with lags ≥ horizon or recursive, rolling means, price/promo, calendar, holiday and store/item features; Tweedie loss for sparse counts; per-series scaling; quantile models or conformal intervals for safety stock; Croston/TSB fallback for extremely sparse items; reconciliation to store and category levels; rolling-origin backtests vs seasonal naive; batch inference nightly and monitoring.</p></div></details>
+<details class="qa" data-id="forecast-playbook-37e5de9" data-l="2"><summary>4. There are only 18 months of monthly data. What can you do?</summary><div class="ans"><p>That's 1.5 seasonal cycles — too little for reliable seasonal estimation per series. Use simple models (naive, damped ETS without season or with seasonality borrowed from a higher level), pool across related series (global model or hierarchical seasonal indices), use weekly data if available, add domain knowledge (known holidays), and give wide intervals. Avoid complex models.</p></div></details>
+<details class="qa" data-id="forecast-playbook-52dd81d" data-l="2"><summary>5. The business wants a single number but costs of stock-outs are 4× the cost of overstock. What do you forecast?</summary><div class="ans"><p>The demand quantile at τ = cᵤ/(cᵤ + cₒ) = 4/5 = 0.8, via a quantile model or intervals, not the mean. Explain that this “number” is a decision-optimal order level, and report accuracy with pinball loss at 0.8 plus service level achieved.</p></div></details>
+<details class="qa" data-id="forecast-playbook-eb1804e" data-l="2"><summary>6. A big promotion is planned next month that has never happened before. How do you forecast it?</summary><div class="ans"><p>Use a model with promotion features learned across many products/past promotions (global model with discount depth, promo type, display), analogous past promotions on similar items, price elasticity estimates, and business input; produce scenarios with wide intervals; model post-promotion dips and cannibalisation of related items; afterwards, measure the actual lift to improve the model.</p></div></details>
+<details class="qa" data-id="forecast-playbook-9f5d122" data-l="2"><summary>7. A pandemic-style shock disrupted two years of data. How do you train?</summary><div class="ans"><p>Flag the period: add regime/intervention dummies, exclude or down-weight it, or replace it with counterfactual estimates; train on post-shock data with a sliding window if behaviour changed permanently; use faster-adapting models; check seasonality estimates weren't distorted; and use scenarios rather than a single forecast while the regime is uncertain.</p></div></details>
+<details class="qa" data-id="forecast-playbook-eca2c32" data-l="2"><summary>8. Your forecasts lag behind turning points. Why?</summary><div class="ans"><p>Smoothing models and lag features react to changes only after they appear; low α or long rolling windows increase the lag. Add leading indicators (web traffic, orders, search trends, macro indicators), reduce smoothing, add changepoint-aware components, and nowcast with higher-frequency data. Some lag is unavoidable without leading information.</p></div></details>
+<details class="qa" data-id="forecast-playbook-3412f2e" data-l="2"><summary>9. The ACF of your residuals shows a spike at lag 7 on daily data. What does it mean?</summary><div class="ans"><p>Weekly seasonality isn't fully captured. Add day-of-week effects, a seasonal lag-7 term (SARIMA with m = 7), seasonal lag features or Fourier terms with period 7, and recheck the Ljung–Box test.</p></div></details>
+<details class="qa" data-id="forecast-playbook-cef7bb6" data-l="2"><summary>10. Your hourly electricity load model misses weekends and holidays. What do you add?</summary><div class="ans"><p>Multiple seasonalities (hour of day × day of week interactions), holiday and bridge-day indicators, temperature (forecast) with nonlinear effects (heating/cooling degree days), daylight, and school-term indicators. Models: MSTL + regression, Fourier terms with ARIMA errors, or gradient boosting with calendar features and lags 24/168.</p></div></details>
+<details class="qa" data-id="forecast-playbook-6c17ba7" data-l="2"><summary>11. Store forecasts don't add up to the regional forecast the finance team uses. What do you do?</summary><div class="ans"><p>Reconcile: forecast all levels and project to coherent forecasts with MinT (or bottom-up/top-down if simpler); agree which level is the planning “source of truth”; report accuracy at each level after reconciliation.</p></div></details>
+<details class="qa" data-id="forecast-playbook-ff816ff" data-l="2"><summary>12. A product sells on average once every 6 weeks. How do you forecast it and measure accuracy?</summary><div class="ans"><p>Intermittent demand: Croston/SBA, TSB (if it may become obsolete), or a count model; aggregate to monthly if decisions allow. Don't use MAPE; MAE would favour forecasting zero. Evaluate with scaled squared error or pinball loss at the service-level quantile, and ultimately by inventory simulation (fill rate vs stock held).</p></div></details>
+<details class="qa" data-id="forecast-playbook-ad8befe" data-l="2"><summary>13. Your LSTM is worse than seasonal naive. What would you try?</summary><div class="ans"><p>Check scaling/normalisation per window or series, windowing and leakage, the lookback (must cover at least one season), and whether it's trained globally on enough data. Try a direct multi-output head, more regularisation, early stopping on a time split, and simpler baselines (DLinear, LightGBM). If data are small, accept that classical models are better suited.</p></div></details>
+<details class="qa" data-id="forecast-playbook-5d6bfcd" data-l="2"><summary>14. Your prediction intervals are far too narrow. Why?</summary><div class="ans"><p>Built from in-sample residuals, ignoring parameter/model uncertainty, normality assumed with heavy tails, the same width for all horizons, or a regime change. Calibrate on rolling out-of-sample errors per horizon (conformal/empirical quantiles), use quantile models, and monitor coverage.</p></div></details>
+<details class="qa" data-id="forecast-playbook-4b972ff" data-l="2"><summary>15. Planners override 40% of forecasts. How do you assess whether that's good?</summary><div class="ans"><p>Forecast value added: compare the accuracy and bias of the statistical forecast and the overridden one against the actuals and a naive baseline, by override size, direction and reason. Keep overrides that add information (known events), discourage those that add bias, and feed useful information into the model as features.</p></div></details>
+<details class="qa" data-id="forecast-playbook-f588ffb" data-l="2"><summary>16. Should you use MAPE to compare models across products?</summary><div class="ans"><p>Not alone: it explodes for low-volume items and zeros, and favours under-forecasting. Use MASE/RMSSE for scale-free comparison, WAPE for aggregate business accuracy, weighted by revenue if appropriate, plus bias.</p></div></details>
+<details class="qa" data-id="forecast-playbook-6382098" data-l="2"><summary>17. The forecast is used for weekly ordering with a 10-day lead time. What's your horizon and validation?</summary><div class="ans"><p>The relevant horizon is the lead time plus the review period (about 10–17 days), forecast at daily or weekly granularity aggregated over that window. Backtest from origins matching the ordering schedule, with the data latency of production, and evaluate the aggregated lead-time demand (and its quantiles), not one-step-ahead error.</p></div></details>
+<details class="qa" data-id="forecast-playbook-e0421ca" data-l="2"><summary>18. How do you forecast demand for a new store opening?</summary><div class="ans"><p>Use a global model with store attributes (size, location type, demographics) and “weeks since opening”, analogue stores' early trajectories scaled by expected size, and category-level forecasts allocated by expected mix; update rapidly with the first weeks of sales and keep wide intervals.</p></div></details>
+<details class="qa" data-id="forecast-playbook-94945af" data-l="2"><summary>19. Your SARIMAX uses temperature, but production forecasts are poor. Why?</summary><div class="ans"><p>The backtest probably used actual temperatures; production uses weather forecasts with error that grows with horizon. Backtest with historical weather forecasts (or simulated noise), use climatology for long horizons, or drop to lagged temperature. Also check that the temperature–demand relationship is nonlinear and seasonal.</p></div></details>
+<details class="qa" data-id="forecast-playbook-63675d5" data-l="2"><summary>20. How would you choose between direct and recursive multi-step forecasting?</summary><div class="ans"><p>Backtest both on error per horizon. Recursive is simpler and fine when the model is accurate and dynamics are linear; direct avoids error accumulation for long horizons and nonlinear models. Consider the number of horizons (H direct models), consistency of paths, and maintenance cost.</p></div></details>
+<details class="qa" data-id="forecast-playbook-6b952cc" data-l="2"><summary>21. The series has a trend and you're using XGBoost. Forecasts flatten. Why, and the fix?</summary><div class="ans"><p>Trees can't extrapolate beyond the training target range. Model differences or ratios to a recent level, detrend with a linear model and fit trees on the residuals, use linear trees, or normalise windows; then add the trend back.</p></div></details>
+<details class="qa" data-id="forecast-playbook-0864363" data-l="2"><summary>22. How often should you retrain a forecasting model?</summary><div class="ans"><p>Separate refreshing forecasts (daily/weekly with the latest data — the latest level matters most) from retraining model parameters (weekly/monthly or on drift alerts). Choose by backtesting retraining frequencies, monitoring accuracy decay, and balancing compute and stability; use champion–challenger before switching models.</p></div></details>
+<details class="qa" data-id="forecast-playbook-920c703" data-l="2"><summary>23. You have a strong ETS and a strong LightGBM. How do you combine them?</summary><div class="ans"><p>Simple averaging is a robust start and often beats either; weighted averaging with weights estimated on backtests (per horizon or segment); stacking with a meta-model on out-of-sample forecasts; or using ETS forecasts as a feature in LightGBM. Combinations reduce variance and protect against one model's failure mode.</p></div></details>
+<details class="qa" data-id="forecast-playbook-f250175" data-l="2"><summary>24. Sales dropped to zero for a week because of a system outage. What do you do with that data?</summary><div class="ans"><p>Treat it as missing, not as zero demand: flag it, impute (interpolate or model-based), or exclude it, and make sure rolling features and lags don't propagate the zeros. Keep an outage indicator in case of after-effects (pent-up demand).</p></div></details>
+<details class="qa" data-id="forecast-playbook-a63c8bf" data-l="2"><summary>25. A stakeholder asks why the forecast changed so much from last week. How do you handle it?</summary><div class="ans"><p>Explain with drivers: new data (level change), events/promotions added, model or feature changes; show decomposition or SHAP contributions. If the instability isn't justified, smooth forecasts (stability penalties, ensembles, damping) because volatile forecasts cause nervous planning; track forecast stability as a metric alongside accuracy.</p></div></details>
+<details class="qa" data-id="forecast-playbook-7948948" data-l="2"><summary>26. How do you detect that a forecasting model has drifted?</summary><div class="ans"><p>Monitor rolling accuracy and bias per segment vs the baseline, tracking signal, interval coverage, input data distributions and freshness, and residual autocorrelation. Alert on sustained deviations; investigate root causes (data issue vs real change) before retraining.</p></div></details>
+<details class="qa" data-id="forecast-playbook-e75cfa6" data-l="2"><summary>27. Ridership data have daily, weekly and yearly seasonality plus weather. Which model?</summary><div class="ans"><p>Baselines: seasonal naive (weekly). Candidates: MSTL + ETS/ARIMA on remainder; regression with Fourier terms for yearly and weekly cycles plus weather and holiday regressors with ARIMA errors; LightGBM with calendar features, lags and weather forecasts; Prophet as a quick interpretable option. Choose by rolling backtest per horizon.</p></div></details>
+<details class="qa" data-id="forecast-playbook-d42d697" data-l="2"><summary>28. How do you set up cross-validation for a model that forecasts 28 days ahead?</summary><div class="ans"><p>Rolling-origin evaluation: choose several cut-off dates (e.g. every 28 days over the last year), train on data up to each cut-off (expanding or sliding window), forecast days 1–28, compute features using only data available at the cut-off, and include a gap if data arrive late. Report error per horizon and aggregate; tune hyperparameters with the same scheme.</p></div></details>
+<details class="qa" data-id="forecast-playbook-f92224a" data-l="3"><summary>29. Your forecast drives inventory, which affects sales, which trains the next forecast. What's the risk?</summary><div class="ans"><p>A feedback loop: under-forecasts → low stock → stock-outs → low recorded sales → lower forecasts (a death spiral), and the model learns from its own decisions. Mitigate by modelling unconstrained demand (correct for stock-outs), using availability as a feature, exploration (deliberately stocking some items above forecast), and monitoring lost sales.</p></div></details>
+<details class="qa" data-id="forecast-playbook-d4f003d" data-l="3"><summary>30. Would you use a time-series foundation model in production? How would you evaluate it?</summary><div class="ans"><p>Possibly — as a zero-shot baseline, for cold start, or in an ensemble. Evaluate on your own rolling backtests at the real horizon against seasonal naive, ETS and LightGBM, including probabilistic metrics; check for benchmark contamination, latency and cost at your scale, handling of your covariates and hierarchy, stability across runs, and vendor/licensing dependence. Adopt only where it adds value per horizon and segment.</p></div></details>
+</div>
+</main>
+</body>
+</html>

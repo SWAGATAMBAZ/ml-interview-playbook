@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tree-based models: the big picture · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/demos4.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="trees">
+<main>
+<div class="eyebrow">Tree-based models · Start here · Intuition before formulas</div>
+<h1>Tree-based models: the big picture</h1>
+<p class="lede">Decision trees, bagging, random forests, Extra Trees, AdaBoost, gradient boosting, XGBoost, LightGBM and CatBoost are one family. They share one building block (a tree of yes/no questions) and differ only in <b>how many trees</b> they build and <b>how they combine them</b>. Get the family picture and ten mental models on this page first; every individual page then becomes easy.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#family">Family map</a><a href="#two-ideas">Two big ideas</a><a href="#see">How trees see data</a><a href="#mental">10 mental models</a><a href="#compare">Comparison table</a><a href="#knobs">Shared knobs</a><a href="#choose">Which one?</a><a href="#traps">Traps</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>A <b>decision tree</b> plays “20 questions” with your data: <i>Is income above ₹50k? Has the customer missed a payment? Is the loan longer than 5 years?</i> Each answer sends a row left or right until it lands in a group (a leaf) whose past outcomes become the prediction.</p>
+<p>One tree is quick and readable but erratic: change a few rows and it can ask completely different questions. So we build many trees. <b>Bagging and random forests</b> ask hundreds of independent trees and average their answers — like polling a crowd. <b>Boosting</b> builds trees one after another, each one studying the mistakes the team has made so far — like a student who reviews only the questions they got wrong.</p></div>
+
+<h2 id="family">The family map</h2>
+<div class="widget" style="overflow-x:auto">
+<svg viewBox="0 0 900 360" style="width:100%;min-width:640px;height:auto;font-family:var(--sans)" role="img" aria-label="Family tree of tree-based models">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>
+<g stroke="var(--muted)" stroke-width="1.6" fill="none" marker-end="url(#ar)">
+<path d="M450 62 L230 120"/><path d="M450 62 L670 120"/>
+<path d="M230 160 L120 220"/><path d="M230 160 L340 220"/>
+<path d="M340 258 L340 300"/>
+<path d="M670 160 L560 220"/><path d="M670 160 L780 220"/>
+<path d="M780 258 L700 300"/><path d="M780 258 L790 300"/><path d="M780 258 L880 300"/>
+</g>
+<g font-size="13" text-anchor="middle">
+<rect x="365" y="22" width="170" height="40" rx="10" fill="var(--accent)"/><text x="450" y="47" fill="#fff" font-weight="700">Decision tree (CART)</text>
+<rect x="120" y="120" width="220" height="40" rx="10" fill="var(--teal-soft)" stroke="var(--teal)"/><text x="230" y="138" fill="var(--ink)" font-weight="700">Average many trees</text><text x="230" y="153" fill="var(--muted)" font-size="11">parallel · fixes VARIANCE</text>
+<rect x="560" y="120" width="220" height="40" rx="10" fill="var(--coral-soft)" stroke="var(--coral)"/><text x="670" y="138" fill="var(--ink)" font-weight="700">Add trees in sequence</text><text x="670" y="153" fill="var(--muted)" font-size="11">sequential · fixes BIAS</text>
+<rect x="55" y="220" width="130" height="38" rx="9" fill="var(--panel)" stroke="var(--line)"/><text x="120" y="236" fill="var(--ink)">Bagging</text><text x="120" y="251" fill="var(--muted)" font-size="10.5">bootstrap + average</text>
+<rect x="270" y="220" width="140" height="38" rx="9" fill="var(--panel)" stroke="var(--line)"/><text x="340" y="236" fill="var(--ink)">Random Forest</text><text x="340" y="251" fill="var(--muted)" font-size="10.5">+ random features per split</text>
+
+<rect x="270" y="300" width="140" height="38" rx="9" fill="var(--panel)" stroke="var(--line)"/><text x="340" y="324" fill="var(--ink)">Extra Trees</text>
+<rect x="495" y="220" width="130" height="38" rx="9" fill="var(--panel)" stroke="var(--line)"/><text x="560" y="236" fill="var(--ink)">AdaBoost</text><text x="560" y="251" fill="var(--muted)" font-size="10.5">re-weights rows</text>
+<rect x="705" y="220" width="150" height="38" rx="9" fill="var(--panel)" stroke="var(--line)"/><text x="780" y="236" fill="var(--ink)">Gradient Boosting</text><text x="780" y="251" fill="var(--muted)" font-size="10.5">fits residuals / gradients</text>
+<rect x="645" y="300" width="100" height="38" rx="9" fill="var(--panel)" stroke="var(--line)"/><text x="695" y="324" fill="var(--ink)">XGBoost</text>
+<rect x="750" y="300" width="80" height="38" rx="9" fill="var(--panel)" stroke="var(--line)"/><text x="790" y="324" fill="var(--ink)">LightGBM</text>
+<rect x="835" y="300" width="62" height="38" rx="9" fill="var(--panel)" stroke="var(--line)"/><text x="866" y="324" fill="var(--ink)">CatBoost</text>
+</g>
+<g font-size="11" fill="var(--muted)"><text x="350" y="292" text-anchor="start">+ random thresholds</text></g>
+</svg>
+<p class="small" style="margin:6px 0 0">Read it left to right as history: each model fixes a specific weakness of the one above it. <a href="decision-trees.html">Decision tree</a> → <a href="bagging.html">Bagging</a> → <a href="random-forest.html">Random Forest & Extra Trees</a> · <a href="adaboost.html">AdaBoost</a> → <a href="boosting.html">Gradient Boosting</a> → <a href="xgboost.html">XGBoost</a> / <a href="lightgbm.html">LightGBM</a> / <a href="catboost.html">CatBoost</a>.</p>
+</div>
+
+<h2 id="two-ideas">The two big ideas: averaging vs correcting</h2>
+<div class="procon"><div class="pro"><h4>🌳🌳🌳 Averaging (bagging family)</h4><ul>
+<li><b>Problem it fixes:</b> one deep tree has <b>high variance</b> — it memorises noise and changes a lot with the data.</li>
+<li><b>Trick:</b> train many deep trees on different random versions of the data, in parallel, and average.</li>
+<li><b>Why it works:</b> each tree's mistakes are partly random, so they cancel out in the average. Bias stays roughly the same as one deep tree (low).</li>
+<li><b>More trees:</b> never hurts accuracy, only costs compute.</li>
+<li><b>Analogy:</b> a crowd guessing the weight of a cow.</li></ul></div>
+<div class="con"><h4>🌱→🌿→🌳 Correcting (boosting family)</h4><ul>
+<li><b>Problem it fixes:</b> one shallow tree (a stump) has <b>high bias</b> — it's too simple.</li>
+<li><b>Trick:</b> add small trees one at a time; each new tree focuses on what the current team still gets wrong.</li>
+<li><b>Why it works:</b> many small corrections add up to a flexible model — gradient descent, but on predictions.</li>
+<li><b>More trees:</b> eventually <b>overfits</b>, so you need a learning rate and early stopping.</li>
+<li><b>Analogy:</b> a student revising only the exam questions they got wrong.</li></ul></div></div>
+<div class="callout math"><div class="tag">∑ The two equations behind the whole family</div>
+<p><b>Averaging</b> B trees, each with variance σ² and pairwise correlation ρ:</p>
+$$\operatorname{Var}\Big(\tfrac1B\textstyle\sum_b T_b\Big)=\rho\sigma^2+\frac{1-\rho}{B}\sigma^2$$
+<p>More trees shrink the second term; only <b>less correlated</b> trees shrink the first. That's why Random Forest and Extra Trees inject randomness.</p>
+<p><b>Boosting</b> builds an additive model, one small step at a time:</p>
+$$F_m(x)=F_{m-1}(x)+\eta\,h_m(x),\qquad h_m\approx-\frac{\partial L}{\partial F_{m-1}}$$
+<p>Each tree \(h_m\) points “downhill” on the loss; η (learning rate) is the step size.</p></div>
+
+<h2 id="see">How trees see your data</h2>
+<p>Same noisy two-moons dataset, five tree models. Switch between them and move the sliders — this one widget shows almost every tree-model interview point: overfitting of one deep tree, variance reduction by bagging, the effect of randomness, and boosting's overfitting with too many trees or too high a learning rate.</p>
+<div class="widget" data-demo="ensembles"><div class="widget-title">One dataset, five tree models</div><div class="widget-sub">Shading shows the predicted probability (paler = less sure). Release a slider to retrain.</div></div>
+
+<h2 id="mental">Ten mental models that make every tree question easy</h2>
+<div class="grid">
+<div class="card"><div class="kicker">1</div><h4>A tree is a learned lookup table</h4><p>It chops the feature space into boxes and stores one number per box (the average target of the training rows in it). Prediction = find your box, read its number.</p></div>
+<div class="card"><div class="kicker">2</div><h4>Only order matters</h4><p>A split is “x ≤ threshold”, so any monotonic change (scaling, log, rank) gives the same tree. No feature scaling needed; outliers in <i>features</i> barely matter.</p></div>
+<div class="card"><div class="kicker">3</div><h4>Depth = interactions</h4><p>A path of depth d is an AND of up to d conditions, so a depth-d tree can capture d-way interactions. Stumps (depth 1) are purely additive.</p></div>
+<div class="card"><div class="kicker">4</div><h4>Boxes are axis-aligned</h4><p>Splits are on one feature at a time, so a diagonal boundary (x₁ &gt; x₂) needs a staircase of many splits. Adding x₁ − x₂ as a feature fixes it instantly.</p></div>
+<div class="card"><div class="kicker">5</div><h4>Leaves are averages → no extrapolation</h4><p>Predictions can never go above the highest leaf value seen in training. Trending data (prices, growing sales) needs detrending first.</p></div>
+<div class="card"><div class="kicker">6</div><h4>Greedy and unstable</h4><p>Each split is chosen locally best, with no look-ahead. A small data change can flip the root split and everything below it → high variance.</p></div>
+<div class="card"><div class="kicker">7</div><h4>Crowds need diversity</h4><p>Averaging identical trees is useless. Bootstrapping rows, sampling features and random thresholds make trees disagree, and disagreement is what cancels out.</p></div>
+<div class="card"><div class="kicker">8</div><h4>Boosting is gradient descent on predictions</h4><p>Each new tree is fitted to the residuals (the negative gradient of the loss). The learning rate is the step size; the number of trees is the number of steps.</p></div>
+<div class="card"><div class="kicker">9</div><h4>Overfitting knobs differ</h4><p>Forests overfit through <b>deep, tiny leaves</b>, never through more trees. Boosters overfit through <b>too many trees, too-large steps or deep trees</b>.</p></div>
+<div class="card"><div class="kicker">10</div><h4>Importance isn't truth</h4><p>Split-count and impurity importances favour features with many possible split points and split credit among correlated features. Use permutation importance or SHAP on held-out data.</p></div>
+</div>
+<div class="widget" data-demo="extrap"><div class="widget-title">Mental model 5: trees can't extrapolate</div><div class="widget-sub">Train on times 0–6, predict to time 10. Watch tree models freeze, then see how a trend + trees hybrid fixes it.</div></div>
+
+<h2 id="compare">The whole family in one table</h2>
+<div class="table-wrap"><table>
+<tr><th>Model</th><th>Core idea</th><th>Members</th><th>Combined by</th><th>Mainly reduces</th><th>Overfits when</th><th>Main knobs</th><th>Best at</th></tr>
+<tr><td><a href="decision-trees.html">Decision tree</a></td><td>Recursive yes/no splits that make groups purer</td><td>1 tree</td><td>—</td><td>—</td><td>Too deep / tiny leaves</td><td>max_depth, min_samples_leaf, ccp_alpha</td><td>Explainable rules, a base learner</td></tr>
+<tr><td><a href="bagging.html">Bagging</a></td><td>Same model on bootstrap samples, averaged</td><td>Deep trees (or any unstable model)</td><td>Average / vote</td><td>Variance</td><td>Rarely (members too deep on tiny data)</td><td>n_estimators, max_samples</td><td>Stabilising any high-variance model</td></tr>
+<tr><td><a href="random-forest.html">Random Forest</a></td><td>Bagging + random feature subset at every split</td><td>Deep trees</td><td>Average / vote</td><td>Variance (more than bagging)</td><td>Leaves too small on noisy data</td><td>max_features, n_estimators, min_samples_leaf</td><td>Robust baseline with little tuning</td></tr>
+<tr><td><a href="random-forest.html#extra">Extra Trees</a></td><td>Random thresholds too, usually no bootstrap</td><td>Deep trees</td><td>Average / vote</td><td>Variance (even more)</td><td>Rarely</td><td>max_features, n_estimators</td><td>Fast training, noisy data</td></tr>
+<tr><td><a href="adaboost.html">AdaBoost</a></td><td>Re-weight misclassified rows each round</td><td>Stumps</td><td>Weighted vote (α per learner)</td><td>Bias</td><td>Label noise and outliers</td><td>n_estimators, learning_rate, base depth</td><td>Clean data, teaching boosting</td></tr>
+<tr><td><a href="boosting.html">Gradient Boosting</a></td><td>Fit each tree to the gradient of any loss</td><td>Shallow trees</td><td>Sum × learning rate</td><td>Bias (+ variance via shrinkage, subsampling)</td><td>Too many trees / high learning rate</td><td>learning_rate, n_estimators, max_depth, subsample</td><td>Accuracy on tabular data</td></tr>
+<tr><td><a href="xgboost.html">XGBoost</a></td><td>2nd-order GBM with regularised objective</td><td>Level-wise trees</td><td>Sum</td><td>Bias + variance</td><td>Same as GBM</td><td>eta, max_depth, min_child_weight, λ, γ, subsample</td><td>General-purpose, missing values</td></tr>
+<tr><td><a href="lightgbm.html">LightGBM</a></td><td>Histogram GBM, leaf-wise growth, GOSS, EFB</td><td>Leaf-wise trees</td><td>Sum</td><td>Bias + variance</td><td>Small data (leaf-wise)</td><td>num_leaves, min_child_samples, learning_rate</td><td>Large data, speed</td></tr>
+<tr><td><a href="catboost.html">CatBoost</a></td><td>Ordered boosting + ordered target statistics</td><td>Symmetric trees</td><td>Sum</td><td>Bias + variance</td><td>Less prone</td><td>depth, learning_rate, l2_leaf_reg</td><td>Many categorical features, good defaults</td></tr>
+</table></div>
+
+<h2 id="knobs">Same knobs, same intuition</h2>
+<div class="table-wrap"><table>
+<tr><th>Knob</th><th>What it controls</th><th>Turn it up and…</th><th>Typical first move</th></tr>
+<tr><td>Depth / leaves</td><td>How many questions per path → interaction order</td><td>Lower bias, higher variance</td><td>Forest: deep (None); boosting: 3–8 depth or 31–63 leaves</td></tr>
+<tr><td>Min samples per leaf</td><td>How many rows must agree before a prediction is trusted</td><td>Smoother, more bias</td><td>Raise on noisy data (5–50)</td></tr>
+<tr><td>Number of trees</td><td>Crowd size (forest) or number of correction steps (boosting)</td><td>Forest: plateaus. Boosting: overfits eventually</td><td>Forest 300–1000; boosting: large + early stopping</td></tr>
+<tr><td>Learning rate (boosting)</td><td>How much each correction counts</td><td>Faster fit, more overfitting</td><td>0.05–0.1, lower for the final model</td></tr>
+<tr><td>Row sampling</td><td>Each tree sees a random subset of rows</td><td>More diversity, less variance (and less data per tree)</td><td>Bootstrap (forest); 0.6–0.9 (boosting)</td></tr>
+<tr><td>Feature sampling</td><td>Each split/tree sees a random subset of features</td><td>Less correlated trees</td><td>√d for classification forests; 0.5–0.9 for boosting</td></tr>
+<tr><td>Regularisation (λ, γ, min_child_weight)</td><td>Penalty on leaf values / splits</td><td>More conservative trees</td><td>Tune after structure</td></tr>
+</table></div>
+
+<h2 id="choose">Which tree model should I use?</h2>
+<ol>
+<li><b>Need to explain every decision as rules?</b> One shallow decision tree (or a logistic scorecard). Accept lower accuracy.</li>
+<li><b>Want a strong model fast with almost no tuning?</b> Random Forest. Great baseline, hard to break.</li>
+<li><b>Want the best accuracy on tabular data and can tune with early stopping?</b> Gradient boosting: LightGBM for large data, CatBoost when there are many categorical columns, XGBoost as the all-rounder, sklearn's HistGradientBoosting when you want no extra dependency.</li>
+<li><b>Very noisy labels?</b> Random Forest / Extra Trees are more forgiving than boosting; avoid AdaBoost.</li>
+<li><b>Must extrapolate a trend?</b> No tree alone — detrend first, or use a linear/hybrid model.</li>
+<li><b>Tight latency?</b> A small boosted model (few, shallow trees) compiled with Treelite/ONNX, or CatBoost's symmetric trees.</li>
+</ol>
+
+<h2 id="traps">Interview traps across the whole family</h2>
+<ul>
+<li>“Random Forest overfits if you add too many trees.” — <b>False.</b> Error plateaus; overfitting comes from depth and leaf size.</li>
+<li>“Boosting reduces variance like bagging.” — <b>Mostly false.</b> It mainly reduces bias; shrinkage and subsampling are what control its variance.</li>
+<li>“Trees need scaled features.” — <b>False.</b> Splits depend only on order.</li>
+<li>“Trees handle categorical variables natively.” — <b>Depends on the library.</b> sklearn needs encoding; LightGBM and CatBoost handle them; XGBoost supports them when enabled.</li>
+<li>“Feature importance tells me what causes the outcome.” — <b>No.</b> It describes the model, is biased in known ways, and is not causal.</li>
+<li>“A forest can predict a higher price than any house it saw.” — <b>No.</b> Averages of leaf values can't exceed the training range.</li>
+</ul>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="trees-zoo" data-title="The tree-model zoo on one dataset">
+<div class="lab-task"><p>Compare 5-fold CV accuracy of seven tree models on the same noisy data, all with <code>random_state=0</code>: <code>DecisionTreeClassifier()</code>, <code>BaggingClassifier(n_estimators=100)</code>, <code>RandomForestClassifier(n_estimators=100)</code>, <code>ExtraTreesClassifier(n_estimators=100)</code>, <code>AdaBoostClassifier(n_estimators=100)</code>, <code>GradientBoostingClassifier()</code> and <code>HistGradientBoostingClassifier()</code>. Store the means in a dict <code>scores</code> keyed <code>"tree", "bagging", "rf", "et", "ada", "gb", "hgb"</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import time
+from sklearn.datasets import make_classification
+from sklearn.model_selection import cross_val_score
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import (BaggingClassifier, RandomForestClassifier, ExtraTreesClassifier,
+                              AdaBoostClassifier, GradientBoostingClassifier, HistGradientBoostingClassifier)
+
+X, y = make_classification(n_samples=800, n_features=20, n_informative=8, n_redundant=4, flip_y=0.08, random_state=1)
+scores = {}
+# TODO: build the seven models, cross-validate, fill scores
+print(scores)
+</script>
+<script type="text/x-python" data-part="solution">
+import time
+from sklearn.datasets import make_classification
+from sklearn.model_selection import cross_val_score
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import (BaggingClassifier, RandomForestClassifier, ExtraTreesClassifier,
+                              AdaBoostClassifier, GradientBoostingClassifier, HistGradientBoostingClassifier)
+
+X, y = make_classification(n_samples=800, n_features=20, n_informative=8, n_redundant=4, flip_y=0.08, random_state=1)
+models = {
+    "tree": DecisionTreeClassifier(random_state=0),
+    "bagging": BaggingClassifier(n_estimators=100, random_state=0),
+    "rf": RandomForestClassifier(n_estimators=100, random_state=0),
+    "et": ExtraTreesClassifier(n_estimators=100, random_state=0),
+    "ada": AdaBoostClassifier(n_estimators=100, random_state=0),
+    "gb": GradientBoostingClassifier(random_state=0),
+    "hgb": HistGradientBoostingClassifier(random_state=0),
+}
+scores = {}
+for name, m in models.items():
+    t = time.time()
+    scores[name] = cross_val_score(m, X, y, cv=5).mean()
+    print(f"{name:8s} {scores[name]:.3f}   ({time.time() - t:.1f}s)")
+# Read it: one tree is worst (variance); every ensemble beats it; forests and boosters end up close.
+</script>
+<script type="text/x-python" data-part="check">
+need = {"tree", "bagging", "rf", "et", "ada", "gb", "hgb"}
+assert set(scores) == need, f"scores needs keys {need}"
+assert all(scores[k] > scores["tree"] + 0.03 for k in ["bagging", "rf", "et", "gb", "hgb"]), "ensembles should clearly beat one tree"
+assert max(scores["rf"], scores["et"]) > scores["bagging"] - 0.01, "feature randomness should match or beat plain bagging"
+print("Ensembles beat one tree; best:", max(scores, key=scores.get))
+</script>
+</div>
+
+<div class="lab" data-id="trees-invariance" data-title="Trees only care about order">
+<div class="lab-task"><p>Fit a <code>DecisionTreeRegressor(max_depth=4, random_state=0)</code> on <code>X</code>, then on a transformed copy where every column is rescaled and log-transformed (<code>np.log1p(X - X.min(0)) * 1000</code>). Store whether the two sets of test predictions are identical in <code>same_tree</code>. Then do the same with <code>KNeighborsRegressor()</code> and store <code>same_knn</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import make_regression
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.neighbors import KNeighborsRegressor
+
+X, y = make_regression(n_samples=400, n_features=5, noise=10, random_state=0)
+Xt = np.log1p(X - X.min(0)) * 1000          # monotonic transform of each column
+tr, te = slice(0, 300), slice(300, 400)
+
+same_tree = None  # TODO
+same_knn = None   # TODO
+print(same_tree, same_knn)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import make_regression
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.neighbors import KNeighborsRegressor
+
+X, y = make_regression(n_samples=400, n_features=5, noise=10, random_state=0)
+Xt = np.log1p(X - X.min(0)) * 1000
+tr, te = slice(0, 300), slice(300, 400)
+
+def preds(model, A):
+    return model.fit(A[tr], y[tr]).predict(A[te])
+
+same_tree = np.allclose(preds(DecisionTreeRegressor(max_depth=4, random_state=0), X),
+                        preds(DecisionTreeRegressor(max_depth=4, random_state=0), Xt))
+same_knn = np.allclose(preds(KNeighborsRegressor(), X), preds(KNeighborsRegressor(), Xt))
+print("tree unchanged by a monotonic transform:", same_tree)
+print("kNN unchanged:", same_knn, "— distances changed, so neighbours changed")
+</script>
+<script type="text/x-python" data-part="check">
+assert same_tree is not None and same_knn is not None, "compute both"
+assert bool(same_tree) is True, "the tree should give identical predictions"
+assert bool(same_knn) is False, "kNN depends on distances, so it should change"
+print("Confirmed: splits depend only on the order of values.")
+</script>
+</div>
+
+<div class="lab" data-id="trees-extrapolate" data-title="Fix a forest that can't extrapolate">
+<div class="lab-task"><p>Monthly sales grow steadily with a yearly pattern. Train on the first 96 months, forecast the last 24. (1) A <code>RandomForestRegressor(n_estimators=200, random_state=0)</code> on features <code>[t, month]</code> → test MAE <code>mae_rf</code>. (2) Hybrid: fit <code>LinearRegression</code> on <code>t</code> for the trend, train the same forest on the <b>residuals</b> with feature <code>[month]</code>, forecast = trend + forest → <code>mae_hybrid</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error
+
+rng = np.random.default_rng(0)
+t = np.arange(120); month = t % 12
+y = 200 + 3 * t + 25 * np.sin(2 * np.pi * month / 12) + rng.normal(0, 8, 120)
+tr, te = t < 96, t >= 96
+
+mae_rf = None      # TODO
+mae_hybrid = None  # TODO
+print(mae_rf, mae_hybrid)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error
+
+rng = np.random.default_rng(0)
+t = np.arange(120); month = t % 12
+y = 200 + 3 * t + 25 * np.sin(2 * np.pi * month / 12) + rng.normal(0, 8, 120)
+tr, te = t < 96, t >= 96
+
+X = np.column_stack([t, month])
+rf = RandomForestRegressor(n_estimators=200, random_state=0).fit(X[tr], y[tr])
+mae_rf = mean_absolute_error(y[te], rf.predict(X[te]))
+
+trend = LinearRegression().fit(t[tr].reshape(-1, 1), y[tr])
+resid = y[tr] - trend.predict(t[tr].reshape(-1, 1))
+rf2 = RandomForestRegressor(n_estimators=200, random_state=0).fit(month[tr].reshape(-1, 1), resid)
+pred = trend.predict(t[te].reshape(-1, 1)) + rf2.predict(month[te].reshape(-1, 1))
+mae_hybrid = mean_absolute_error(y[te], pred)
+print(f"forest alone: MAE {mae_rf:.1f} (it flat-lines above the highest training value)")
+print(f"trend + forest on residuals: MAE {mae_hybrid:.1f}")
+</script>
+<script type="text/x-python" data-part="check">
+assert None not in (mae_rf, mae_hybrid), "compute both"
+assert mae_rf > 30, "a forest alone should fail badly on the trend"
+assert mae_hybrid < mae_rf / 3, "the hybrid should be far better"
+print(f"Extrapolation fixed: {mae_rf:.1f} → {mae_hybrid:.1f}")
+</script>
+</div>
+
+<h2 id="qa">Intuition questions interviewers ask</h2>
+<div class="qa-block">
+<details class="qa" data-id="trees-89ec5b7" data-l="1"><summary>Explain the difference between bagging and boosting in one minute.</summary><div class="ans"><p>Bagging trains many strong, high-variance models (deep trees) independently on bootstrap samples and averages them, so random errors cancel: it reduces variance and can't overfit by adding members. Boosting trains weak, high-bias models (shallow trees) sequentially, each focusing on the current errors (re-weighted rows in AdaBoost, residuals/gradients in gradient boosting), and adds them up: it reduces bias, is usually more accurate when tuned, but can overfit with too many rounds, so it needs a learning rate and early stopping.</p></div></details>
+<details class="qa" data-id="trees-606afb6" data-l="1"><summary>Why are deep trees used in Random Forest but shallow trees in boosting?</summary><div class="ans"><p>Averaging removes variance but not bias, so forest members should be low-bias (deep) and are allowed high variance. Boosting removes bias step by step, so each member only needs to be slightly better than chance (shallow, low variance); deep members would overfit in a few rounds and leave nothing for later trees to correct.</p></div></details>
+<details class="qa" data-id="trees-0780a01" data-l="2"><summary>Why can't tree models extrapolate, and how do you work around it?</summary><div class="ans"><p>Every prediction is a leaf value — an average of training targets — so outputs are bounded by the training range, and beyond the last split the prediction is constant. Workarounds: model a stationary target (differences, growth rates, ratio to a recent level), fit a trend with a linear model and let trees model the residuals, use linear-tree variants (LightGBM <code>linear_tree</code>), or use a different model when extrapolation is the point.</p></div></details>
+<details class="qa" data-id="trees-2a0630d" data-l="2"><summary>Why don't tree models need feature scaling?</summary><div class="ans"><p>A split asks “is x ≤ t?” and is chosen by sorting values; any strictly increasing transformation keeps the same order, so the same partitions (and predictions) result — only thresholds change. The same reasoning makes trees robust to outliers in features. (Outliers in the <i>target</i> still matter for regression trees, which average targets.)</p></div></details>
+<details class="qa" data-id="trees-e744292" data-l="2"><summary>What does tree depth control, intuitively?</summary><div class="ans"><p>The order of interactions the model can represent and how finely it can partition space. Depth 1 (stumps) gives additive effects only; depth d can express d-way interactions. Greater depth lowers bias and raises variance; forests use deep trees, boosting uses depth 3–8 (or limits leaves).</p></div></details>
+<details class="qa" data-id="trees-3a7271f" data-l="2"><summary>Why does Random Forest add feature sampling on top of bagging?</summary><div class="ans"><p>With plain bagging, strong features dominate the top splits of every tree, so the trees are highly correlated and averaging cancels little (variance ≈ ρσ² for large B). Restricting each split to a random subset forces different trees to use different features, lowering ρ. Each tree gets a bit worse, but the ensemble improves, especially with many correlated features.</p></div></details>
+<details class="qa" data-id="trees-5b4e5ec" data-l="2"><summary>Why does adding trees never overfit a Random Forest but can overfit a booster?</summary><div class="ans"><p>In a forest, extra trees are more independent samples of the same estimator: the average converges to a limit, so error plateaus. In boosting each tree is a further optimisation step on the training loss; after the signal is captured, further steps fit noise, so validation error rises — hence early stopping.</p></div></details>
+<details class="qa" data-id="trees-9134107" data-l="2"><summary>What is the link between gradient boosting and gradient descent?</summary><div class="ans"><p>Gradient descent updates parameters by stepping against the gradient. Gradient boosting updates the <i>predictions</i>: it computes the negative gradient of the loss with respect to each training prediction (for squared error, the residuals), fits a tree to approximate that direction as a function of the features, and takes a step of size η. The model is the sum of all steps.</p></div></details>
+<details class="qa" data-id="trees-7089379" data-l="2"><summary>How do trees handle a diagonal decision boundary, and how can you help them?</summary><div class="ans"><p>Splits are axis-aligned, so a diagonal boundary is approximated by a staircase that needs many splits and data, and generalises poorly. Help with feature engineering (x₁ − x₂, ratios), rotating features (PCA), or using a model with oblique boundaries (linear model, SVM, neural net). Ensembles smooth the staircase but don't remove the issue.</p></div></details>
+<details class="qa" data-id="trees-60dedf6" data-l="2"><summary>When would you still choose a single decision tree?</summary><div class="ans"><p>When the rules themselves are the product: regulatory or operational settings that need human-readable, auditable logic; quick segmentation and EDA (“what splits the churners?”); a teaching or stakeholder communication aid; or as a surrogate to explain a complex model. Keep it shallow and validate it, accepting lower accuracy.</p></div></details>
+<details class="qa" data-id="trees-54f8035" data-l="3"><summary>Why are tree ensembles so strong on tabular data compared with neural networks?</summary><div class="ans"><p>Tabular features are heterogeneous (different scales and meanings), often have irregular, threshold-like relationships and many uninformative columns. Trees handle mixed types and scales natively, are invariant to monotonic transformations, select features through splits, capture interactions, and need modest data and tuning. Neural networks have smooth inductive biases suited to images, text and audio, and need more data and care to match boosted trees on typical tables.</p></div></details>
+<details class="qa" data-id="trees-af8679e" data-l="2"><summary>How do the members of a forest and a booster differ in what they predict?</summary><div class="ans"><p>Every forest member predicts the target directly; the forest averages them. A booster's first tree (or constant) predicts the target, but every later tree predicts a <i>correction</i> (residual/gradient), and only the sum is meaningful. That's why you can inspect one forest tree on its own but not one boosting tree.</p></div></details>
+<details class="qa" data-id="trees-74f3315" data-l="2"><summary>Why might Random Forest probabilities be poorly calibrated, and boosted ones better?</summary><div class="ans"><p>A forest averages votes or leaf frequencies from many trees; averaging pulls probabilities away from 0 and 1, so it tends to be under-confident at the extremes. Gradient boosting with log-loss directly optimises a proper scoring rule, so its probabilities are often closer to calibrated (though class weighting and early stopping can distort them). Check with a reliability curve and calibrate with isotonic or Platt scaling.</p></div></details>
+<details class="qa" data-id="trees-2aa281e" data-l="3"><summary>How do tree models treat missing values?</summary><div class="ans"><p>Classic CART used surrogate splits; C4.5 distributed rows fractionally. Modern implementations learn a default direction at each split: XGBoost, LightGBM and sklearn's HistGradientBoosting (and sklearn trees ≥ 1.3) send missing values to whichever side reduces the loss most. That also lets the model exploit informative missingness. Older sklearn estimators require imputation.</p></div></details>
+</div>
+</main>
+</body>
+</html>

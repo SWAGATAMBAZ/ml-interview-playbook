@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Time-series forecasting · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
+<title>Forecasting fundamentals · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/demos4.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="time-series">
 <main>
-<div class="eyebrow">Applied · Forecasting · Classical + ML</div>
-<h1>Time-series forecasting</h1>
+<div class="eyebrow">Forecasting · Start here · Concepts, validation and the model map</div>
+<h1>Forecasting fundamentals</h1>
 <p class="lede">Predicting the future from the past: sales, demand, traffic, prices. Interviews care less about formulas and more about whether you <b>respect time</b>: stationarity, no shuffling, proper backtesting and picking the right family of models. Each model family below gets its own plain-English idea and a “when it wins” box.</p>
-<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#models">Each model</a><a href="#when">When it wins</a><a href="#components">Components</a><a href="#stationarity">Stationarity</a><a href="#acf">ACF and PACF</a><a href="#ets">Exponential smoothing, Prophet & others</a><a href="#ml">Forecasting with ML</a><a href="#validation">Validation</a><a href="#metrics">Forecast metrics</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+<div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#map">Section map</a><a href="#vocab">Vocabulary</a><a href="#models">Each model</a><a href="#when">When it wins</a><a href="#components">Components</a><a href="#stationarity">Stationarity</a><a href="#acf">ACF and PACF</a><a href="#ets">Exponential smoothing, Prophet & others</a><a href="#ml">Forecasting with ML</a><a href="#validation">Validation</a><a href="#metrics">Forecast metrics</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
 <p>To forecast tomorrow's ice-cream sales, you'd look at: the <b>trend</b> (sales growing year on year), <b>seasonality</b> (more in summer, more on weekends), <b>recent momentum</b> (yesterday was unusually high) and <b>outside drivers</b> (a heatwave, a promotion). Every forecasting model is a different way of combining these four ingredients.</p>
@@ -32,6 +32,31 @@
 <li><b>Horizon matters:</b> recursive multi-step forecasting compounds errors, while direct or multi-output strategies avoid that.</li>
 </ul>
 
+<h2 id="map">The forecasting section: a map</h2>
+<p>This page is the foundation (concepts, components, stationarity, validation, metrics). Each model family then has its own deep page:</p>
+<div class="grid">
+<a class="card" href="forecast-classical.html"><div class="kicker">Level 1 · Baselines & smoothing</div><h4>Naive, seasonal naive, drift, SES, Holt, Holt-Winters, ETS, Theta, STL/MSTL, TBATS</h4><p>The benchmarks every forecast must beat — and often the winners.</p></a>
+<a class="card" href="arima.html"><div class="kicker">Level 2 · Box–Jenkins</div><h4>AR, MA, ARMA, ARIMA, SARIMA, SARIMAX, VAR, GARCH, state space & Kalman</h4><p>Autocorrelation modelling, order selection, diagnostics, exogenous regressors.</p></a>
+<a class="card" href="forecast-ml.html"><div class="kicker">Level 3 · Machine learning</div><h4>Lag features, LightGBM, global models, multi-step strategies, Prophet, Fourier terms</h4><p>How M5 was won: one model across thousands of series.</p></a>
+<a class="card" href="forecast-dl.html"><div class="kicker">Level 4 · Deep learning</div><h4>RNN, LSTM, GRU, seq2seq, TCN, DeepAR, N-BEATS, N-HiTS, TFT, PatchTST, foundation models</h4><p>When deep learning wins, how LSTM gates work, and the DLinear critique.</p></a>
+<a class="card" href="forecast-advanced.html"><div class="kicker">Level 5 · Specialist topics</div><h4>Prediction intervals, quantiles, conformal, hierarchical reconciliation, intermittent demand (Croston)</h4><p>What separates senior forecasting answers from junior ones.</p></a>
+<a class="card" href="forecast-playbook.html"><div class="kicker">Playbook</div><h4>Improving accuracy, bottlenecks, model selection, monitoring, 30 situational Q&As</h4><p>Use it the night before the interview.</p></a>
+</div>
+<h3 id="vocab">Core vocabulary interviewers expect</h3>
+<div class="table-wrap"><table>
+<tr><th>Term</th><th>Meaning</th><th>Why it matters</th></tr>
+<tr><td>Horizon (h)</td><td>How far ahead you forecast (e.g. 1–28 days)</td><td>Error grows with h; choose models, features and metrics per horizon</td></tr>
+<tr><td>Lookback / context window</td><td>How much history each prediction uses</td><td>Too short misses seasonality; too long adds noise and cost</td></tr>
+<tr><td>Forecast origin / cut-off</td><td>The last time point whose data you may use</td><td>Everything after it is the future — the root of leakage bugs</td></tr>
+<tr><td>Granularity & frequency</td><td>Time step (hour, day, week) and level (SKU-store, region)</td><td>Finer = noisier and more intermittent; aggregation smooths</td></tr>
+<tr><td>Past covariates</td><td>Variables known only up to the origin (yesterday's traffic, weather observed)</td><td>Must be lagged; can't be used for the future directly</td></tr>
+<tr><td>Known-future covariates</td><td>Variables known in advance (calendar, holidays, planned price, promotions)</td><td>The most valuable features; SARIMAX and TFT need their future values</td></tr>
+<tr><td>Static covariates</td><td>Fixed per series (store type, category)</td><td>Let global models share information across series</td></tr>
+<tr><td>Local vs global model</td><td>One model per series vs one model across all series</td><td>Global models learn shared patterns and handle short/new series</td></tr>
+<tr><td>Point vs probabilistic</td><td>A single number vs a distribution / quantiles / intervals</td><td>Inventory and capacity decisions need quantiles, not means</td></tr>
+<tr><td>Univariate vs multivariate</td><td>One target vs several targets modelled jointly</td><td>VAR, multivariate deep models; most production is univariate + covariates</td></tr>
+<tr><td>Backtesting</td><td>Repeatedly forecasting from past origins and scoring</td><td>The only honest validation for forecasts</td></tr>
+</table></div>
 <h2 id="models">Each model family in plain English</h2>
 
 <h3 id="m-ets">1 · Exponential smoothing (ETS / Holt-Winters)</h3>
@@ -172,10 +197,12 @@
 </table></div>
 <p><b>Multi-step strategies:</b> recursive (feed predictions back in — errors accumulate), direct (one model per horizon), multi-output. <b>Leakage traps:</b> rolling windows that include the current value, target-encoded features computed on the whole series, scaling fitted on future data, random train/test splits.</p>
 
+<div class="widget" data-demo="windowing"><div class="widget-title">Turning a series into supervised rows</div><div class="widget-sub">Each training row = the last L values (inputs) and the next H values (targets). Slide the sample to see the window move.</div></div>
 <h2 id="validation">Validation</h2>
 <div class="widget" data-demo="cvsplit"><div class="widget-title">Cross-validation schemes</div><div class="widget-sub">Click TimeSeriesSplit: training always precedes validation.</div></div>
 <ul><li>Rolling-origin (expanding or sliding window) backtests mimic production retraining.</li><li>Add a <b>gap</b> equal to the feature look-back / label delay.</li><li>Match the validation horizon to the business horizon (next 7 days, next quarter).</li><li>Compare against naive (last value) and seasonal-naive baselines.</li></ul>
 
+<div class="widget" data-demo="backtest"><div class="widget-title">Design a backtest</div><div class="widget-sub">Expanding vs sliding window, horizon, step and gap. Each row is one fold: the readout legend shows train, gap and forecast colours.</div></div>
 <h2 id="metrics">Forecast metrics</h2>
 <div class="table-wrap"><table>
 <tr><th>Metric</th><th>Formula idea</th><th>Notes</th></tr>

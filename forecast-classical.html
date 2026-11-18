@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Baselines, exponential smoothing & decomposition · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/demos4.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="forecast-classical">
+<main>
+<div class="eyebrow">Forecasting · Level 1 · The models every forecast must beat</div>
+<h1>Baselines, exponential smoothing & decomposition</h1>
+<p class="lede">Naive, seasonal naive and drift forecasts; simple, Holt and Holt-Winters exponential smoothing; the ETS framework; Theta; and STL, MSTL and TBATS decomposition. These are fast, explainable, and in forecasting competitions they are embarrassingly hard to beat. Interviewers use them to check whether you benchmark before you reach for LSTMs.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#baselines">Baselines</a><a href="#ses">SES</a><a href="#holt">Holt & damped</a><a href="#hw">Holt-Winters</a><a href="#demo">Interactive</a><a href="#ets">ETS taxonomy</a><a href="#theta">Theta</a><a href="#decomp">Decomposition</a><a href="#tbats">Multiple seasonality</a><a href="#key">Must-know</a><a href="#hp">Parameters</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>To guess tomorrow's café sales, the simplest sensible rules are: “same as today” (naive), “same as last Monday” (seasonal naive), or “today plus the average daily growth” (drift). <b>Exponential smoothing</b> is a smarter version of “recent days matter more”: it keeps a running estimate of the <b>level</b>, nudging it towards each new observation by a fraction α. Add a running estimate of the <b>trend</b> (Holt) and of the <b>weekly pattern</b> (Holt-Winters) and you have a model that big retailers still run on millions of series.</p></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“I always start with naive and seasonal-naive baselines and report skill relative to them, for example MASE. Then exponential smoothing: SES for level only, Holt adds a trend (usually damped), Holt-Winters adds seasonality, additive or multiplicative. ETS is the state-space formulation — Error, Trend, Seasonal — which gives likelihoods, AIC model selection and prediction intervals. For multiple or long seasonalities I'd decompose with STL or MSTL, or use TBATS or Fourier regressors. These methods are fast, robust and often win on short or noisy series.”</p></div>
+
+<h2 id="baselines">The baselines (always compute them)</h2>
+<div class="table-wrap"><table>
+<tr><th>Method</th><th>Forecast \(\hat y_{T+h}\)</th><th>Best when</th></tr>
+<tr><td>Mean</td><td>\(\bar y\)</td><td>Stationary noise around a constant</td></tr>
+<tr><td>Naive (random walk)</td><td>\(y_T\)</td><td>Random-walk-like series: stock prices, exchange rates</td></tr>
+<tr><td>Seasonal naive</td><td>\(y_{T+h-m(k+1)}\), with \(k=\lfloor (h-1)/m\rfloor\) — the same season last cycle</td><td>Strong stable seasonality (retail, energy)</td></tr>
+<tr><td>Drift</td><td>\(y_T + h\,\frac{y_T-y_1}{T-1}\) — the line from first to last point, extended</td><td>Steady trend</td></tr>
+<tr><td>Moving average</td><td>Mean of the last k values</td><td>Noisy level with slow change</td></tr>
+</table></div>
+<p><b>Why they matter:</b> a model that can't beat seasonal naive is adding cost, not value. <b>MASE</b> scales MAE by the in-sample seasonal-naive MAE, so MASE &lt; 1 means “better than the seasonal naive benchmark”. In the M-competitions, simple methods and combinations were consistently competitive with far more complex ones.</p>
+
+<h2 id="ses">Simple exponential smoothing (SES): level only</h2>
+<div class="callout math"><div class="tag">∑ The recursion</div>
+$$\ell_t=\alpha y_t+(1-\alpha)\ell_{t-1},\qquad \hat y_{T+h}=\ell_T\ \ (\text{flat for every }h)$$
+<p>Unrolling it shows why it's called <i>exponential</i>: \(\ell_T=\alpha y_T+\alpha(1-\alpha)y_{T-1}+\alpha(1-\alpha)^2y_{T-2}+\dots\) — a weighted average whose weights decay geometrically.</p></div>
+<p><b>Worked example</b> (α = 0.5, start ℓ₀ = 10): y = 12 → ℓ = 0.5·12 + 0.5·10 = 11; y = 9 → ℓ = 10; y = 14 → ℓ = 12. Forecast for every future step: <b>12</b>.</p>
+<ul>
+<li>α near 1 → reacts fast, close to naive. α near 0 → very smooth, close to the long-run mean.</li>
+<li>α is fitted by minimising one-step-ahead squared errors (or by maximum likelihood in ETS).</li>
+<li>SES is the optimal forecast for an ARIMA(0,1,1) process — a random walk observed with noise.</li>
+</ul>
+
+<h2 id="holt">Holt's linear trend and the damped trend</h2>
+<div class="callout math"><div class="tag">∑ Level + trend</div>
+$$\ell_t=\alpha y_t+(1-\alpha)(\ell_{t-1}+b_{t-1}),\quad b_t=\beta(\ell_t-\ell_{t-1})+(1-\beta)b_{t-1},\quad \hat y_{T+h}=\ell_T+h\,b_T$$
+<p><b>Damped:</b> \(\hat y_{T+h}=\ell_T+(\phi+\phi^2+\dots+\phi^h)\,b_T\) with 0.8 ≤ φ &lt; 1, so the trend flattens out over the horizon.</p></div>
+<p>A straight trend extended for 24 months is usually too optimistic (or pessimistic). <b>The damped trend is one of the most reliable forecasting methods ever tested</b> — a good default when a trend is present but you don't trust it to continue forever.</p>
+
+<h2 id="hw">Holt-Winters: level + trend + season</h2>
+<div class="callout math"><div class="tag">∑ Additive Holt-Winters (season length m)</div>
+$$\begin{aligned}\ell_t&=\alpha(y_t-s_{t-m})+(1-\alpha)(\ell_{t-1}+b_{t-1})\\ b_t&=\beta(\ell_t-\ell_{t-1})+(1-\beta)b_{t-1}\\ s_t&=\gamma(y_t-\ell_{t-1}-b_{t-1})+(1-\gamma)s_{t-m}\\ \hat y_{T+h}&=\ell_T+h\,b_T+s_{T+h-m(k+1)}\end{aligned}$$
+<p><b>Multiplicative</b> seasonality replaces “− s” with “÷ s” and the forecast multiplies by the seasonal index: use it when the seasonal swing grows with the level (or log-transform and use additive).</p></div>
+
+<h2 id="demo">Interactive: tune α, β, γ yourself</h2>
+<div class="widget" data-demo="esdemo"><div class="widget-title">SES → Holt → Holt-Winters</div><div class="widget-sub">Pick a method, drag the smoothing parameters and watch the holdout error versus seasonal naive. “Auto-fit” searches for the best parameters on the training part.</div></div>
+
+<h2 id="ets">The ETS taxonomy (Error, Trend, Seasonal)</h2>
+<p>ETS writes every exponential smoothing method as a <b>state-space model</b> with an explicit error term. That gives a likelihood (so parameters are fitted by MLE), information criteria (AICc) to choose between models automatically, and proper prediction intervals.</p>
+<div class="table-wrap"><table>
+<tr><th>Component</th><th>Options</th><th>Notation</th></tr>
+<tr><td>Error</td><td>Additive, Multiplicative</td><td>A, M</td></tr>
+<tr><td>Trend</td><td>None, Additive, Additive damped</td><td>N, A, Ad</td></tr>
+<tr><td>Seasonal</td><td>None, Additive, Multiplicative</td><td>N, A, M</td></tr>
+</table></div>
+<p>Examples: ETS(A,N,N) = SES; ETS(A,A,N) = Holt; ETS(A,Ad,N) = damped Holt; ETS(A,A,A) = additive Holt-Winters; ETS(M,Ad,M) = multiplicative errors, damped trend, multiplicative season. The point forecasts of A and M error versions are the same; their <b>intervals</b> differ (multiplicative errors widen with the level). Multiplicative errors need strictly positive data.</p>
+
+<h2 id="theta">The Theta method</h2>
+<p>Winner of the M3 competition. Decompose the (deseasonalised) series into two “theta lines”: θ = 0 (the straight regression trend) and θ = 2 (the curvature doubled). Forecast the first by extrapolating the line and the second with SES, then average. Hyndman & Billah showed it is equivalent to <b>SES with drift equal to half the regression slope</b> — a damped-ish trend in disguise. Great to name in an interview as “a simple benchmark that beat sophisticated models”.</p>
+
+<h2 id="decomp">Decomposition: classical, STL, MSTL</h2>
+<p>\(y_t=T_t+S_t+R_t\) (additive) or \(T_t\times S_t\times R_t\) (multiplicative, or additive on logs).</p>
+<ul>
+<li><b>Classical:</b> centred moving average for trend; average detrended values by season. Simple, but loses the ends and assumes a fixed seasonal pattern.</li>
+<li><b>STL</b> (Seasonal-Trend decomposition with Loess): seasonality can change slowly over time, robust to outliers (robust weights), works for any period. Key settings: <code>period</code>, <code>seasonal</code> (smoothness of the seasonal component), <code>robust=True</code>.</li>
+<li><b>MSTL:</b> STL applied iteratively for <b>multiple</b> periods (e.g. hourly electricity: daily 24 and weekly 168).</li>
+<li><b>X-13ARIMA-SEATS:</b> the official-statistics standard (trading-day and holiday effects).</li>
+</ul>
+<p><b>Strength of trend/seasonality</b> (a great EDA number): \(F_S=\max\!\big(0,\,1-\frac{\operatorname{Var}(R)}{\operatorname{Var}(S+R)}\big)\), similarly \(F_T\). Values near 1 mean strong seasonality/trend.</p>
+<p><b>Forecast with decomposition</b> (“STL + ETS” or “STL + ARIMA”): forecast the seasonally adjusted series with any model, then add back the last seasonal cycle (seasonal naive on S).</p>
+
+<h2 id="tbats">Multiple, long or non-integer seasonality</h2>
+<div class="table-wrap"><table>
+<tr><th>Situation</th><th>Approach</th></tr>
+<tr><td>Hourly data: daily + weekly + yearly</td><td>MSTL + model on remainder; Fourier terms in regression/ARIMA; TBATS; Prophet; gradient boosting with calendar features</td></tr>
+<tr><td>Weekly data (period ≈ 52.18)</td><td>Fourier terms with period 365.25/7; TBATS handles non-integer periods</td></tr>
+<tr><td>Very long period (m = 365 on daily data)</td><td>Holt-Winters/SARIMA struggle (365 seasonal states); use Fourier terms (K pairs of sin/cos)</td></tr>
+<tr><td>Moving holidays (Easter, Diwali, Ramadan)</td><td>Holiday dummy regressors with windows before/after</td></tr>
+</table></div>
+<p><b>TBATS</b> = Trigonometric seasonality, Box-Cox transform, ARMA errors, Trend, Seasonal components. It is automatic and flexible, but slow and its intervals can be too wide.</p>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Always beat the baseline:</b> naive / seasonal naive / drift; report MASE or skill vs baseline.</li>
+<li><b>SES</b> = exponentially weighted average; flat forecasts; α controls reactivity.</li>
+<li><b>Holt</b> adds trend; <b>damp it</b> (φ ≈ 0.9) for long horizons.</li>
+<li><b>Holt-Winters</b> adds seasonality: additive when swings are constant, multiplicative when they scale with level.</li>
+<li><b>ETS</b> = state-space version → likelihood, AICc selection, intervals.</li>
+<li><b>STL/MSTL</b> for flexible and multiple seasonalities; robust option for outliers.</li>
+<li><b>Theta</b> ≈ SES with drift; M3 winner; simple methods are hard to beat.</li>
+</ul>
+
+<h2 id="hp">Parameters</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Parameter</th><th>Range</th><th>Meaning</th></tr>
+<tr><td>α (level)</td><td>0–1</td><td>How fast the level follows new data</td></tr>
+<tr><td>β (trend)</td><td>0–α</td><td>How fast the slope adapts; small = stable trend</td></tr>
+<tr><td>γ (season)</td><td>0–1−α</td><td>How fast the seasonal pattern can change</td></tr>
+<tr><td>φ (damping)</td><td>0.8–0.98</td><td>How quickly the trend fades over the horizon</td></tr>
+<tr><td>m (season length)</td><td>Domain</td><td>7 for daily-weekly, 12 monthly, 24 hourly-daily, 52 weekly-yearly</td></tr>
+<tr><td>Additive vs multiplicative</td><td>—</td><td>Plot the series: does the seasonal swing grow with the level?</td></tr>
+<tr><td>Box-Cox λ</td><td>−1 to 2</td><td>Stabilise variance (λ = 0 is log)</td></tr>
+</table></div>
+<script type="text/plain" class="snippet" data-title="python">
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from statsmodels.tsa.exponential_smoothing.ets import ETSModel
+from statsmodels.tsa.seasonal import STL, MSTL
+from statsmodels.tsa.forecasting.theta import ThetaModel
+
+hw  = ExponentialSmoothing(y, trend="add", damped_trend=True, seasonal="mul", seasonal_periods=12).fit()
+ets = ETSModel(y, error="add", trend="add", damped_trend=True, seasonal="add", seasonal_periods=12).fit()
+pi  = ets.get_prediction(start=len(y), end=len(y) + 11).summary_frame(alpha=0.05)   # intervals
+# statsforecast (Nixtla) for speed on many series: AutoETS, AutoTheta, MSTL, AutoTBATS
+</script>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="fc-baselines" data-title="Baselines and MASE">
+<div class="lab-task"><p>Monthly series with trend and season; train = first 120, test = last 24. Build the 24-step forecasts <code>naive</code>, <code>snaive</code> (repeat the last 12 months), <code>drift</code> and <code>mean</code>. Compute MASE for each (test MAE ÷ in-sample MAE of the lag-12 seasonal naive) in dict <code>mase</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+rng = np.random.default_rng(3)
+t = np.arange(144)
+y = 100 + 0.8 * t + 15 * np.sin(2 * np.pi * t / 12) + rng.normal(0, 4, 144)
+tr, te, h, m = y[:120], y[120:], 24, 12
+
+mase = {}
+# TODO: naive, snaive, drift, mean forecasts → MASE
+print(mase)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+rng = np.random.default_rng(3)
+t = np.arange(144)
+y = 100 + 0.8 * t + 15 * np.sin(2 * np.pi * t / 12) + rng.normal(0, 4, 144)
+tr, te, h, m = y[:120], y[120:], 24, 12
+
+steps = np.arange(1, h + 1)
+fc = {
+    "naive": np.repeat(tr[-1], h),
+    "snaive": np.array([tr[len(tr) - m + (i % m)] for i in range(h)]),
+    "drift": tr[-1] + steps * (tr[-1] - tr[0]) / (len(tr) - 1),
+    "mean": np.repeat(tr.mean(), h),
+}
+scale = np.abs(tr[m:] - tr[:-m]).mean()          # in-sample seasonal naive MAE
+mase = {k: np.abs(te - f).mean() / scale for k, f in fc.items()}
+for k, v in sorted(mase.items(), key=lambda kv: kv[1]):
+    print(f"{k:7s} MASE {v:.2f}")
+print("Seasonal naive captures the season; drift captures the trend; neither gets both.")
+</script>
+<script type="text/x-python" data-part="check">
+assert set(mase) == {"naive", "snaive", "drift", "mean"}, "need four baselines"
+assert mase["mean"] > mase["naive"] > mase["snaive"], "order should be mean > naive > seasonal naive"
+assert 1.3 < mase["snaive"] < 1.8, f"seasonal naive MASE looks off: {mase['snaive']:.2f}"
+print("Baselines computed — now every model has a bar to clear.")
+</script>
+</div>
+
+<div class="lab" data-id="fc-ses" data-title="Simple exponential smoothing from scratch">
+<div class="lab-task"><p>Write <code>ses_level(y, alpha, l0)</code> returning the final level after running \(\ell_t=\alpha y_t+(1-\alpha)\ell_{t-1}\) over the whole series. It must match statsmodels' <code>SimpleExpSmoothing</code> with a known initial level and fixed α = 0.3 (its one-step forecast <code>sm_fc</code>).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, warnings
+warnings.filterwarnings("ignore")
+from statsmodels.tsa.holtwinters import SimpleExpSmoothing
+rng = np.random.default_rng(3)
+y = 100 + np.cumsum(rng.normal(0, 2, 120))
+
+def ses_level(y, alpha, l0):
+    return None  # TODO
+
+sm = SimpleExpSmoothing(y, initialization_method="known", initial_level=y[0]).fit(smoothing_level=0.3, optimized=False)
+sm_fc = sm.forecast(1)[0]
+print(ses_level(y, 0.3, y[0]), sm_fc)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, warnings
+warnings.filterwarnings("ignore")
+from statsmodels.tsa.holtwinters import SimpleExpSmoothing
+rng = np.random.default_rng(3)
+y = 100 + np.cumsum(rng.normal(0, 2, 120))
+
+def ses_level(y, alpha, l0):
+    level = l0
+    for v in y:
+        level = alpha * v + (1 - alpha) * level
+    return level
+
+sm = SimpleExpSmoothing(y, initialization_method="known", initial_level=y[0]).fit(smoothing_level=0.3, optimized=False)
+sm_fc = sm.forecast(1)[0]
+print(f"scratch {ses_level(y, 0.3, y[0]):.4f} | statsmodels {sm_fc:.4f}")
+for a in [0.05, 0.3, 0.9]:
+    print(f"alpha={a}: forecast {ses_level(y, a, y[0]):.2f} (last value {y[-1]:.2f})")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+v = ses_level(y, 0.3, y[0])
+assert v is not None and np.isclose(v, sm_fc), "your level should equal the statsmodels forecast"
+assert np.isclose(ses_level([1, 2, 3], 1.0, 0), 3), "alpha = 1 should give the last value (naive)"
+assert np.isclose(ses_level([5, 5, 5], 0.0, 2), 2), "alpha = 0 should never move"
+print("SES = exponentially weighted average, confirmed.")
+</script>
+</div>
+
+<div class="lab" data-id="fc-hw" data-title="Holt-Winters vs the baselines">
+<div class="lab-task"><p>On the same trend + season series, fit <code>ExponentialSmoothing(tr, trend="add", seasonal="add", seasonal_periods=12)</code>, forecast 24 steps, and compute test MAE <code>mae_hw</code>. Compare with seasonal naive (<code>mae_sn</code>).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, warnings
+warnings.filterwarnings("ignore")
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+rng = np.random.default_rng(3)
+t = np.arange(144)
+y = 100 + 0.8 * t + 15 * np.sin(2 * np.pi * t / 12) + rng.normal(0, 4, 144)
+tr, te = y[:120], y[120:]
+
+mae_hw = None  # TODO
+mae_sn = None  # TODO
+print(mae_hw, mae_sn)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, warnings
+warnings.filterwarnings("ignore")
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+rng = np.random.default_rng(3)
+t = np.arange(144)
+y = 100 + 0.8 * t + 15 * np.sin(2 * np.pi * t / 12) + rng.normal(0, 4, 144)
+tr, te = y[:120], y[120:]
+
+hw = ExponentialSmoothing(tr, trend="add", seasonal="add", seasonal_periods=12).fit()
+mae_hw = np.abs(te - hw.forecast(24)).mean()
+sn = np.array([tr[108 + (i % 12)] for i in range(24)])
+mae_sn = np.abs(te - sn).mean()
+p = hw.params
+print(f"Holt-Winters MAE {mae_hw:.2f} vs seasonal naive {mae_sn:.2f}")
+print(f"fitted alpha={p['smoothing_level']:.2f} beta={p['smoothing_trend']:.2f} gamma={p['smoothing_seasonal']:.2f}")
+</script>
+<script type="text/x-python" data-part="check">
+assert None not in (mae_hw, mae_sn), "compute both"
+assert mae_hw < mae_sn / 2, "Holt-Winters should crush seasonal naive when there's both trend and season"
+print("Level + trend + season beats either alone.")
+</script>
+</div>
+
+<div class="lab" data-id="fc-stl" data-title="STL decomposition and component strength">
+<div class="lab-task"><p>Decompose the full series with <code>STL(y, period=12).fit()</code> and compute the strength of seasonality <code>Fs</code> and of trend <code>Ft</code> using \(F=\max(0, 1-\operatorname{Var}(R)/\operatorname{Var}(C+R))\).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from statsmodels.tsa.seasonal import STL
+rng = np.random.default_rng(3)
+t = np.arange(144)
+y = 100 + 0.8 * t + 15 * np.sin(2 * np.pi * t / 12) + rng.normal(0, 4, 144)
+
+Fs = None  # TODO
+Ft = None  # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from statsmodels.tsa.seasonal import STL
+rng = np.random.default_rng(3)
+t = np.arange(144)
+y = 100 + 0.8 * t + 15 * np.sin(2 * np.pi * t / 12) + rng.normal(0, 4, 144)
+
+res = STL(y, period=12, robust=True).fit()
+R = res.resid
+Fs = max(0, 1 - np.var(R) / np.var(res.seasonal + R))
+Ft = max(0, 1 - np.var(R) / np.var(res.trend + R))
+print(f"seasonal strength {Fs:.2f}, trend strength {Ft:.2f}  (close to 1 = strong)")
+</script>
+<script type="text/x-python" data-part="check">
+assert Fs is not None and Ft is not None, "compute both strengths"
+assert Fs > 0.8 and Ft > 0.9, "both components are strong in this series"
+print("Use these numbers in EDA to decide whether a seasonal model is needed.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="forecast-classical-f1f878e" data-l="1"><summary>What baselines do you use for forecasting and why?</summary><div class="ans"><p>Naive (last value), seasonal naive (same period last cycle), drift, and mean. They're free, hard to beat on many real series, and define whether a sophisticated model adds value. Report MASE or relative error vs seasonal naive, per horizon.</p></div></details>
+<details class="qa" data-id="forecast-classical-2bb91c7" data-l="1"><summary>Explain simple exponential smoothing.</summary><div class="ans"><p>The forecast is a weighted average of past values with weights decaying geometrically by (1 − α) per step: \(\ell_t=\alpha y_t+(1-\alpha)\ell_{t-1}\). Forecasts are flat at the last level. α near 1 reacts quickly, near 0 smooths heavily. It suits series with no trend or seasonality.</p></div></details>
+<details class="qa" data-id="forecast-classical-2f6a6db" data-l="2"><summary>Additive or multiplicative seasonality — how do you decide?</summary><div class="ans"><p>Plot it: if the seasonal amplitude is roughly constant as the level changes, additive; if it grows proportionally with the level (e.g. December sales spike is 30% above average whatever the level), multiplicative. Alternatively log-transform, which turns multiplicative into additive, then use additive models and back-transform (with bias adjustment for the mean).</p></div></details>
+<details class="qa" data-id="forecast-classical-0b38550" data-l="2"><summary>Why use a damped trend?</summary><div class="ans"><p>Linear trend extrapolation over long horizons tends to overshoot because real trends slow down or reverse. Damping (φ &lt; 1) makes the trend contribution converge to a constant. Empirically, damped-trend exponential smoothing is among the most accurate methods in large forecasting competitions.</p></div></details>
+<details class="qa" data-id="forecast-classical-03453bf" data-l="2"><summary>What is ETS and how does it differ from Holt-Winters?</summary><div class="ans"><p>ETS is the innovations state-space formulation of exponential smoothing (Error, Trend, Seasonal, each N/A/Ad/M). Holt-Winters is the forecasting recursion; ETS adds an explicit error process, so you get a likelihood (MLE fitting), AICc-based automatic model selection across the 30 combinations, and statistically grounded prediction intervals.</p></div></details>
+<details class="qa" data-id="forecast-classical-6fe4418" data-l="2"><summary>How does exponential smoothing relate to ARIMA?</summary><div class="ans"><p>Linear ETS models are special cases of ARIMA: SES ≡ ARIMA(0,1,1), Holt's linear ≡ ARIMA(0,2,2), additive Holt-Winters ≡ a seasonal ARIMA. But there are ARIMA models with no ETS counterpart and multiplicative ETS models with no ARIMA counterpart. ETS models trend and season explicitly; ARIMA models autocorrelation after differencing.</p></div></details>
+<details class="qa" data-id="forecast-classical-890fa6c" data-l="2"><summary>What is STL and when would you use it?</summary><div class="ans"><p>Seasonal-Trend decomposition using Loess: iteratively smooths to separate trend, seasonal and remainder. Seasonality may evolve over time, any period works, and a robust option down-weights outliers. Use for EDA (strength of trend/season), for anomaly detection on the remainder, and for forecasting by modelling the seasonally adjusted series and adding back the season. MSTL extends it to multiple periods.</p></div></details>
+<details class="qa" data-id="forecast-classical-b64c1ef" data-l="2"><summary>How would you handle hourly data with daily and weekly seasonality?</summary><div class="ans"><p>Options: MSTL with periods 24 and 168 plus ETS/ARIMA on the remainder; regression or ARIMA with Fourier terms for each period (few sin/cos pairs instead of hundreds of dummies); TBATS; Prophet; or gradient boosting with hour-of-day, day-of-week and holiday features plus lags. Classical Holt-Winters/SARIMA handle only one seasonal period.</p></div></details>
+<details class="qa" data-id="forecast-classical-7f82b7c" data-l="2"><summary>What is the Theta method?</summary><div class="ans"><p>The M3-competition winner: decompose the deseasonalised series into a linear trend line (θ = 0) and a line with doubled local curvature (θ = 2), forecast them by extrapolation and SES respectively, and average. It is equivalent to SES with drift equal to half the trend slope — a strong, simple benchmark.</p></div></details>
+<details class="qa" data-id="forecast-classical-8e50f10" data-l="3"><summary>Why are simple methods so hard to beat in forecasting competitions?</summary><div class="ans"><p>Real series are short, noisy and non-stationary; complex models overfit the past and pay a variance cost, and regime shifts break learned relationships. Simple methods have low variance and make robust assumptions (recent level matters most). Combinations of simple methods reduce variance further. Complex/global ML models win when there are many related series, rich covariates and enough data (as in M5).</p></div></details>
+<details class="qa" data-id="forecast-classical-818e404" data-l="2"><summary>What is MASE and why prefer it to MAPE?</summary><div class="ans"><p>Mean Absolute Scaled Error: test MAE divided by the in-sample MAE of the (seasonal) naive forecast. It's scale-free (comparable across series), defined when values are zero (unlike MAPE), symmetric, and interpretable: &lt; 1 beats the naive benchmark. MAPE explodes near zero and penalises over-forecasts more heavily.</p></div></details>
+<details class="qa" data-id="forecast-classical-1617a3b" data-l="3"><summary>How do you produce prediction intervals for exponential smoothing?</summary><div class="ans"><p>Use the ETS state-space form: analytic variance formulas exist for linear (additive-error) models; for multiplicative models, simulate many future sample paths from the fitted model with bootstrapped or Gaussian errors and take quantiles. Validate coverage on backtests — intervals from fitted models are often too narrow because they ignore parameter and model uncertainty.</p></div></details>
+</div>
+</main>
+</body>
+</html>

@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AdaBoost · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="adaboost">
+<main>
+<div class="eyebrow">Tree-based models · Boosting · The original boosting algorithm</div>
+<h1>AdaBoost (adaptive boosting)</h1>
+<p class="lede">AdaBoost builds a strong classifier from very weak ones — usually one-split “stumps” — by re-weighting the training rows each round so the next stump focuses on the rows the team still gets wrong. It's the cleanest way to understand boosting, and interviewers love it because every number can be computed by hand.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#demo">Watch it</a><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#key">Must-know points</a><a href="#hp">Hyperparameters</a><a href="#vsgb">vs gradient boosting</a><a href="#procon">Pros & cons</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>A teacher has a class of not-very-clever students, each of whom only knows one simple rule (“if the email mentions ‘prize’, it's spam”). The teacher asks the first student to label the emails. Then the teacher <b>circles the emails that student got wrong</b> and tells the next student: “these circled ones count extra.” The second student picks the rule that does best on that re-weighted pile. Repeat.</p>
+<p>At the end, the students <b>vote</b> — but students who were more accurate get a <b>louder vote</b>. Each student alone is barely better than guessing; together they're excellent.</p></div>
+
+<h2 id="steps">How it works, step by step</h2>
+<ol class="steps">
+<li><b>Start</b> with equal weights on every training row: \(w_i = 1/n\). Labels are \(y_i\in\{-1,+1\}\).</li>
+<li><b>Fit a weak learner</b> (a stump) that minimises the <i>weighted</i> error \(\varepsilon_m=\sum_{i:\,h_m(x_i)\ne y_i} w_i\).</li>
+<li><b>Give it a say:</b> \(\alpha_m=\tfrac12\ln\frac{1-\varepsilon_m}{\varepsilon_m}\). Accurate learners get a large α; one at 50% error gets α = 0.</li>
+<li><b>Re-weight:</b> \(w_i \leftarrow w_i\,e^{-\alpha_m y_i h_m(x_i)}\) — mistakes multiplied by \(e^{\alpha}\), correct rows by \(e^{-\alpha}\) — then normalise to sum to 1.</li>
+<li><b>Repeat</b> M times. <b>Predict</b> with the weighted vote \(\operatorname{sign}\big(\sum_m \alpha_m h_m(x)\big)\).</li>
+</ol>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“AdaBoost trains weak learners, usually stumps, sequentially. After each round it computes the weighted error ε, gives the learner a vote α = ½ ln((1 − ε)/ε), and multiplies the weights of misclassified rows by e^α so the next learner focuses on them. The final model is the sign of the α-weighted sum. It's equivalent to forward stagewise additive modelling with exponential loss, which is why it's powerful on clean data but sensitive to label noise and outliers — their weights grow exponentially. Gradient boosting generalises the idea to any differentiable loss.”</p></div>
+
+<h2 id="demo">Watch it learn</h2>
+<div class="widget" data-demo="adaboost"><div class="widget-title">AdaBoost, one round at a time</div><div class="widget-sub">Dot size = current weight. Watch the weight pile onto the hard points near the boundary, and the staircase boundary sharpen as stumps are added.</div></div>
+
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>Each round, ask “what is the team still getting wrong?”, make those examples matter more, and add a new simple rule that handles them. Trust each rule in proportion to how accurate it was on the data it was trained on.</p>
+<h3 id="l2">Level 2 · Why those exact formulas</h3>
+<ul>
+<li><b>α grows with accuracy:</b> ε = 0.1 → α = 1.10; ε = 0.3 → α = 0.42; ε = 0.5 → α = 0 (a coin flip gets no say). If ε &gt; 0.5, α is negative — the learner's vote is flipped.</li>
+<li><b>After re-weighting, the last learner looks like a coin flip.</b> The misclassified rows end up holding exactly half of the total weight, so the next learner can't simply repeat the last one — it's forced to find something new.</li>
+<li><b>Weak-learner condition:</b> each learner only needs ε &lt; 0.5 on its weighted data. Then training error falls exponentially: it's at most \(\prod_m 2\sqrt{\varepsilon_m(1-\varepsilon_m)}\le \exp\!\big(-2\sum_m\gamma_m^2\big)\), with \(\gamma_m = 0.5-\varepsilon_m\).</li>
+</ul>
+
+<h3 id="l3">Level 3 · Worked example by hand (3 rounds → perfect)</h3>
+<p>Eight points on a line, x = 1…8, labels <code>+ + − + + − − −</code>. No single threshold separates them: x = 3 is the odd one out. Weak learner: a stump “x &lt; t → one class, else the other”.</p>
+<div class="table-wrap"><table>
+<tr><th>Round</th><th>Best stump (on current weights)</th><th>Misclassified</th><th>ε</th><th>α = ½ ln((1−ε)/ε)</th><th>Weights after update (x = 1…8)</th></tr>
+<tr><td>Start</td><td>—</td><td>—</td><td>—</td><td>—</td><td>all 0.125</td></tr>
+<tr><td>1</td><td>x &lt; 5.5 → +, else −</td><td>x = 3</td><td>1/8 = 0.125</td><td><b>0.973</b></td><td>x3 = 0.50; others 0.0714</td></tr>
+<tr><td>2</td><td>x &lt; 2.5 → +, else −</td><td>x = 4, 5</td><td>2 × 0.0714 = 0.143</td><td><b>0.896</b></td><td>0.042, 0.042, 0.292, 0.25, 0.25, 0.042, 0.042, 0.042</td></tr>
+<tr><td>3</td><td>x &lt; 3.5 → −, else +</td><td>x = 1, 2, 6, 7, 8</td><td>5 × 0.042 = 0.208</td><td><b>0.668</b></td><td>—</td></tr>
+</table></div>
+<p>Check the “half the weight” property: after round 1 the one mistake (x3) holds 0.50; after round 2 the mistakes x4 + x5 hold 0.25 + 0.25 = 0.50. ✔</p>
+<p><b>Final score</b> \(F(x)=0.973\,h_1+0.896\,h_2+0.668\,h_3\):</p>
+<div class="table-wrap"><table>
+<tr><th>x</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th></tr>
+<tr><td>h₁, h₂, h₃</td><td>+ + −</td><td>+ + −</td><td>+ − −</td><td>+ − +</td><td>+ − +</td><td>− − +</td><td>− − +</td><td>− − +</td></tr>
+<tr><td>F(x)</td><td>1.20</td><td>1.20</td><td>−0.59</td><td>0.75</td><td>0.75</td><td>−1.20</td><td>−1.20</td><td>−1.20</td></tr>
+<tr><td>sign = prediction</td><td>+</td><td>+</td><td>−</td><td>+</td><td>+</td><td>−</td><td>−</td><td>−</td></tr>
+</table></div>
+<p>All eight correct — three stumps, none of which can do it alone, combine into a rule with <b>two</b> thresholds. That is boosting in one picture. (The first lab re-computes these numbers in code.)</p>
+
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<div class="callout math"><div class="tag">∑ AdaBoost = forward stagewise modelling with exponential loss</div>
+<p>Add one term at a time to \(F_{m}(x)=F_{m-1}(x)+\alpha h(x)\), choosing α and h to minimise the exponential loss \(L=\sum_i e^{-y_iF(x_i)}\). Writing \(w_i=e^{-y_iF_{m-1}(x_i)}\) (exactly AdaBoost's weights):</p>
+$$L(\alpha,h)=e^{-\alpha}\!\!\sum_{y_i=h(x_i)}\!\! w_i+e^{\alpha}\!\!\sum_{y_i\ne h(x_i)}\!\! w_i$$
+<p>For fixed α the best h minimises the weighted error; setting \(\partial L/\partial\alpha=0\) gives \(\alpha=\tfrac12\ln\frac{1-\varepsilon}{\varepsilon}\). The population minimiser of exponential loss is \(F^*(x)=\tfrac12\ln\frac{P(y=1\mid x)}{P(y=-1\mid x)}\) — half the log-odds — so probabilities can be recovered as \(\sigma(2F)\).</p></div>
+<ul>
+<li><b>Margins:</b> \(y_iF(x_i)/\sum\alpha\) is the confidence margin. AdaBoost keeps increasing margins after training error hits zero, which explains why test error often keeps falling — boosting's famous resistance to overfitting on clean data.</li>
+<li><b>Noise sensitivity:</b> exponential loss punishes a wrong, confident prediction as \(e^{|margin|}\). A mislabelled point keeps being misclassified, so its weight grows round after round and the model contorts itself around it. Logistic (deviance) loss grows only linearly — one reason gradient boosting with log-loss is more robust.</li>
+<li><b>SAMME</b> (multi-class): α = ln((1 − ε)/ε) + ln(K − 1), so a learner only needs to beat random guessing among K classes (ε &lt; 1 − 1/K). sklearn uses SAMME (the probability-based SAMME.R was removed in 1.6).</li>
+<li><b>AdaBoost.R2</b> (regression): re-weights by a scaled loss (linear, square or exponential) and combines by a <i>weighted median</i>.</li>
+<li><b>Learning rate:</b> multiplying α by ν &lt; 1 (shrinkage) needs more rounds but usually generalises better.</li>
+<li><b>Base learner depth:</b> stumps give an additive model (no interactions); depth-2 or 3 trees let AdaBoost model interactions.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“How does AdaBoost work?”</li><li>“Where does the α formula come from?”</li><li>“What happens if a weak learner has error exactly 0.5, or above?”</li><li>“Why is AdaBoost sensitive to outliers?”</li><li>“What loss does AdaBoost minimise, and how does it relate to gradient boosting?”</li><li>“Why does test error keep dropping after training error is zero?”</li></ol>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Sequential, re-weighting</b> boosting: misclassified rows gain weight, correct rows lose it.</li>
+<li><b>α = ½ ln((1 − ε)/ε)</b>; ε = 0.5 → α = 0; weighted-vote final prediction.</li>
+<li><b>Minimises exponential loss</b> via forward stagewise additive modelling.</li>
+<li><b>Training error drops exponentially</b> if each learner beats chance.</li>
+<li><b>Sensitive to label noise and outliers</b> (exponential weights).</li>
+<li><b>Mainly reduces bias</b>; base learners are stumps or shallow trees.</li>
+<li><b>Gradient boosting</b> generalises it to any differentiable loss by fitting residuals/gradients instead of re-weighting.</li>
+</ul>
+
+<h2 id="hp">Hyperparameters (sklearn AdaBoostClassifier)</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Parameter</th><th>Effect</th><th>Guidance</th></tr>
+<tr><td>estimator</td><td>Weak learner</td><td>Default stump (<code>DecisionTreeClassifier(max_depth=1)</code>); depth 2–3 for interactions</td></tr>
+<tr><td>n_estimators</td><td>Number of rounds</td><td>50–500; choose with <code>staged_score</code> on validation data</td></tr>
+<tr><td>learning_rate</td><td>Shrinks each α</td><td>Lower (0.1–0.5) + more rounds generalises better; trades off with n_estimators</td></tr>
+<tr><td>algorithm</td><td>Multi-class variant</td><td>SAMME (only option in recent sklearn)</td></tr>
+</table></div>
+
+<h2 id="vsgb">AdaBoost vs gradient boosting</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>AdaBoost</th><th><a href="boosting.html">Gradient boosting</a></th></tr>
+<tr><td>What each new learner sees</td><td>Same labels, new row weights</td><td>New targets: residuals / negative gradients</td></tr>
+<tr><td>Loss</td><td>Exponential (fixed)</td><td>Any differentiable loss (squared, log, Huber, quantile…)</td></tr>
+<tr><td>Learner weight</td><td>Closed-form α</td><td>Line search / leaf values × learning rate</td></tr>
+<tr><td>Noise robustness</td><td>Low</td><td>Better with log or Huber loss</td></tr>
+<tr><td>Typical use today</td><td>Teaching, clean small data, face detection (Viola–Jones)</td><td>Most tabular problems (XGBoost, LightGBM, CatBoost)</td></tr>
+</table></div>
+
+<h2 id="procon">Pros & cons</h2>
+<div class="procon"><div class="pro"><h4>Strengths</h4><ul><li>Few hyperparameters, simple to implement</li><li>Turns any weak learner into a strong one</li><li>Often resists overfitting on clean data (margins keep growing)</li><li>Built-in feature selection with stumps</li></ul></div>
+<div class="con"><h4>Weaknesses</h4><ul><li>Sensitive to label noise and outliers</li><li>Sequential — can't parallelise across rounds</li><li>Usually less accurate than modern gradient boosting</li><li>Probabilities need calibration</li></ul></div></div>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="ada-scratch" data-title="AdaBoost from scratch (reproduce the hand example)">
+<div class="lab-task"><p>Implement <code>adaboost(X, y, M)</code> for labels in {−1, +1}: start with uniform weights, fit <code>DecisionTreeClassifier(max_depth=1, random_state=0)</code> with <code>sample_weight=w</code>, compute ε, α = ½ ln((1 − ε)/ε), update and normalise the weights. Return <code>(stumps, alphas)</code>. Write <code>predict(stumps, alphas, X)</code> returning the sign of the weighted sum. On the 8-point example, alphas should be ≈ [0.973, 0.896, 0.668] and all points correct.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.tree import DecisionTreeClassifier
+
+X = np.arange(1, 9, dtype=float).reshape(-1, 1)
+y = np.array([1, 1, -1, 1, 1, -1, -1, -1])
+
+def adaboost(X, y, M):
+    n = len(y)
+    w = np.ones(n) / n
+    stumps, alphas = [], []
+    for m in range(M):
+        pass  # TODO: fit stump with weights, compute eps and alpha, update w
+    return stumps, np.array(alphas)
+
+def predict(stumps, alphas, X):
+    return None  # TODO
+
+stumps, alphas = adaboost(X, y, 3)
+print(alphas)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.tree import DecisionTreeClassifier
+
+X = np.arange(1, 9, dtype=float).reshape(-1, 1)
+y = np.array([1, 1, -1, 1, 1, -1, -1, -1])
+
+def adaboost(X, y, M):
+    n = len(y)
+    w = np.ones(n) / n
+    stumps, alphas = [], []
+    for m in range(M):
+        stump = DecisionTreeClassifier(max_depth=1, random_state=0).fit(X, y, sample_weight=w)
+        pred = stump.predict(X)
+        eps = w[pred != y].sum() / w.sum()
+        alpha = 0.5 * np.log((1 - eps) / max(eps, 1e-12))
+        w = w * np.exp(-alpha * y * pred)     # mistakes × e^α, correct × e^-α
+        w = w / w.sum()
+        stumps.append(stump); alphas.append(alpha)
+        print(f"round {m+1}: eps={eps:.3f} alpha={alpha:.3f} weight on mistakes now {w[pred != y].sum():.2f}")
+    return stumps, np.array(alphas)
+
+def predict(stumps, alphas, X):
+    F = sum(a * s.predict(X) for a, s in zip(alphas, stumps))
+    return np.sign(F)
+
+stumps, alphas = adaboost(X, y, 3)
+print("alphas:", alphas.round(3), "| predictions:", predict(stumps, alphas, X))
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert len(alphas) == 3, "return three alphas"
+assert np.allclose(alphas, [0.973, 0.896, 0.668], atol=0.01), f"alphas should match the hand example, got {np.round(alphas, 3)}"
+p = predict(stumps, alphas, X)
+assert p is not None and (p == y).all(), "the 3-stump ensemble should classify all 8 points"
+print("Matches the hand-worked example exactly.")
+</script>
+</div>
+
+<div class="lab" data-id="ada-noise" data-title="Why AdaBoost is sensitive to label noise">
+<div class="lab-task"><p>Flip 10% of labels (mask <code>flipped</code>) and run your scratch AdaBoost for 100 rounds, this time returning the <b>final weights</b>. Compute <code>ratio</code> = mean weight of flipped rows ÷ mean weight of clean rows, and <code>share</code> = total weight held by flipped rows.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.datasets import make_classification
+
+X, y01 = make_classification(n_samples=600, n_features=8, n_informative=4, random_state=0)
+y = 2 * y01 - 1
+rng = np.random.default_rng(0)
+flipped = rng.random(600) < 0.10
+y_noisy = np.where(flipped, -y, y)
+
+def final_weights(X, y, M):
+    w = np.ones(len(y)) / len(y)
+    # TODO: AdaBoost loop, return w
+    return w
+
+ratio = None  # TODO
+share = None  # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.datasets import make_classification
+
+X, y01 = make_classification(n_samples=600, n_features=8, n_informative=4, random_state=0)
+y = 2 * y01 - 1
+rng = np.random.default_rng(0)
+flipped = rng.random(600) < 0.10
+y_noisy = np.where(flipped, -y, y)
+
+def final_weights(X, y, M):
+    w = np.ones(len(y)) / len(y)
+    for _ in range(M):
+        s = DecisionTreeClassifier(max_depth=1, random_state=0).fit(X, y, sample_weight=w)
+        p = s.predict(X)
+        eps = w[p != y].sum()
+        a = 0.5 * np.log((1 - eps) / max(eps, 1e-12))
+        w = w * np.exp(-a * y * p); w /= w.sum()
+    return w
+
+w = final_weights(X, y_noisy, 100)
+ratio = w[flipped].mean() / w[~flipped].mean()
+share = w[flipped].sum()
+print(f"{flipped.mean():.0%} of rows are mislabelled but hold {share:.0%} of the weight "
+      f"({ratio:.1f}× the average clean row). Later stumps are busy fitting noise.")
+</script>
+<script type="text/x-python" data-part="check">
+assert ratio is not None and share is not None, "compute ratio and share"
+assert ratio > 2.5, "mislabelled rows should carry several times the weight of clean rows"
+assert share > 0.2, "the 10% of noisy rows should hold well over 10% of the weight"
+print(f"Noise magnet confirmed: ratio {ratio:.1f}, share {share:.0%}")
+</script>
+</div>
+
+<div class="lab" data-id="ada-staged" data-title="Pick n_estimators and learning_rate with staged scores">
+<div class="lab-task"><p>For <code>learning_rate</code> in 1.0 and 0.1, fit <code>AdaBoostClassifier(n_estimators=400, random_state=0)</code> and use <code>staged_score(X_te, y_te)</code> to find the best number of rounds and best test accuracy. Store dict <code>best = {lr: (rounds, acc)}</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import AdaBoostClassifier
+
+X, y = make_classification(n_samples=600, n_features=8, n_informative=4, random_state=0)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3, random_state=0)
+best = {}
+# TODO
+print(best)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import AdaBoostClassifier
+
+X, y = make_classification(n_samples=600, n_features=8, n_informative=4, random_state=0)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3, random_state=0)
+best = {}
+for lr in [1.0, 0.1]:
+    m = AdaBoostClassifier(n_estimators=400, learning_rate=lr, random_state=0).fit(X_tr, y_tr)
+    s = np.array(list(m.staged_score(X_te, y_te)))
+    best[lr] = (int(s.argmax()) + 1, float(s.max()))
+    print(f"lr={lr}: best {best[lr][1]:.3f} at {best[lr][0]} rounds; at 400 rounds {s[-1]:.3f}")
+print("Smaller learning rate → needs more rounds to reach its best.")
+# In practice choose rounds on a validation split, not the test set.
+</script>
+<script type="text/x-python" data-part="check">
+assert set(best) == {1.0, 0.1}, "fill both learning rates"
+assert best[0.1][0] > best[1.0][0], "the smaller learning rate should need more rounds"
+assert all(0.85 < v[1] <= 1 for v in best.values()), "accuracies look off"
+print("Learning rate and n_estimators trade off.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="adaboost-4f5e149" data-l="1"><summary>How does AdaBoost work?</summary><div class="ans"><p>It trains weak learners sequentially on weighted data. Start with equal weights; each round fit a weak learner minimising weighted error ε, assign it α = ½ ln((1 − ε)/ε), multiply weights of misclassified rows by e^α and of correct rows by e^−α, normalise. Predict with sign(Σ αₘhₘ(x)).</p></div></details>
+<details class="qa" data-id="adaboost-b7e4a17" data-l="2"><summary>What happens if a weak learner has error 0.5, or more than 0.5?</summary><div class="ans"><p>At ε = 0.5, α = 0: it gets no vote and weights don't change, so boosting stalls (sklearn stops early). At ε &gt; 0.5, α is negative, which flips the learner's predictions — equivalent to a learner with error 1 − ε. In multi-class SAMME the threshold is 1 − 1/K.</p></div></details>
+<details class="qa" data-id="adaboost-26779cf" data-l="2"><summary>What happens if a weak learner has zero error?</summary><div class="ans"><p>α → ∞ — the learner alone decides everything and boosting is done (implementations stop or clip ε to a small value). It usually means the base learner is too strong or there's leakage.</p></div></details>
+<details class="qa" data-id="adaboost-683f2c3" data-l="2"><summary>Why does AdaBoost focus on hard examples?</summary><div class="ans"><p>Weights are \(w_i\propto e^{-y_iF(x_i)}\): rows with negative margin (misclassified) grow exponentially. After each update, misclassified rows hold exactly half the weight, so the next learner must do better on them than the last one did.</p></div></details>
+<details class="qa" data-id="adaboost-9f4be9e" data-l="2"><summary>Why is AdaBoost sensitive to outliers and label noise?</summary><div class="ans"><p>Exponential loss penalises a confidently wrong prediction as e^{margin}. A mislabelled point keeps being misclassified, its weight compounds, and later learners twist to fit it. Remedies: lower learning rate, fewer rounds, robust variants (LogitBoost, GentleBoost, gradient boosting with log or Huber loss), or cleaning labels.</p></div></details>
+<details class="qa" data-id="adaboost-8609121" data-l="3"><summary>Derive the AdaBoost α.</summary><div class="ans"><p>With weights \(w_i=e^{-y_iF_{m-1}(x_i)}\) normalised, the exponential loss of adding αh is \(e^{-\alpha}(1-\varepsilon)+e^{\alpha}\varepsilon\). Differentiate: \(-e^{-\alpha}(1-\varepsilon)+e^{\alpha}\varepsilon=0\Rightarrow e^{2\alpha}=(1-\varepsilon)/\varepsilon\Rightarrow\alpha=\tfrac12\ln\frac{1-\varepsilon}{\varepsilon}\).</p></div></details>
+<details class="qa" data-id="adaboost-4cc37bc" data-l="3"><summary>What loss does AdaBoost minimise and what does its score estimate?</summary><div class="ans"><p>Exponential loss \(e^{-yF(x)}\), through forward stagewise additive modelling. Its population minimiser is half the log-odds, \(F^*(x)=\tfrac12\ln\frac{p}{1-p}\), so \(p=1/(1+e^{-2F})\). Exponential and log-loss share the minimiser but exponential loss punishes large negative margins far more.</p></div></details>
+<details class="qa" data-id="adaboost-7afdfb6" data-l="3"><summary>Why does AdaBoost's test error often keep falling after training error reaches zero?</summary><div class="ans"><p>Margin theory (Schapire et al.): after every point is correct, further rounds still increase the margins \(y_iF(x_i)\), making the classifier more confident; generalisation bounds depend on the margin distribution rather than the number of rounds. It's not unlimited — with noise, AdaBoost eventually overfits.</p></div></details>
+<details class="qa" data-id="adaboost-47a348a" data-l="2"><summary>AdaBoost vs gradient boosting?</summary><div class="ans"><p>AdaBoost changes row weights and keeps labels; it minimises exponential loss with a closed-form α. Gradient boosting keeps weights and changes targets — each tree fits the negative gradient of an arbitrary differentiable loss — so it handles regression, ranking, quantiles and robust losses. AdaBoost is gradient boosting with exponential loss (up to the weak-learner fitting step).</p></div></details>
+<details class="qa" data-id="adaboost-e9f6f1d" data-l="2"><summary>Why use stumps as the base learner?</summary><div class="ans"><p>They're weak (low variance, high bias), fast, and guarantee each round adds a small, simple correction. Stumps give an additive model with no interactions; if interactions matter, use depth-2 or 3 trees. Deep trees would overfit within a few rounds and defeat the purpose.</p></div></details>
+<details class="qa" data-id="adaboost-09bbd83" data-l="2"><summary>Can AdaBoost do regression or multi-class?</summary><div class="ans"><p>Yes: SAMME for multi-class (adds ln(K − 1) to α), AdaBoost.R2 for regression (re-weights by scaled absolute/squared/exponential error and combines by weighted median). In practice gradient boosting is preferred for both.</p></div></details>
+<details class="qa" data-id="adaboost-b3e3103" data-l="1"><summary>Where is AdaBoost used in practice?</summary><div class="ans"><p>Historically the Viola–Jones face detector (a cascade of boosted Haar-feature stumps). Today it's mainly a teaching tool and a quick baseline on clean, small data; gradient-boosting libraries have largely replaced it.</p></div></details>
+</div>
+</main>
+</body>
+</html>

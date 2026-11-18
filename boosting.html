@@ -2,14 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AdaBoost & Gradient Boosting · ML Interview Playbook</title>
+<title>Gradient Boosting (GBM) · ML Interview Playbook</title>
 <link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="boosting">
 <main>
-<div class="eyebrow">Supervised · Ensemble · Boosting fundamentals</div>
-<h1>AdaBoost & Gradient Boosting</h1>
+<div class="eyebrow">Tree-based models · Boosting · Gradient boosting machines</div>
+<h1>Gradient Boosting (GBM)</h1>
 <p class="lede">The idea behind XGBoost, LightGBM and CatBoost: build many weak models <b>one after another</b>, each one fixing what the previous ones got wrong. This page covers the two classic versions, <b>AdaBoost</b> and <b>Gradient Boosting</b>. The modern libraries have their own pages: <a href="xgboost.html">XGBoost</a>, <a href="lightgbm.html">LightGBM</a>, <a href="catboost.html">CatBoost</a>.</p>
+<div class="callout interview"><div class="tag">🧭 Where this fits</div><p>AdaBoost now has <a href="adaboost.html">its own page</a> with a full hand-worked example; the short AdaBoost section below is a recap. For the family picture (why boosting fixes bias and bagging fixes variance) see <a href="trees.html">the tree family overview</a>. Next: <a href="xgboost.html">XGBoost</a>, <a href="lightgbm.html">LightGBM</a>, <a href="catboost.html">CatBoost</a>.</p></div>
 <div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#demo">Watch it learn</a><a href="#losses">Common loss functions</a><a href="#reg">Regularising a booster</a><a href="#hp">Hyperparameters</a><a href="#tuning">A tuning recipe that works</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>

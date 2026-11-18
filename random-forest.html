@@ -2,14 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Bagging & Random Forest · ML Interview Playbook</title>
-<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/lab.js"></script>
+<title>Random Forest & Extra Trees · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/demos4.js"></script><script src="assets/lab.js"></script>
 </head>
 <body data-page="random-forest">
 <main>
-<div class="eyebrow">Supervised · Ensemble · Bagging</div>
-<h1>Bagging & Random Forest</h1>
+<div class="eyebrow">Tree-based models · Ensembles · Bagging + feature randomness</div>
+<h1>Random Forest & Extra Trees</h1>
 <p class="lede">Many deep decision trees, each trained on a slightly different random slice of the data, voting together. Random Forest is the most reliable “works out of the box” model for tabular data. Interviews probe bagging, why randomness helps, out-of-bag error and feature-importance traps.</p>
+<div class="callout interview"><div class="tag">🧭 Where this fits</div><p>New to ensembles? Read <a href="trees.html">the tree family overview</a> and <a href="bagging.html">Bagging</a> first — Random Forest is bagging plus random features at every split. Want the side-by-side picture of tree, bagging, RF, Extra Trees and boosting? The <a href="trees.html#see">five-model demo</a> shows all of them on one dataset.</p></div>
 <div class="toc"><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#key">Must-know points</a><a href="#deeper">Advanced intuition</a><a href="#when">When it wins</a><a href="#oob">Out-of-bag</a><a href="#importance">Feature importance</a><a href="#hp">Hyperparameters</a><a href="#extra">Extremely Randomised Trees</a><a href="#vs">Random Forest vs Gradient Boosting</a><a href="#procon">Pros/cons</a><a href="#maths">Optional maths</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
 
 <div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
@@ -146,6 +147,7 @@
 <tr><td>oob_score, n_jobs, random_state</td><td>Free validation; parallelism; reproducibility</td><td>n_jobs=-1</td></tr>
 </table></div>
 
+<div class="widget" data-demo="ensembles"><div class="widget-title">Bagging vs Random Forest vs Extra Trees vs boosting</div><div class="widget-sub">Switch models on the same noisy data and compare the boundaries and test accuracy.</div></div>
 <h2 id="extra">Extremely Randomised Trees</h2>
 <p>ExtraTrees go further: thresholds are drawn at random (best of random candidates) and by default no bootstrap. Even lower variance and faster training, slightly higher bias. Worth a try alongside RF.</p>
 

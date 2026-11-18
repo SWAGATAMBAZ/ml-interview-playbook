@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bagging (bootstrap aggregating) · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/demos4.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="bagging">
+<main>
+<div class="eyebrow">Tree-based models · Ensembles · Variance reduction</div>
+<h1>Bagging (bootstrap aggregating)</h1>
+<p class="lede">Train the same model many times on random re-samples of the data and average the results. It's the simplest ensemble, the foundation of Random Forest, and the cleanest way to understand variance. Interviewers ask why it works, why it needs unstable models, what out-of-bag means and how it differs from boosting.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#demo">See variance shrink</a><a href="#deep"><b>Layman → advanced</b></a><a href="#l3">Worked example</a><a href="#key">Must-know points</a><a href="#which">Which models benefit</a><a href="#variants">Variants</a><a href="#hp">Hyperparameters</a><a href="#vs">Bagging vs boosting</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>Imagine asking a very opinionated friend to estimate house prices. They've seen only the houses in your dataset, and they latch onto every quirk — so if you'd shown them a slightly different set of houses, they'd give quite different answers. Now clone that friend 200 times, show each clone a different <b>random re-sample</b> of the houses, and <b>average</b> their answers. Each clone's quirks point in different directions and cancel out; what they agree on survives.</p>
+<p>The “random re-sample” is a <b>bootstrap</b>: pick rows at random <i>with replacement</i>, as many as the original dataset has. Some rows appear twice, about a third don't appear at all.</p></div>
+
+<h2 id="steps">How it works, step by step</h2>
+<ol class="steps">
+<li><b>Bootstrap:</b> draw n rows with replacement from the n training rows. Repeat to get B different samples.</li>
+<li><b>Train</b> one copy of the base model (usually a deep decision tree) on each sample, independently — in parallel.</li>
+<li><b>Aggregate:</b> average the predictions (regression) or take a majority vote / average the probabilities (classification).</li>
+<li><b>Validate for free:</b> each row was left out of about 37% of the samples; predicting it with only those models gives the <b>out-of-bag (OOB)</b> estimate.</li>
+</ol>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“Bagging trains B copies of a model on bootstrap samples and averages them. Averaging B predictors with variance σ² and pairwise correlation ρ gives variance ρσ² + (1 − ρ)σ²/B, so it cuts variance without adding bias — it helps unstable, high-variance learners like deep trees and does almost nothing for stable ones like linear regression. Each bootstrap leaves out about 37% of rows, which gives a free out-of-bag error estimate. Random Forest is bagging plus random feature subsets to lower ρ further.”</p></div>
+
+<h2 id="demo">See variance shrink</h2>
+<div class="widget" data-demo="bagvar"><div class="widget-title">One deep tree vs the average of many bootstrap trees</div><div class="widget-sub">With B = 1, press “New training sample” several times — the fit jumps around. Then raise B and press it again.</div></div>
+
+<h2 id="deep">How it works — from layman to advanced</h2>
+<h3 id="l1">Level 1 · Plain English</h3>
+<p>Any model trained on data has two kinds of error: it can be <b>systematically wrong</b> (bias — too simple to capture the pattern) or <b>erratic</b> (variance — it would change a lot if you gave it different data). A deep decision tree has little bias and a lot of variance. Bagging attacks only the second kind: by averaging many versions of the model trained on different-looking data, the erratic part cancels, the systematic part stays.</p>
+<h3 id="l2">Level 2 · The algorithm</h3>
+<ol>
+<li>For b = 1…B: draw bootstrap sample \(D_b\) (n rows, with replacement); fit \(\hat f_b\) on \(D_b\).</li>
+<li>Regression: \(\hat f(x)=\frac1B\sum_b\hat f_b(x)\). Classification: majority vote, or better, average the predicted probabilities (“soft voting”).</li>
+<li>OOB: for each row i, average only the models whose bootstrap sample did not contain i; compute the error over all rows.</li>
+</ol>
+<h3 id="l3">Level 3 · Worked examples by hand</h3>
+<p><b>One bootstrap sample.</b> Training rows A, B, C, D, E, F. Draw 6 times with replacement: <code>B, D, D, A, F, B</code>. Unique rows: A, B, D, F (4 of 6). Rows C and E are <b>out-of-bag</b> for this model, so they can test it. On average a row is left out with probability \((1-\tfrac1n)^n\to e^{-1}\approx0.368\), so each sample contains about 63.2% of the unique rows.</p>
+<p><b>Averaging three trees.</b> For one house, three bagged trees predict ₹52 L, ₹61 L and ₹49 L. Bagged prediction = (52 + 61 + 49)/3 = <b>₹54 L</b>. A classifier with three trees giving P(default) = 0.9, 0.4, 0.35: hard vote = 1 of 3 say “default” → not default; soft vote = average 0.55 → default. Soft voting uses confidence and is usually better.</p>
+<p><b>How much variance is removed?</b> Each tree's prediction has variance σ² = 1:</p>
+<div class="table-wrap"><table>
+<tr><th>Correlation between trees ρ</th><th>B = 1</th><th>B = 10</th><th>B = 100</th><th>B → ∞</th></tr>
+<tr><td>0.0 (fully independent)</td><td>1.00</td><td>0.10</td><td>0.01</td><td>0</td></tr>
+<tr><td>0.1</td><td>1.00</td><td>0.19</td><td>0.109</td><td>0.10</td></tr>
+<tr><td>0.5 (typical plain bagging)</td><td>1.00</td><td>0.55</td><td>0.505</td><td>0.50</td></tr>
+<tr><td>0.9</td><td>1.00</td><td>0.91</td><td>0.901</td><td>0.90</td></tr>
+</table></div>
+<p>Two lessons: going from 10 to 100 trees helps much less than going from 1 to 10; and the floor is ρσ² — <b>only decorrelating the trees lowers it</b>. That's the whole motivation for Random Forest.</p>
+<h3 id="l4">Level 4 · What advanced interviewers probe</h3>
+<ul>
+<li><b>Bias is (almost) unchanged.</b> The average of identically distributed estimators has the same expectation. Strictly, bootstrapping trains each model on ~63% unique rows, so members are slightly weaker; the bagged model's bias is close to one model's bias on that much data.</li>
+<li><b>Instability is the requirement.</b> Breiman's point: bagging helps when small data changes cause large prediction changes (trees, unpruned; neural nets; kNN with small k is surprisingly stable to bootstrap). For stable learners (linear regression, Naive Bayes) the members are near-identical (ρ ≈ 1) and nothing improves — it can even hurt slightly.</li>
+<li><b>OOB vs cross-validation:</b> OOB is nearly free and close to leave-one-out-style estimates, slightly pessimistic for small B (each row is predicted by only ~37% of members). It's invalid with time-ordered or grouped data, because bootstrap rows aren't independent of OOB rows.</li>
+<li><b>Bagging and smoothing:</b> averaging step functions produces a smoother function — bagged trees approximate a smooth regression better than any single tree can.</li>
+<li><b>Classification subtlety:</b> majority voting can make a classifier <i>worse</i> if each member is worse than chance on a region; soft voting with probabilities is safer.</li>
+<li><b>Imbalance:</b> balanced bagging draws each bootstrap sample with equal numbers of each class (undersampling inside each bag), a strong baseline for rare-event detection.</li>
+<li><b>.632 bootstrap:</b> estimates error as 0.368 × training error + 0.632 × OOB error to correct OOB's pessimism.</li>
+</ul>
+<h3 id="l5">How the questioning usually escalates</h3>
+<ol><li>“What is bagging?”</li><li>“Why does averaging reduce variance? Show the formula.”</li><li>“Why doesn't bagging help linear regression?”</li><li>“What fraction of rows end up out-of-bag, and why?”</li><li>“How is Random Forest different from bagged trees?”</li><li>“Bagging vs boosting — which for noisy data?”</li></ol>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Reduces variance, not bias</b> → use low-bias, high-variance base learners (deep trees).</li>
+<li><b>Variance of the average:</b> ρσ² + (1 − ρ)σ²/B. More members shrink the second term; only decorrelation shrinks the first.</li>
+<li><b>About 63.2% unique rows per bootstrap</b>; ~36.8% out-of-bag → free validation estimate.</li>
+<li><b>Members are trained independently</b> → embarrassingly parallel.</li>
+<li><b>More members never overfit</b>; the error plateaus.</li>
+<li><b>Works with any model,</b> but only helps unstable ones.</li>
+<li><b>Random Forest = bagging + random feature subsets</b> at each split.</li>
+</ul>
+
+<h2 id="which">Which models benefit from bagging?</h2>
+<div class="table-wrap"><table>
+<tr><th>Base model</th><th>Stable?</th><th>Bagging helps?</th><th>Why</th></tr>
+<tr><td>Deep decision tree</td><td>No</td><td><b>A lot</b></td><td>Small data changes → different splits</td></tr>
+<tr><td>Neural network</td><td>No (random init, SGD)</td><td>Yes</td><td>Ensembles of nets are a standard way to reduce variance</td></tr>
+<tr><td>kNN (small k)</td><td>Fairly stable to bootstrap</td><td>A little</td><td>Duplicated rows barely change neighbourhoods</td></tr>
+<tr><td>Shallow tree / stump</td><td>Yes</td><td>Little</td><td>High bias, low variance — boost it instead</td></tr>
+<tr><td>Linear / logistic regression</td><td>Yes</td><td>≈ None</td><td>Coefficients barely change between bootstraps</td></tr>
+<tr><td>Naive Bayes</td><td>Yes</td><td>≈ None</td><td>Counts change very little</td></tr>
+</table></div>
+
+<h2 id="variants">Variants: what gets randomised</h2>
+<div class="table-wrap"><table>
+<tr><th>Variant</th><th>Rows</th><th>Features</th><th>sklearn</th></tr>
+<tr><td>Bagging</td><td>Bootstrap (with replacement)</td><td>All</td><td><code>BaggingClassifier(bootstrap=True)</code></td></tr>
+<tr><td>Pasting</td><td>Random subset without replacement</td><td>All</td><td><code>bootstrap=False, max_samples=0.7</code></td></tr>
+<tr><td>Random subspaces</td><td>All</td><td>Random subset per member</td><td><code>bootstrap=False, max_features=0.5</code></td></tr>
+<tr><td>Random patches</td><td>Random subset</td><td>Random subset per member</td><td><code>max_samples=0.7, max_features=0.5</code></td></tr>
+<tr><td><a href="random-forest.html">Random Forest</a></td><td>Bootstrap</td><td>Random subset <b>at every split</b></td><td><code>RandomForestClassifier</code></td></tr>
+<tr><td><a href="random-forest.html#extra">Extra Trees</a></td><td>All (default)</td><td>Random subset per split + random thresholds</td><td><code>ExtraTreesClassifier</code></td></tr>
+<tr><td>Balanced bagging</td><td>Bootstrap with equal class counts</td><td>All</td><td><code>imblearn.ensemble.BalancedBaggingClassifier</code></td></tr>
+</table></div>
+
+<h2 id="hp">Hyperparameters (BaggingClassifier / Regressor)</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Parameter</th><th>Effect</th><th>Guidance</th></tr>
+<tr><td>estimator</td><td>Base learner</td><td>Unstable, low-bias model (deep tree default)</td></tr>
+<tr><td>n_estimators</td><td>Number of members B</td><td>50–500; stop when OOB score flattens</td></tr>
+<tr><td>max_samples</td><td>Rows per member</td><td>1.0 default; smaller = more diversity and speed</td></tr>
+<tr><td>max_features</td><td>Features per member</td><td>&lt; 1.0 gives random subspaces</td></tr>
+<tr><td>bootstrap / bootstrap_features</td><td>Sample with replacement or not</td><td>True = bagging, False = pasting</td></tr>
+<tr><td>oob_score</td><td>Compute OOB estimate</td><td>True (requires bootstrap)</td></tr>
+<tr><td>n_jobs</td><td>Parallel training</td><td>-1</td></tr>
+</table></div>
+
+<h2 id="vs">Bagging vs boosting</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>Bagging</th><th>Boosting</th></tr>
+<tr><td>Training</td><td>Parallel, independent</td><td>Sequential, each depends on the previous</td></tr>
+<tr><td>Data per member</td><td>Bootstrap sample</td><td>All data, re-weighted (AdaBoost) or new targets (gradients)</td></tr>
+<tr><td>Members</td><td>Strong, deep, low bias</td><td>Weak, shallow, high bias</td></tr>
+<tr><td>Reduces</td><td>Variance</td><td>Bias</td></tr>
+<tr><td>Combination</td><td>Equal-weight average</td><td>Weighted sum</td></tr>
+<tr><td>More members</td><td>Never overfits</td><td>Can overfit</td></tr>
+<tr><td>Noisy labels</td><td>Robust</td><td>Can chase noise (AdaBoost especially)</td></tr>
+</table></div>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="bag-scratch" data-title="Bagging from scratch">
+<div class="lab-task"><p>Write <code>bagged_predict(X_tr, y_tr, X_te, B, seed)</code>: for each of B rounds draw a bootstrap sample (<code>rng.integers(0, n, n)</code>), fit <code>DecisionTreeRegressor(random_state=0)</code> on it, predict <code>X_te</code>; return the average. Compare test MSE of one deep tree (<code>mse_tree</code>) with your bagged model using B = 100 (<code>mse_bag</code>).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.metrics import mean_squared_error
+
+rng0 = np.random.default_rng(0)
+X = rng0.uniform(0, 6, (300, 1)); y = np.sin(1.4 * X[:, 0]) * 1.6 + rng0.normal(0, 0.55, 300)
+X_tr, y_tr, X_te, y_te = X[:200], y[:200], X[200:], y[200:]
+
+def bagged_predict(X_tr, y_tr, X_te, B=100, seed=0):
+    rng = np.random.default_rng(seed)
+    preds = []
+    # TODO
+    return None
+
+mse_tree = None  # TODO
+mse_bag = None   # TODO
+print(mse_tree, mse_bag)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.metrics import mean_squared_error
+
+rng0 = np.random.default_rng(0)
+X = rng0.uniform(0, 6, (300, 1)); y = np.sin(1.4 * X[:, 0]) * 1.6 + rng0.normal(0, 0.55, 300)
+X_tr, y_tr, X_te, y_te = X[:200], y[:200], X[200:], y[200:]
+
+def bagged_predict(X_tr, y_tr, X_te, B=100, seed=0):
+    rng = np.random.default_rng(seed)
+    n = len(X_tr)
+    preds = []
+    for _ in range(B):
+        idx = rng.integers(0, n, n)                     # bootstrap: with replacement
+        tree = DecisionTreeRegressor(random_state=0).fit(X_tr[idx], y_tr[idx])
+        preds.append(tree.predict(X_te))
+    return np.mean(preds, axis=0)
+
+mse_tree = mean_squared_error(y_te, DecisionTreeRegressor(random_state=0).fit(X_tr, y_tr).predict(X_te))
+mse_bag = mean_squared_error(y_te, bagged_predict(X_tr, y_tr, X_te, B=100))
+print(f"one deep tree: {mse_tree:.3f} | bagged (B=100): {mse_bag:.3f} | noise floor ≈ {0.55**2:.3f}")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+p = bagged_predict(X_tr, y_tr, X_te, B=20, seed=1)
+assert p is not None and np.shape(p) == (100,), "return one averaged prediction per test row"
+assert mse_tree is not None and mse_bag is not None, "compute both errors"
+assert mse_bag < 0.75 * mse_tree, "bagging should cut the error of a deep tree substantially"
+assert not np.allclose(bagged_predict(X_tr, y_tr, X_te, 5, 0), bagged_predict(X_tr, y_tr, X_te, 5, 1)), "use the seed to draw different bootstrap samples"
+print(f"Variance reduced: {mse_tree:.3f} → {mse_bag:.3f}")
+</script>
+</div>
+
+<div class="lab" data-id="bag-stable" data-title="Bagging helps unstable models, not stable ones">
+<div class="lab-task"><p>Use 5-fold CV R² on the diabetes data. For a <b>deep tree</b> and for <b>linear regression</b>, compute the score alone and inside <code>BaggingRegressor(estimator=..., n_estimators=100, random_state=0)</code>. Store the four numbers in dict <code>r2</code> with keys <code>"tree", "bag_tree", "lin", "bag_lin"</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+from sklearn.datasets import load_diabetes
+from sklearn.model_selection import cross_val_score
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import BaggingRegressor
+
+X, y = load_diabetes(return_X_y=True)
+r2 = {}
+# TODO
+print(r2)
+</script>
+<script type="text/x-python" data-part="solution">
+from sklearn.datasets import load_diabetes
+from sklearn.model_selection import cross_val_score
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import BaggingRegressor
+
+X, y = load_diabetes(return_X_y=True)
+cv = lambda m: cross_val_score(m, X, y, cv=5, scoring="r2").mean()
+r2 = {
+    "tree": cv(DecisionTreeRegressor(random_state=0)),
+    "bag_tree": cv(BaggingRegressor(estimator=DecisionTreeRegressor(random_state=0), n_estimators=100, random_state=0)),
+    "lin": cv(LinearRegression()),
+    "bag_lin": cv(BaggingRegressor(estimator=LinearRegression(), n_estimators=100, random_state=0)),
+}
+for k, v in r2.items():
+    print(f"{k:9s} R² = {v:.3f}")
+print("Deep tree: huge jump. Linear model: essentially unchanged — it was already stable.")
+</script>
+<script type="text/x-python" data-part="check">
+assert set(r2) == {"tree", "bag_tree", "lin", "bag_lin"}, "fill all four"
+assert r2["bag_tree"] - r2["tree"] > 0.2, "bagging should transform the unstable deep tree"
+assert abs(r2["bag_lin"] - r2["lin"]) < 0.02, "bagging should barely change linear regression"
+print("Instability is what bagging needs.")
+</script>
+</div>
+
+<div class="lab" data-id="bag-oob" data-title="Out-of-bag score vs cross-validation">
+<div class="lab-task"><p>Fit <code>BaggingClassifier(n_estimators=200, oob_score=True, random_state=0)</code> as <code>bag</code> on the breast-cancer data and compare <code>bag.oob_score_</code> with its 5-fold CV accuracy (<code>cv_acc</code>). Also compute the fraction of rows that are out-of-bag for the first member (<code>oob_frac</code>) using <code>bag.estimators_samples_[0]</code>.</p></div>
+<div data-part="hint"><code>estimators_samples_[0]</code> holds the (possibly repeated) row indices used by member 0; the OOB rows are those not in it: <code>1 - len(np.unique(s)) / n</code>.</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.datasets import load_breast_cancer
+from sklearn.ensemble import BaggingClassifier
+from sklearn.model_selection import cross_val_score
+
+X, y = load_breast_cancer(return_X_y=True)
+bag = None       # TODO
+cv_acc = None    # TODO
+oob_frac = None  # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.datasets import load_breast_cancer
+from sklearn.ensemble import BaggingClassifier
+from sklearn.model_selection import cross_val_score
+
+X, y = load_breast_cancer(return_X_y=True)
+bag = BaggingClassifier(n_estimators=200, oob_score=True, random_state=0).fit(X, y)
+cv_acc = cross_val_score(BaggingClassifier(n_estimators=200, random_state=0), X, y, cv=5).mean()
+oob_frac = 1 - len(np.unique(bag.estimators_samples_[0])) / len(X)
+print(f"OOB accuracy {bag.oob_score_:.3f} vs 5-fold CV {cv_acc:.3f} — nearly free validation")
+print(f"member 0 never saw {oob_frac:.1%} of rows (theory: 36.8%)")
+</script>
+<script type="text/x-python" data-part="check">
+assert bag is not None and hasattr(bag, "oob_score_"), "fit bag with oob_score=True"
+assert abs(bag.oob_score_ - cv_acc) < 0.03, "OOB should be close to CV"
+assert oob_frac is not None and abs(oob_frac - 0.368) < 0.04, "about 36.8% of rows should be out-of-bag"
+print("OOB ≈ CV, and ~37% of rows are out-of-bag per member.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="bagging-89798f5" data-l="1"><summary>What is bagging?</summary><div class="ans"><p>Bootstrap aggregating: train the same learning algorithm on B bootstrap samples (n rows drawn with replacement) and combine their predictions by averaging (regression) or voting/averaging probabilities (classification). It reduces variance and is the basis of Random Forest.</p></div></details>
+<details class="qa" data-id="bagging-f000d17" data-l="2"><summary>Why does averaging reduce variance? Give the formula.</summary><div class="ans"><p>For B identically distributed predictors with variance σ² and pairwise correlation ρ, Var(average) = ρσ² + (1 − ρ)σ²/B. Independent errors (ρ = 0) shrink by 1/B; correlated ones leave a floor of ρσ². Bias stays that of a single member because the expectation of an average equals the common expectation.</p></div></details>
+<details class="qa" data-id="bagging-819f523" data-l="2"><summary>Why does bagging not help linear regression?</summary><div class="ans"><p>Linear regression is a stable, low-variance estimator: bootstrap samples produce almost the same coefficients, so the members are highly correlated (ρ ≈ 1) and their average equals any one of them. Bagging helps only when the learner is unstable — when small changes in data cause large changes in the fitted model.</p></div></details>
+<details class="qa" data-id="bagging-2b8b2fa" data-l="1"><summary>What fraction of rows appears in a bootstrap sample?</summary><div class="ans"><p>Each row is missed with probability (1 − 1/n)ⁿ → e⁻¹ ≈ 0.368, so about 63.2% of the unique rows appear (some several times) and 36.8% are out-of-bag.</p></div></details>
+<details class="qa" data-id="bagging-6a57bc1" data-l="2"><summary>What is the out-of-bag error and when can't you use it?</summary><div class="ans"><p>For each row, predict using only the members whose bootstrap sample didn't contain it, then compute the error across rows — a validation estimate with no hold-out set, close to cross-validation. It's invalid when rows aren't independent: time series (future rows help predict past ones) and grouped data (other rows of the same entity are in-bag).</p></div></details>
+<details class="qa" data-id="bagging-f418472" data-l="2"><summary>How is Random Forest different from bagged decision trees?</summary><div class="ans"><p>Random Forest adds a random subset of candidate features at every split. Bagged trees still tend to use the same dominant features near the root, so they're correlated; per-split feature sampling decorrelates them, lowering the ρσ² floor of the ensemble variance.</p></div></details>
+<details class="qa" data-id="bagging-e44314e" data-l="2"><summary>Bagging vs boosting — which for noisy labels, and why?</summary><div class="ans"><p>Bagging. Its members are trained independently on random samples and averaged, so mislabelled points affect only some members and get outvoted. Boosting focuses later learners on hard points — which include mislabelled ones — so it can chase noise (AdaBoost's exponential loss is especially sensitive).</p></div></details>
+<details class="qa" data-id="bagging-982a4b7" data-l="2"><summary>Hard voting vs soft voting?</summary><div class="ans"><p>Hard voting counts each member's predicted class; soft voting averages predicted probabilities and thresholds the average. Soft voting uses confidence, usually performs better, and gives probabilities — but requires members that output reasonably calibrated probabilities.</p></div></details>
+<details class="qa" data-id="bagging-a859422" data-l="2"><summary>Does adding more bagged models ever hurt?</summary><div class="ans"><p>Not in expected accuracy: the error converges as B grows, so extra members only cost training time, memory and latency. In practice watch the OOB curve and stop when it flattens.</p></div></details>
+<details class="qa" data-id="bagging-1150f76" data-l="2"><summary>What are pasting, random subspaces and random patches?</summary><div class="ans"><p>Pasting samples rows without replacement; random subspaces give each member a random subset of features (all rows); random patches sample both rows and features. They are different ways to make ensemble members diverse, useful for high-dimensional data or very large datasets.</p></div></details>
+<details class="qa" data-id="bagging-b6f98d9" data-l="3"><summary>Why do bagged trees produce smoother predictions than a single tree?</summary><div class="ans"><p>Each tree is a step function with thresholds at slightly different places (different bootstrap samples). Averaging many step functions with jittered breakpoints approximates a smooth curve, reducing the abrupt jumps that make a single tree's predictions noisy.</p></div></details>
+<details class="qa" data-id="bagging-5562a46" data-l="3"><summary>How would you use bagging for a highly imbalanced problem?</summary><div class="ans"><p>Balanced bagging: draw each member's sample with all (or a bootstrap of) minority cases plus an equal-sized random sample of the majority, train, and average. Each member sees a balanced problem while the ensemble still uses most majority data overall. Evaluate with PR-AUC and tune the threshold; recalibrate probabilities if they're needed as probabilities.</p></div></details>
+</div>
+</main>
+</body>
+</html>

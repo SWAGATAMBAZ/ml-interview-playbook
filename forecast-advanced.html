@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Probabilistic, hierarchical & intermittent forecasting · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/demos4.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="forecast-advanced">
+<main>
+<div class="eyebrow">Forecasting · Level 5 · What senior forecasting interviews probe</div>
+<h1>Probabilistic, hierarchical & intermittent forecasting</h1>
+<p class="lede">Real forecasting decisions need more than one number: inventory needs the 95th percentile, finance needs store forecasts that add up to the region, and spare parts sell twice a year. This page covers prediction intervals (analytic, bootstrap, quantile, conformal), the metrics for them (pinball loss, coverage, CRPS), hierarchical reconciliation, intermittent demand (Croston, SBA, TSB), plus multivariate models, anomalies and changepoints, cold start, causal impact and nowcasting.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#pitch">30-sec answer</a><a href="#prob">Why probabilistic</a><a href="#intervals">Interval methods</a><a href="#pmetrics">Metrics</a><a href="#hier">Hierarchical</a><a href="#intermittent">Intermittent demand</a><a href="#demo">Croston demo</a><a href="#multi">Multivariate</a><a href="#anom">Anomalies & changepoints</a><a href="#cold">Cold start</a><a href="#causal">Causal impact</a><a href="#nowcast">Nowcasting</a><a href="#key">Must-know</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>A weather forecast says “70% chance of rain” rather than “it will rain”, because the decision (take an umbrella?) depends on the uncertainty. Business forecasts are the same: a shop stocks enough to cover a <b>bad</b> day, not an average one, so it needs the 95th percentile of demand. Forecasts for 500 stores should add up to the regional forecast (<b>hierarchical reconciliation</b>). And for items that sell rarely — mostly zeros with an occasional sale — you forecast <b>how big</b> sales are and <b>how often</b> they happen separately (<b>Croston</b>).</p></div>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“I'd produce quantile or interval forecasts because decisions like safety stock depend on the tails. Options are analytic intervals from ETS/ARIMA, bootstrapped residual sample paths, quantile regression with pinball loss in LightGBM, or conformal prediction calibrated on backtest residuals for guaranteed coverage. I'd evaluate with pinball loss, interval coverage and width, or CRPS. For product–store–region hierarchies I'd forecast every level and reconcile with MinT so forecasts are coherent and usually more accurate. For intermittent items I'd use Croston/SBA/TSB or a Tweedie model and judge them with metrics that don't break on zeros.”</p></div>
+
+<h2 id="prob">Why point forecasts aren't enough</h2>
+<ul>
+<li><b>Inventory:</b> the optimal order quantity for a newsvendor problem is the quantile \(q=\frac{c_u}{c_u+c_o}\) (underage cost over total) of the demand distribution — not the mean.</li>
+<li><b>Capacity and staffing:</b> plan for P90/P95 load.</li>
+<li><b>Risk:</b> finance cares about downside scenarios (value at risk).</li>
+<li><b>Communication:</b> a fan chart shows stakeholders how much the future is uncertain and stops false precision.</li>
+</ul>
+<div class="widget" data-demo="fanchart"><div class="widget-title">Prediction intervals widen with the horizon</div><div class="widget-sub">The shape depends on the model: a random walk's uncertainty keeps growing, a mean-reverting AR(1) levels off.</div></div>
+
+<h2 id="intervals">Ways to get prediction intervals</h2>
+<div class="table-wrap"><table>
+<tr><th>Method</th><th>How</th><th>Pros</th><th>Cons</th></tr>
+<tr><td><b>Analytic (model-based)</b></td><td>ŷ ± z·σ̂ₕ from the model's variance formula (ETS, ARIMA)</td><td>Instant</td><td>Assumes normal errors and correct model; ignores parameter uncertainty → too narrow</td></tr>
+<tr><td><b>Bootstrapped sample paths</b></td><td>Simulate futures by resampling the model's residuals; take quantiles</td><td>No normality assumption; any horizon</td><td>Assumes residuals are i.i.d.; compute cost</td></tr>
+<tr><td><b>Quantile regression</b></td><td>Train one model per quantile with pinball loss (LightGBM <code>objective="quantile"</code>, TFT)</td><td>Flexible, heteroscedastic, works with ML</td><td>Quantiles can cross; one model per quantile</td></tr>
+<tr><td><b>Distributional models</b></td><td>Predict distribution parameters (DeepAR, NGBoost, GAMLSS)</td><td>Full distribution, sample paths</td><td>Must choose a family</td></tr>
+<tr><td><b>Conformal prediction</b></td><td>Calibrate interval width with residuals on held-out (backtest) data: width = the ⌈(1−α)(n+1)⌉/n quantile of |residuals|</td><td>Distribution-free coverage guarantee (under exchangeability); wraps any model</td><td>Time series break exchangeability → use rolling/adaptive conformal (ACI, EnbPI)</td></tr>
+<tr><td><b>Ensemble spread</b></td><td>Spread of forecasts from different models/seeds</td><td>Cheap with ensembles</td><td>Captures model uncertainty, not noise — usually too narrow alone</td></tr>
+</table></div>
+<p><b>The classic interview trap:</b> intervals built from <i>in-sample</i> residuals of a flexible model are far too narrow, because the model has partly fitted the noise. Calibrate on out-of-sample (backtest) residuals — the conformal lab shows the difference dramatically.</p>
+
+<h2 id="pmetrics">Metrics for probabilistic forecasts</h2>
+<div class="callout math"><div class="tag">∑ Pinball (quantile) loss for quantile level τ</div>
+$$L_\tau(y,\hat q)=\begin{cases}\tau\,(y-\hat q) & y\ge \hat q\\ (1-\tau)\,(\hat q-y) & y<\hat q\end{cases}$$
+<p>Under-predicting is penalised by τ per unit, over-predicting by 1 − τ. Its expected value is minimised by the true τ-quantile, so it's a proper scoring rule for quantiles. τ = 0.5 gives half the absolute error (the median).</p></div>
+<ul>
+<li><b>Coverage:</b> the fraction of actuals inside the 80%/95% intervals — should match the nominal level (check per horizon).</li>
+<li><b>Width / sharpness:</b> among well-calibrated forecasts, narrower is better. Winkler and interval scores combine width and a penalty for misses.</li>
+<li><b>CRPS</b> (continuous ranked probability score): the integral of pinball loss over all quantiles; equals MAE for a point forecast. The standard single score for distributional forecasts.</li>
+<li><b>Weighted quantile loss / scaled pinball</b> (as in the M5 uncertainty track) for comparisons across series.</li>
+</ul>
+
+<h2 id="hier">Hierarchical and grouped forecasting</h2>
+<p>Forecasts exist at many levels — SKU × store, SKU, category, store, region, total — and the business needs them to be <b>coherent</b> (children add up to parents). Independently produced forecasts won't.</p>
+<div class="callout math"><div class="tag">∑ Summing matrix and reconciliation</div>
+<p>All series \(y=S\,b\), where b are the bottom-level series and S the summing matrix. For a total = A + B, A = A1 + A2, B = B1 + B2:</p>
+$$S=\begin{bmatrix}1&1&1&1\\1&1&0&0\\0&0&1&1\\ &I_4& & \end{bmatrix}\qquad \tilde y=S\,G\,\hat y$$
+<p>Reconciliation chooses G: <b>bottom-up</b> takes only bottom forecasts; <b>top-down</b> splits the total by historical or forecast proportions; <b>OLS</b>: \(G=(S^\top S)^{-1}S^\top\); <b>MinT</b> (minimum trace): \(G=(S^\top W^{-1}S)^{-1}S^\top W^{-1}\) with W the covariance of base forecast errors (shrinkage estimate). MinT gives the minimum-variance coherent forecasts and typically improves accuracy at most levels.</p></div>
+<div class="table-wrap"><table>
+<tr><th>Approach</th><th>Good</th><th>Bad</th></tr>
+<tr><td>Bottom-up</td><td>No information lost at the bottom; simple</td><td>Bottom series are noisy/intermittent → poor aggregates</td></tr>
+<tr><td>Top-down</td><td>Aggregates are smooth and accurate</td><td>Loses bottom-level dynamics (promotions at one store)</td></tr>
+<tr><td>Middle-out</td><td>Forecast at a stable middle level, aggregate up, split down</td><td>Choice of level is ad hoc</td></tr>
+<tr><td>Optimal (OLS, WLS, MinT)</td><td>Uses all levels; coherent; usually most accurate</td><td>Needs forecasts at every level and error covariances</td></tr>
+</table></div>
+<p><b>Temporal hierarchies</b> do the same across time (daily → weekly → monthly forecasts reconciled). Libraries: <code>hierarchicalforecast</code> (Nixtla), R's <code>fable</code>.</p>
+
+<h2 id="intermittent">Intermittent (sparse) demand</h2>
+<p>Many zeros, occasional non-zero demands of variable size — spare parts, slow-moving SKUs, item-store level retail. Standard methods fail: SES forecasts dip after every zero and jump after every sale; MAPE is undefined.</p>
+<div class="table-wrap"><table>
+<tr><th>Method</th><th>Idea</th></tr>
+<tr><td><b>Croston</b></td><td>Smooth the non-zero demand sizes z and the intervals between demands p separately with SES (updated only when demand occurs); forecast rate = z / p</td></tr>
+<tr><td><b>SBA</b> (Syntetos–Boylan approximation)</td><td>Croston is biased upward; multiply by (1 − α/2)</td></tr>
+<tr><td><b>TSB</b> (Teunter–Syntetos–Babai)</td><td>Smooth the <b>probability</b> of demand every period (not only at demand), so the forecast decays during long gaps — handles obsolescence</td></tr>
+<tr><td>ADIDA / temporal aggregation</td><td>Aggregate to a coarser bucket (weeks → months) where demand is less intermittent, forecast, disaggregate</td></tr>
+<tr><td>Count distributions</td><td>Poisson / negative binomial / zero-inflated models; DeepAR with negative-binomial likelihood</td></tr>
+<tr><td>Global ML with Tweedie loss</td><td>LightGBM across items — the M5 approach</td></tr>
+</table></div>
+<p><b>Classify demand first</b> (Syntetos–Boylan): average inter-demand interval ADI and squared coefficient of variation of sizes CV². ADI &lt; 1.32 and CV² &lt; 0.49: <i>smooth</i>; ADI ≥ 1.32 and CV² &lt; 0.49: <i>intermittent</i>; ADI &lt; 1.32 and CV² ≥ 0.49: <i>erratic</i>; both high: <i>lumpy</i>.</p>
+<p><b>Croston worked example</b> (α = 0.5): demand 0, 0, 4, 0, 0, 0, 2, 0, 3. First demand 4 after an interval of 3 → z = 4, p = 3. Demand 2 after 4 periods → z = 0.5·2 + 0.5·4 = 3, p = 0.5·4 + 0.5·3 = 3.5. Demand 3 after 2 periods → z = 3, p = 0.5·2 + 0.5·3.5 = 2.75. Forecast rate = 3 / 2.75 ≈ <b>1.09 units per period</b> (SBA: × 0.75 → 0.82).</p>
+<p><b>Metrics:</b> MAE favours forecasting zero for very sparse items (the median is 0); use RMSE/MSE-based scaled metrics (RMSSE), or evaluate the inventory outcome (service level, stock-outs, holding cost) directly.</p>
+
+<h2 id="demo">Interactive: Croston vs SES vs TSB</h2>
+<div class="widget" data-demo="croston"><div class="widget-title">Forecasting demand that is mostly zeros</div><div class="widget-sub">Move the sale probability and α. Compare how SES, Croston and TSB react to zeros, and how steady each forecast is.</div></div>
+
+<h2 id="multi">Multivariate forecasting</h2>
+<ul>
+<li><b>VAR / VECM</b> for a few interacting stationary or cointegrated series.</li>
+<li><b>Global univariate models</b> with other series' lags as covariates — the pragmatic default.</li>
+<li><b>Deep multivariate models:</b> iTransformer, TSMixer, graph neural networks for spatial data (traffic sensors), Moirai's any-variate attention.</li>
+<li><b>Channel independence</b> (PatchTST) — modelling each variable separately with shared weights — often works better than full cross-channel modelling on noisy data.</li>
+</ul>
+
+<h2 id="anom">Anomalies, outliers and changepoints</h2>
+<ul>
+<li><b>Detect:</b> residuals from an STL decomposition or a forecast model beyond k robust standard deviations (median absolute deviation); seasonal hybrid ESD; isolation forest on residual features; forecast-interval exceedances.</li>
+<li><b>Treat in training data:</b> replace known anomalies (outages, stock-outs, data errors) with interpolated or model values, or add event dummies — don't let them distort seasonality. Stock-outs censor demand (sales ≠ demand).</li>
+<li><b>Changepoints / structural breaks:</b> PELT, binary segmentation, Bayesian online changepoint detection; CUSUM for drift monitoring. After a break (e.g. COVID), down-weight or drop pre-break data, add a regime dummy, or use sliding-window training.</li>
+</ul>
+
+<h2 id="cold">Cold start: new products, stores, sensors</h2>
+<ul>
+<li>Global models with static attributes and “age since launch” features.</li>
+<li>Analogues: average the scaled launch curves of the most similar past items.</li>
+<li>Hierarchy: forecast the category, then allocate by expected share.</li>
+<li>Foundation models zero-shot on whatever short history exists.</li>
+<li>Bass diffusion for genuinely new product categories.</li>
+<li>Update fast as data arrive and keep intervals wide.</li>
+</ul>
+
+<h2 id="causal">Causal impact and counterfactual forecasting</h2>
+<p>To measure the effect of an intervention (a campaign, price change, policy), forecast what would have happened <b>without</b> it from data before the intervention (and control series unaffected by it), then compare with what actually happened. Tools: Bayesian structural time series (Google's CausalImpact), synthetic control, difference-in-differences. Assumptions: control series weren't affected, the pre-period relationship is stable, no other simultaneous shock.</p>
+
+<h2 id="nowcast">Nowcasting and data revisions</h2>
+<p>Estimating the present (or very recent past) when official data arrive late — GDP this quarter from weekly card spending, today's final sales from partial-day data. Use mixed-frequency models (MIDAS, dynamic factor models), partial-period features, and always backtest with the <b>vintage</b> of data that was available at each origin (revised data make backtests look too good).</p>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Decisions need quantiles:</b> newsvendor quantile = cᵤ/(cᵤ + cₒ).</li>
+<li><b>Interval methods:</b> analytic, bootstrap paths, quantile regression (pinball), distributional, conformal.</li>
+<li><b>In-sample residuals give overconfident intervals;</b> calibrate on backtests.</li>
+<li><b>Evaluate</b> with pinball loss, coverage + width, CRPS.</li>
+<li><b>Hierarchies:</b> bottom-up, top-down, middle-out, MinT; S·G·ŷ.</li>
+<li><b>Intermittent:</b> Croston (z/p), SBA bias correction, TSB for obsolescence, Tweedie/negative binomial; classify with ADI and CV².</li>
+<li><b>Stock-outs censor demand;</b> anomalies and breaks need explicit treatment.</li>
+</ul>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="fadv-pinball" data-title="Pinball loss picks out quantiles">
+<div class="lab-task"><p>Write <code>pinball(y, q, tau)</code> (mean pinball loss for a constant forecast q). For skewed demand samples <code>y</code>, find the constant q on the grid <code>np.linspace(0, 60, 601)</code> that minimises pinball loss at τ = 0.9 → <code>q90</code>. It should match <code>np.quantile(y, 0.9)</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+y = np.random.default_rng(0).gamma(2.0, 5.0, 5000)     # right-skewed demand
+
+def pinball(y, q, tau):
+    return None  # TODO
+
+q90 = None  # TODO
+print(q90, np.quantile(y, 0.9))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+y = np.random.default_rng(0).gamma(2.0, 5.0, 5000)
+
+def pinball(y, q, tau):
+    d = y - q
+    return np.mean(np.maximum(tau * d, (tau - 1) * d))   # tau·under-forecast, (1-tau)·over-forecast
+
+grid = np.linspace(0, 60, 601)
+q90 = grid[np.argmin([pinball(y, g, 0.9) for g in grid])]
+q50 = grid[np.argmin([pinball(y, g, 0.5) for g in grid])]
+print(f"argmin pinball(0.9) = {q90:.1f}  vs empirical 90th percentile {np.quantile(y, 0.9):.1f}")
+print(f"argmin pinball(0.5) = {q50:.1f}  vs median {np.median(y):.1f}  (mean is {y.mean():.1f})")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert np.isclose(pinball(np.array([10.0]), 8.0, 0.9), 1.8), "under-forecast by 2 at tau 0.9 costs 0.9 × 2"
+assert np.isclose(pinball(np.array([10.0]), 12.0, 0.9), 0.2), "over-forecast by 2 at tau 0.9 costs 0.1 × 2"
+assert q90 is not None and abs(q90 - np.quantile(y, 0.9)) < 0.3, "the minimiser should be the 90th percentile"
+print("Pinball loss is minimised by the quantile — that's why quantile models train on it.")
+</script>
+</div>
+
+<div class="lab" data-id="fadv-conformal" data-title="Overconfident vs conformal intervals">
+<div class="lab-task"><p>A random forest is trained on the first 500 rows. (1) Build a nominal 90% interval ±1.645·σ from its <b>in-sample</b> residuals and measure test coverage → <code>cov_naive</code>. (2) Split conformal: on calibration rows 500–699 compute absolute residuals, take their \(\lceil 0.9(n+1)\rceil/n\) quantile q, use ±q on test rows 700–899 → <code>cov_conf</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+rng = np.random.default_rng(0); N = 900
+X = rng.uniform(0, 10, (N, 3)); y = np.sin(X[:, 0]) * 3 + X[:, 1] + rng.normal(0, 1.2, N)
+tr, ca, te = slice(0, 500), slice(500, 700), slice(700, 900)
+model = RandomForestRegressor(200, random_state=0).fit(X[tr], y[tr])
+
+cov_naive = None  # TODO
+cov_conf = None   # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+rng = np.random.default_rng(0); N = 900
+X = rng.uniform(0, 10, (N, 3)); y = np.sin(X[:, 0]) * 3 + X[:, 1] + rng.normal(0, 1.2, N)
+tr, ca, te = slice(0, 500), slice(500, 700), slice(700, 900)
+model = RandomForestRegressor(200, random_state=0).fit(X[tr], y[tr])
+pred = model.predict(X[te])
+
+sigma_in = (y[tr] - model.predict(X[tr])).std()               # in-sample: model has memorised noise
+cov_naive = np.mean(np.abs(y[te] - pred) <= 1.645 * sigma_in)
+
+r = np.abs(y[ca] - model.predict(X[ca])); n = len(r)
+q = np.quantile(r, np.ceil(0.9 * (n + 1)) / n)
+cov_conf = np.mean(np.abs(y[te] - pred) <= q)
+print(f"in-sample sigma {sigma_in:.2f} → coverage {cov_naive:.0%} (promised 90%)")
+print(f"conformal half-width {q:.2f} → coverage {cov_conf:.0%}")
+</script>
+<script type="text/x-python" data-part="check">
+assert None not in (cov_naive, cov_conf), "compute both coverages"
+assert cov_naive < 0.7, "in-sample residual intervals should badly under-cover"
+assert 0.85 <= cov_conf <= 0.97, f"conformal coverage should be close to 90%, got {cov_conf:.2f}"
+print("Calibrate uncertainty on data the model never trained on.")
+</script>
+</div>
+
+<div class="lab" data-id="fadv-croston" data-title="Croston's method from scratch">
+<div class="lab-task"><p>Implement <code>croston(y, alpha)</code>: on each non-zero demand, update the size estimate z and the interval estimate p (periods since the previous demand, counting the first demand's interval from the start) with SES, and return z / p. Also return the SBA version as <code>croston(y, alpha, sba=True)</code> (× (1 − α/2)). The worked example [0,0,4,0,0,0,2,0,3] with α = 0.5 should give ≈ 1.091.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+
+def croston(y, alpha=0.1, sba=False):
+    z = p = None
+    q = 1            # periods since last demand
+    for v in y:
+        pass  # TODO
+    return None
+
+print(croston([0, 0, 4, 0, 0, 0, 2, 0, 3], 0.5))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+
+def croston(y, alpha=0.1, sba=False):
+    z = p = None
+    q = 1
+    for v in y:
+        if v > 0:
+            if z is None:
+                z, p = v, q                                   # initialise on the first demand
+            else:
+                z = alpha * v + (1 - alpha) * z
+                p = alpha * q + (1 - alpha) * p
+            q = 1
+        else:
+            q += 1
+    rate = z / p
+    return rate * (1 - alpha / 2) if sba else rate
+
+print("Croston:", round(croston([0, 0, 4, 0, 0, 0, 2, 0, 3], 0.5), 4),
+      "| SBA:", round(croston([0, 0, 4, 0, 0, 0, 2, 0, 3], 0.5, sba=True), 4))
+rng = np.random.default_rng(0)
+y = np.where(rng.random(400) < 0.2, rng.poisson(4, 400) + 1, 0)
+print(f"simulated item: true mean rate {y.mean():.2f} | Croston {croston(y, 0.1):.2f} | SBA {croston(y, 0.1, True):.2f}")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+r = croston([0, 0, 4, 0, 0, 0, 2, 0, 3], 0.5)
+assert r is not None and np.isclose(r, 3 / 2.75), f"expected 1.0909, got {r}"
+assert np.isclose(croston([0, 0, 4, 0, 0, 0, 2, 0, 3], 0.5, sba=True), 0.75 * 3 / 2.75), "SBA multiplies by (1 - alpha/2)"
+assert np.isclose(croston([5, 5, 5], 0.3), 5), "every-period demand of 5 should forecast 5"
+print("Croston matches the hand example.")
+</script>
+</div>
+
+<div class="lab" data-id="fadv-reconcile" data-title="Reconcile a hierarchy (OLS)">
+<div class="lab-task"><p>Hierarchy: Total = A + B, A = A1 + A2, B = B1 + B2 (7 series). Build the summing matrix <code>S</code> (7 × 4, rows ordered Total, A, B, A1, A2, B1, B2). Write <code>reconcile(yhat)</code> = \(S(S^\top S)^{-1}S^\top\hat y\). Over 200 simulated periods, store the average total squared error across all 7 series for base forecasts (<code>mse_base</code>) and reconciled ones (<code>mse_rec</code>).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+S = None  # TODO
+
+def reconcile(yhat):
+    return None  # TODO
+
+rng = np.random.default_rng(1); true_b = np.array([10, 20, 5, 15.]); noise = np.array([6, 4, 4, 2, 2, 2, 2])
+mse_base = mse_rec = None
+# TODO: for 200 periods: actual = S @ (true_b + N(0,2)), base forecast = S @ true_b + N(0,1)*noise
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+S = np.array([[1, 1, 1, 1],    # Total
+              [1, 1, 0, 0],    # A
+              [0, 0, 1, 1],    # B
+              [1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], float)
+G = np.linalg.solve(S.T @ S, S.T)          # OLS reconciliation weights
+
+def reconcile(yhat):
+    return S @ (G @ yhat)
+
+rng = np.random.default_rng(1); true_b = np.array([10, 20, 5, 15.]); noise = np.array([6, 4, 4, 2, 2, 2, 2])
+eb, er = [], []
+for _ in range(200):
+    actual = S @ (true_b + rng.normal(0, 2, 4))
+    base = S @ true_b + rng.normal(0, 1, 7) * noise          # independent forecasts: not coherent
+    eb.append(((base - actual) ** 2).sum()); er.append(((reconcile(base) - actual) ** 2).sum())
+mse_base, mse_rec = np.mean(eb), np.mean(er)
+yr = reconcile(S @ true_b + rng.normal(0, 1, 7) * noise)
+print(f"total squared error: base {mse_base:.1f} → reconciled {mse_rec:.1f}")
+print(f"coherent? Total {yr[0]:.2f} = A + B {yr[1] + yr[2]:.2f}")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert S is not None and S.shape == (7, 4), "S should be 7 × 4"
+yr = reconcile(np.random.default_rng(5).normal(10, 3, 7))
+assert np.isclose(yr[0], yr[1] + yr[2]) and np.isclose(yr[1], yr[3] + yr[4]) and np.isclose(yr[2], yr[5] + yr[6]), "reconciled forecasts must add up"
+assert mse_rec < mse_base, "reconciliation should reduce overall error here"
+print("Coherent and more accurate. MinT would weight levels by their error covariance.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="forecast-advanced-e998a14" data-l="2"><summary>How would you produce prediction intervals for a LightGBM forecaster?</summary><div class="ans"><p>Train separate models with quantile (pinball) loss for each required quantile (e.g. 0.1, 0.5, 0.9), fix quantile crossing by sorting; or train a point model and calibrate intervals with conformal prediction on rolling backtest residuals (per horizon, possibly per segment); or bootstrap residuals. Validate coverage and width per horizon on backtests.</p></div></details>
+<details class="qa" data-id="forecast-advanced-bd39d56" data-l="2"><summary>Your 95% intervals only contain 70% of actuals. Why, and what do you do?</summary><div class="ans"><p>Likely causes: intervals from in-sample residuals (overfitting), normality assumed for heavy-tailed errors, ignored parameter/model uncertainty, a regime change, or horizon-independent width. Fix by calibrating on out-of-sample backtest errors per horizon (conformal or empirical quantiles), using heavier-tailed or quantile models, and monitoring coverage over time with adaptive conformal methods.</p></div></details>
+<details class="qa" data-id="forecast-advanced-242cf8e" data-l="2"><summary>What is pinball loss and why use it?</summary><div class="ans"><p>The quantile loss: τ × under-forecast, (1 − τ) × over-forecast. Its expectation is minimised by the τ-quantile, so it trains and evaluates quantile forecasts. Asymmetric costs map directly to τ — a stock-out costing 9× overstock → τ = 0.9.</p></div></details>
+<details class="qa" data-id="forecast-advanced-7dde8c1" data-l="2"><summary>What is CRPS?</summary><div class="ans"><p>The continuous ranked probability score: the integral over thresholds of the squared difference between the forecast CDF and the step function at the observation; equivalently twice the integral of pinball loss over all quantiles. It rewards calibration and sharpness, has the units of the data, and reduces to absolute error for a point forecast.</p></div></details>
+<details class="qa" data-id="forecast-advanced-193fe1e" data-l="2"><summary>How do you make store forecasts add up to the regional forecast?</summary><div class="ans"><p>Hierarchical reconciliation. Produce base forecasts at all levels and project them onto the coherent subspace: ỹ = S·G·ŷ. Bottom-up and top-down are special cases; OLS, WLS (by structural scaling) and MinT (using the error covariance) are optimal combinations — MinT typically improves accuracy at most levels while guaranteeing coherence.</p></div></details>
+<details class="qa" data-id="forecast-advanced-7067dda" data-l="2"><summary>Bottom-up vs top-down — when each?</summary><div class="ans"><p>Bottom-up when bottom series are reasonably long and dense and their own dynamics (store-specific promotions) matter. Top-down when the bottom is very noisy or intermittent but aggregates are smooth and stable shares exist. In practice, forecast all levels and use optimal reconciliation.</p></div></details>
+<details class="qa" data-id="forecast-advanced-55ed737" data-l="2"><summary>How does Croston's method work and why is it needed?</summary><div class="ans"><p>For intermittent demand, SES reacts badly to zeros. Croston separately smooths non-zero demand sizes z and inter-demand intervals p, updating only when demand occurs, and forecasts the rate z/p per period. It's biased upward; SBA multiplies by (1 − α/2). TSB smooths the demand probability every period, so forecasts decay during long gaps (good for obsolescence).</p></div></details>
+<details class="qa" data-id="forecast-advanced-077ff03" data-l="2"><summary>Why is MAPE a bad metric for intermittent demand, and what would you use?</summary><div class="ans"><p>Zero actuals make MAPE undefined/infinite. MAE is also tricky: for very sparse items forecasting zero (the median) minimises it, which is useless for stocking. Use scaled squared-error metrics (RMSSE), pinball loss at the service-level quantile, or evaluate inventory outcomes (fill rate, stock-outs, holding cost) via simulation.</p></div></details>
+<details class="qa" data-id="forecast-advanced-761f78e" data-l="3"><summary>Demand data contain stock-outs. How do you handle them?</summary><div class="ans"><p>Sales during stock-outs underestimate demand (censoring). Flag stock-out periods (inventory = 0 or availability signals), then exclude or down-weight them in training, impute unconstrained demand (from similar stores/periods or models), or use censored-likelihood models (Tobit-style). Otherwise the model learns that demand is low exactly when it ran out, reinforcing under-stocking.</p></div></details>
+<details class="qa" data-id="forecast-advanced-56e3b1a" data-l="3"><summary>How do you detect and handle a structural break such as COVID?</summary><div class="ans"><p>Detect with changepoint methods (PELT, Bayesian online CPD), CUSUM on residuals or monitoring of forecast errors. Handle by adding regime dummies or intervention variables, excluding or down-weighting the abnormal period, training on a sliding window after the break, relying on models that adapt quickly (higher smoothing α), and scenario planning with business input.</p></div></details>
+<details class="qa" data-id="forecast-advanced-d7e4176" data-l="2"><summary>What is conformal prediction, and what's special about time series?</summary><div class="ans"><p>A distribution-free way to turn any model into intervals with guaranteed marginal coverage: use the quantile of absolute residuals on a calibration set as the half-width. The guarantee requires exchangeable data, which time series violate (autocorrelation, drift). Use rolling calibration windows, per-horizon calibration, and adaptive methods (ACI, EnbPI, SPCI) that adjust the level online when coverage drifts.</p></div></details>
+<details class="qa" data-id="forecast-advanced-496317b" data-l="3"><summary>How would you estimate the sales impact of a marketing campaign with time-series methods?</summary><div class="ans"><p>Build a counterfactual: fit a model on the pre-campaign period using control series not exposed to the campaign (other regions, related products) as regressors — e.g. Bayesian structural time series (CausalImpact) or synthetic control — forecast the campaign period, and compare with actuals, with intervals for the cumulative effect. Check pre-period fit, placebo tests and that controls weren't affected.</p></div></details>
+</div>
+</main>
+</body>
+</html>

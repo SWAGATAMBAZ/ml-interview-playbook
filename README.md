@@ -7,7 +7,9 @@ An interactive, single-stop site for machine-learning, data-science and MLOps in
 ## What's inside
 
 - **Foundations:** ML fundamentals, data prep and feature engineering, evaluation metrics, cross-validation and tuning, improving models and explainability, statistics and A/B testing.
-- **15 model deep-dives:** linear regression, Ridge/Lasso/Elastic Net, logistic regression, kNN, Naive Bayes, SVM, decision trees, bagging and Random Forest, AdaBoost and gradient boosting, XGBoost, LightGBM, CatBoost, K-means, hierarchical/DBSCAN/GMM and anomaly detection, PCA and dimensionality reduction, and time-series forecasting.
+- **Model deep-dives:** linear regression, Ridge/Lasso/Elastic Net, logistic regression, kNN, Naive Bayes, SVM, K-means, hierarchical/DBSCAN/GMM and anomaly detection, PCA and dimensionality reduction.
+- **Tree-based models (own section):** a family overview built for intuition (ten mental models, a five-model interactive comparison, extrapolation demo, comparison table), then decision trees, bagging, Random Forest & Extra Trees, AdaBoost (hand-worked example), gradient boosting, XGBoost, LightGBM and CatBoost.
+- **Forecasting (own section, 7 pages):** fundamentals and backtesting; baselines, exponential smoothing, ETS, Theta, STL/MSTL/TBATS; ARIMA, SARIMA, SARIMAX, VAR, GARCH and Kalman filters; ML forecasting with lag features, global LightGBM, multi-step strategies, Fourier terms and Prophet; deep learning from RNN/LSTM/GRU to DeepAR, N-BEATS, TFT, PatchTST and foundation models; probabilistic, hierarchical and intermittent forecasting; and an improvement/bottleneck playbook with 30 situational questions.
   Each page goes from plain English to advanced intuition: a step-by-step explanation without maths, a 30-second interview answer, must-know points, advanced intuition, a “when it wins vs other models” section with a practical example, optional (collapsed) maths, hyperparameters, code, auto-graded labs and interview Q&A.
 - **Production:** MLOps (serving, deployment strategies, CI/CD/CT, monitoring, drift with a PSI demo, retraining, incident playbook) and ML system design with four worked case studies.
 - **Practice:**
@@ -15,6 +17,12 @@ An interactive, single-stop site for machine-learning, data-science and MLOps in
   - 76 runnable Python labs and coding drills, including a capstone.
   - A shared-state Python playground.
   - A printable cheat sheet with an interactive model chooser.
+
+## Added in the trees & forecasting update
+
+- New pages: `trees.html`, `bagging.html`, `adaboost.html`, `forecast-classical.html`, `arima.html`, `forecast-ml.html`, `forecast-dl.html`, `forecast-advanced.html`, `forecast-playbook.html`.
+- 10 new interactive demos (`assets/demos4.js`): five tree ensembles on one dataset, tree extrapolation, bagging variance, exponential smoothing tuner, ARIMA simulator with ACF/PACF, fan charts, backtest designer, windowing, LSTM memory vs RNN, Croston vs SES vs TSB.
+- 35 new auto-graded labs (AdaBoost and bagging from scratch, PACF order identification, Ljung–Box, SARIMAX with promotions, leak-free lag features, recursive vs direct, global vs local, an LSTM cell in NumPy, conformal intervals, Croston, hierarchical reconciliation and more).
 
 ## Added in the depth update
 

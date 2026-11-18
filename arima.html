@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ARIMA, SARIMA & SARIMAX · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/demos4.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="arima">
+<main>
+<div class="eyebrow">Forecasting · Level 2 · Box–Jenkins and friends</div>
+<h1>ARIMA, SARIMA & SARIMAX</h1>
+<p class="lede">The most-asked classical forecasting model. ARIMA models a series by its own past values (AR), its past forecast errors (MA), after differencing (I) to make it stationary. SARIMA adds seasonal terms; SARIMAX adds external regressors such as price, promotions or weather. This page also covers order selection, diagnostics, VAR, GARCH and the state-space/Kalman view.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">Box–Jenkins steps</a><a href="#pitch">30-sec answer</a><a href="#ar">AR</a><a href="#ma">MA</a><a href="#arma">ARMA</a><a href="#demo">ACF/PACF lab</a><a href="#i">Differencing</a><a href="#ident">Identify p, d, q</a><a href="#sarima">SARIMA</a><a href="#sarimax">SARIMAX</a><a href="#diag">Diagnostics</a><a href="#intervals">Intervals</a><a href="#beyond">VAR, GARCH, Kalman</a><a href="#limits">When not to use</a><a href="#key">Must-know</a><a href="#hp">Parameters</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>Tomorrow's temperature is a lot like today's, a bit like yesterday's (<b>AR: autoregressive</b> — the series remembers its own past). If the weather forecaster under-predicted today, they'll partly correct tomorrow (<b>MA: moving average</b> of past surprises). And if the series keeps climbing (like a city's population), ARIMA first looks at the <b>changes</b> instead of the levels (<b>I: integrated</b>, i.e. differencing), because changes are steadier and easier to model.</p>
+<p>SARIMA does the same for “this time last year” (seasonal lags). SARIMAX also lets you say “and a promotion adds 12 units” — external drivers (<b>X</b>).</p></div>
+
+<h2 id="steps">The Box–Jenkins workflow</h2>
+<ol class="steps">
+<li><b>Plot & transform:</b> look for trend, seasonality, changing variance; log/Box-Cox if variance grows with level.</li>
+<li><b>Make stationary:</b> difference (d, and seasonal D) until the ADF test rejects a unit root / KPSS doesn't reject stationarity. Don't over-difference.</li>
+<li><b>Identify:</b> read the ACF and PACF of the differenced series for candidate p, q (and P, Q).</li>
+<li><b>Estimate:</b> fit candidates by maximum likelihood; compare AICc/BIC (or let auto-ARIMA search).</li>
+<li><b>Diagnose:</b> residuals should be white noise — Ljung–Box test, residual ACF, normality, no pattern.</li>
+<li><b>Forecast & validate:</b> rolling-origin backtest against seasonal naive and ETS; check interval coverage.</li>
+</ol>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“ARIMA(p, d, q) differences the series d times to make it stationary, then models it as a linear combination of p past values and q past forecast errors. I pick d with ADF/KPSS tests, p from where the PACF cuts off and q from where the ACF cuts off, then compare candidates by AICc and check that residuals are white noise with Ljung–Box. SARIMA adds seasonal terms (P, D, Q)ₘ; SARIMAX adds exogenous regressors — effectively a regression with ARIMA errors, which needs future values of the regressors at forecast time. It's a strong choice for single series with stable linear autocorrelation, but it's univariate, linear, and slow to scale to thousands of series.”</p></div>
+
+<h2 id="ar">AR(p): the series remembers its past</h2>
+<div class="callout math"><div class="tag">∑ Autoregression</div>
+$$y_t=c+\phi_1y_{t-1}+\dots+\phi_py_{t-p}+\varepsilon_t,\qquad \varepsilon_t\sim\text{white noise}$$
+<p>AR(1) with |φ| &lt; 1 is stationary and mean-reverting towards \(\mu=c/(1-\phi)\). φ = 1 is a <b>random walk</b> (unit root, non-stationary). φ close to 1 means slow decay of shocks; negative φ makes the series zig-zag.</p></div>
+<p><b>Worked example.</b> AR(1): \(y_t=10+0.6\,y_{t-1}+\varepsilon_t\); mean μ = 10/(1 − 0.6) = 25. Last value y = 30. Forecasts: ŷ₁ = 10 + 0.6·30 = 28, ŷ₂ = 10 + 0.6·28 = 26.8, ŷ₃ = 26.08… converging geometrically to 25 — the classic “ARIMA forecasts flatten out” behaviour.</p>
+
+<h2 id="ma">MA(q): the series remembers past surprises</h2>
+<div class="callout math"><div class="tag">∑ Moving-average model (not a moving average smoother!)</div>
+$$y_t=\mu+\varepsilon_t+\theta_1\varepsilon_{t-1}+\dots+\theta_q\varepsilon_{t-q}$$
+<p>A shock affects exactly q future periods, then is forgotten: the ACF is zero after lag q. MA models are always stationary; <b>invertibility</b> (|θ| &lt; 1 for MA(1)) ensures they can be rewritten as an AR(∞) and the parameters are unique.</p></div>
+<p><b>Worked example.</b> MA(1): \(y_t=50+\varepsilon_t+0.4\varepsilon_{t-1}\). Today's surprise was ε = +5. Tomorrow's forecast = 50 + 0.4·5 = 52. Two days ahead = 50 (the shock is forgotten after one step).</p>
+
+<h2 id="arma">ARMA, backshift notation, stationarity</h2>
+<p>Using the backshift operator \(By_t=y_{t-1}\): \(\phi(B)(1-B)^d y_t=c+\theta(B)\varepsilon_t\) with \(\phi(B)=1-\phi_1B-\dots-\phi_pB^p\) and \(\theta(B)=1+\theta_1B+\dots\). <b>Stationarity</b> requires the roots of φ(B) to lie outside the unit circle; <b>invertibility</b> requires the same for θ(B). Differencing is \((1-B)\); seasonal differencing is \((1-B^m)\).</p>
+
+<h2 id="demo">Interactive: what ACF and PACF signatures look like</h2>
+<div class="widget" data-demo="arimasim"><div class="widget-title">Simulate AR, MA and ARMA processes and read their ACF/PACF</div><div class="widget-sub">Choose a preset or drag φ and θ. Bars outside the shaded band are significant. AR(p): PACF cuts off after p. MA(q): ACF cuts off after q.</div></div>
+
+<h2 id="i">I: differencing and unit roots</h2>
+<ul>
+<li><b>First difference</b> \(y_t-y_{t-1}\) removes a stochastic or linear trend. <b>Second difference</b> removes a quadratic trend (rarely needed; d &gt; 2 almost never).</li>
+<li><b>Seasonal difference</b> \(y_t-y_{t-m}\) removes a stable seasonal pattern.</li>
+<li><b>ADF test:</b> H₀ = unit root (non-stationary). Small p → stationary. <b>KPSS:</b> H₀ = stationary. Use both: they can disagree on borderline series.</li>
+<li><b>Over-differencing</b> creates artificial negative autocorrelation (lag-1 ACF near −0.5) and inflates variance. Warning sign: an MA coefficient near −1 after differencing.</li>
+<li><b>Trend-stationary vs difference-stationary:</b> a deterministic trend + stationary noise should be detrended (regression on t), not differenced; a random walk with drift should be differenced.</li>
+</ul>
+
+<h2 id="ident">Identifying p and q from ACF/PACF</h2>
+<div class="table-wrap"><table>
+<tr><th>Process</th><th>ACF</th><th>PACF</th></tr>
+<tr><td>AR(p)</td><td>Tails off (exponential decay or damped oscillation)</td><td><b>Cuts off after lag p</b></td></tr>
+<tr><td>MA(q)</td><td><b>Cuts off after lag q</b></td><td>Tails off</td></tr>
+<tr><td>ARMA(p, q)</td><td>Tails off</td><td>Tails off</td></tr>
+<tr><td>Random walk (undifferenced)</td><td>Very slow linear decay from ≈1</td><td>One big spike at lag 1 ≈ 1</td></tr>
+<tr><td>Seasonal AR(P)ₘ</td><td>Decays at lags m, 2m…</td><td>Spikes at m, …, Pm</td></tr>
+<tr><td>Seasonal MA(Q)ₘ</td><td>Spikes at m, …, Qm</td><td>Decays at seasonal lags</td></tr>
+</table></div>
+<p>In practice, ACF/PACF reading gives candidates; <b>information criteria decide</b>: AIC = −2 log L + 2k, AICc corrects for small samples, BIC = −2 log L + k log n penalises complexity more and tends to choose smaller, often truer models. Auto-ARIMA (pmdarima, statsforecast's AutoARIMA, R's <code>auto.arima</code>) uses unit-root tests for d and D and a stepwise AICc search over p, q, P, Q. <b>Never compare AIC across different d</b> — the likelihoods are on different data.</p>
+
+<h2 id="sarima">SARIMA(p,d,q)(P,D,Q)ₘ</h2>
+<div class="callout math"><div class="tag">∑ Multiplicative seasonal ARIMA</div>
+$$\Phi(B^m)\,\phi(B)\,(1-B)^d(1-B^m)^D\,y_t=\Theta(B^m)\,\theta(B)\,\varepsilon_t$$
+<p>The classic “airline model” is ARIMA(0,1,1)(0,1,1)₁₂ on log passengers: one regular and one seasonal difference, one regular and one seasonal MA term. Its forecasts behave much like Holt-Winters.</p></div>
+<ul><li>D is rarely more than 1; d + D ≤ 2 in practice.</li><li>Long seasons (m = 365 daily, m = 168 hourly) make SARIMA slow and unstable — use Fourier terms as exogenous regressors (dynamic harmonic regression) instead.</li><li>Only one seasonal period is supported.</li></ul>
+
+<h2 id="sarimax">SARIMAX and regression with ARIMA errors</h2>
+<div class="callout math"><div class="tag">∑ Regression with ARIMA errors (what statsmodels' SARIMAX fits)</div>
+$$y_t=\beta_0+\beta^\top x_t+\eta_t,\qquad \eta_t\sim\text{ARIMA}(p,d,q)(P,D,Q)_m$$
+<p>The β's keep their regression meaning (“a promotion adds 12 units”), while the ARIMA error soaks up the autocorrelation that ordinary regression would wrongly ignore (which makes OLS standard errors too small).</p></div>
+<ul>
+<li><b>The catch:</b> to forecast you need the <b>future values of x</b>. Known-future covariates (calendar, planned prices, promotions, holidays) are fine. Unknown ones (weather, competitor price) must themselves be forecast, which adds error — or be used only lagged.</li>
+<li><b>Lagged effects:</b> include x_{t−1}, x_{t−2} or distributed lags when the effect is delayed (advertising carry-over).</li>
+<li><b>Fourier terms as X:</b> \(\sin(2\pi kt/m),\cos(2\pi kt/m)\) for k = 1…K handle long or multiple seasonalities with ARIMA errors.</li>
+<li><b>Intervention analysis:</b> step or pulse dummies for known events (policy change, outage, COVID lockdown).</li>
+<li>Strictly, an <b>ARIMAX</b> model puts x inside the ARMA equation, which makes β hard to interpret; regression with ARIMA errors is usually what people mean and want.</li>
+</ul>
+
+<h2 id="diag">Diagnostics: is the model done?</h2>
+<ul>
+<li><b>Residual ACF</b>: no significant spikes.</li>
+<li><b>Ljung–Box test</b>: \(Q=n(n+2)\sum_{k=1}^{h}\frac{\hat\rho_k^2}{n-k}\sim\chi^2_{h-p-q}\). H₀ = residuals are independent. Small p-value → structure left, revise the model.</li>
+<li><b>Residual mean ≈ 0</b> (bias) and roughly constant variance (else transform or GARCH).</li>
+<li><b>Normality</b> only matters for analytic intervals; use bootstrapped intervals otherwise.</li>
+<li><b>Out-of-sample</b>: rolling-origin backtest vs baselines. Good residuals don't guarantee good forecasts.</li>
+</ul>
+
+<h2 id="intervals">Forecast behaviour and prediction intervals</h2>
+<div class="widget" data-demo="fanchart"><div class="widget-title">How uncertainty grows with the horizon</div><div class="widget-sub">Compare a random walk (variance grows ∝ h), a stationary AR(1) (intervals level off), drift and Holt.</div></div>
+<ul>
+<li>Stationary ARMA forecasts revert to the mean and intervals converge to the unconditional variance.</li>
+<li>With d = 1, intervals grow without bound (∝ √h for a random walk).</li>
+<li>Analytic intervals assume normal errors and known parameters, so they're usually too narrow; check coverage in backtests and consider bootstrap or conformal intervals (see <a href="forecast-advanced.html">advanced topics</a>).</li>
+</ul>
+
+<h2 id="beyond">Beyond univariate ARIMA</h2>
+<div class="table-wrap"><table>
+<tr><th>Model</th><th>What it adds</th><th>Use when</th></tr>
+<tr><td>VAR(p)</td><td>Several series, each regressed on lags of all of them</td><td>Interacting macro variables; Granger causality; impulse responses. Parameters grow as k²p</td></tr>
+<tr><td>VECM</td><td>VAR for cointegrated non-stationary series (a long-run equilibrium)</td><td>Prices of substitutes, spot vs futures</td></tr>
+<tr><td>ARCH / GARCH</td><td>Models time-varying <b>variance</b>: \(\sigma_t^2=\omega+\alpha\varepsilon_{t-1}^2+\beta\sigma_{t-1}^2\)</td><td>Volatility clustering in returns; risk (VaR)</td></tr>
+<tr><td>State space + Kalman filter</td><td>Hidden states (level, slope, season) updated recursively as data arrive</td><td>Missing values, irregular sampling, real-time updating, structural time-series models; ETS and ARIMA can both be written this way</td></tr>
+<tr><td>Dynamic harmonic regression</td><td>Fourier terms + ARIMA errors</td><td>Long or multiple seasonality</td></tr>
+<tr><td>Granger causality</td><td>Test whether lags of x improve forecasts of y</td><td>Predictive (not true) causality checks</td></tr>
+</table></div>
+
+<h2 id="limits">When NOT to use ARIMA</h2>
+<ul>
+<li><b>Strong nonlinear patterns</b> or regime switches (thresholds, saturation) — ARIMA is linear.</li>
+<li><b>Multiple seasonalities</b> (hourly data with daily and weekly cycles) — SARIMA supports only one.</li>
+<li><b>Thousands of related series</b> — fitting and maintaining one model per series is slow, and short series can't borrow strength; a global gradient-boosting or deep model shares information.</li>
+<li><b>Intermittent demand</b> (lots of zeros) — use Croston/TSB or Tweedie models.</li>
+<li><b>Very short history</b> — too few points to estimate orders reliably; use simple ETS, a global model or judgement.</li>
+<li><b>Rich covariates with complex interactions</b> — tree models handle them more naturally.</li>
+</ul>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>p</b> AR lags (PACF cuts off), <b>d</b> differences (ADF/KPSS), <b>q</b> MA lags (ACF cuts off).</li>
+<li><b>Stationarity</b> is needed for ARMA; difference trends, seasonally difference seasons; don't over-difference.</li>
+<li><b>AICc/BIC</b> to choose orders; never compare across different d.</li>
+<li><b>Ljung–Box</b> on residuals: white noise means the model has captured the autocorrelation.</li>
+<li><b>SARIMA</b> adds (P, D, Q)ₘ for one seasonal period.</li>
+<li><b>SARIMAX</b> = regression with ARIMA errors; needs future covariate values.</li>
+<li><b>Forecasts revert</b> to the mean (stationary) or follow a drift; intervals widen with the horizon.</li>
+<li><b>Limits:</b> linear, univariate, one seasonality, per-series fitting.</li>
+</ul>
+
+<h2 id="hp">Parameters (statsmodels SARIMAX)</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Argument</th><th>Meaning</th><th>Guidance</th></tr>
+<tr><td>order=(p,d,q)</td><td>Non-seasonal orders</td><td>Small: p, q ≤ 3; d ∈ {0, 1}</td></tr>
+<tr><td>seasonal_order=(P,D,Q,m)</td><td>Seasonal orders and period</td><td>P, Q ≤ 2; D ∈ {0, 1}</td></tr>
+<tr><td>exog</td><td>Regressors (train) — pass future values to <code>forecast(exog=...)</code></td><td>Known-future or lagged</td></tr>
+<tr><td>trend</td><td>'n', 'c', 't', 'ct'</td><td>Constant/drift; with d = 1, 'c' means drift</td></tr>
+<tr><td>enforce_stationarity / invertibility</td><td>Constrain parameters</td><td>Keep True unless fitting fails</td></tr>
+</table></div>
+<script type="text/plain" class="snippet" data-title="python">
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+m = SARIMAX(y_train, exog=X_train, order=(1, 1, 1), seasonal_order=(0, 1, 1, 12)).fit(disp=False)
+print(m.summary())                       # coefficients, AIC, Ljung-Box (Q) in the footer
+fc = m.get_forecast(steps=12, exog=X_future)
+fc.predicted_mean, fc.conf_int(alpha=0.05)
+m.plot_diagnostics()                     # residuals, histogram, Q-Q, correlogram
+
+# Fast automatic search over many series
+# from statsforecast import StatsForecast; from statsforecast.models import AutoARIMA
+</script>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="ar-pacf" data-title="Identify the AR order from the PACF">
+<div class="lab-task"><p>The series is an AR process of unknown order. Compute the PACF up to lag 10 with <code>pacf</code>, the 95% band \(1.96/\sqrt n\), and set <code>p_hat</code> to the number of <b>leading consecutive</b> significant lags (stop at the first insignificant one).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from statsmodels.tsa.arima_process import ArmaProcess
+from statsmodels.tsa.stattools import pacf
+y = ArmaProcess(ar=[1, -0.6, -0.25], ma=[1]).generate_sample(500, distrvs=np.random.default_rng(0).standard_normal)
+
+p_hat = None  # TODO
+print(p_hat)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from statsmodels.tsa.arima_process import ArmaProcess
+from statsmodels.tsa.stattools import pacf
+y = ArmaProcess(ar=[1, -0.6, -0.25], ma=[1]).generate_sample(500, distrvs=np.random.default_rng(0).standard_normal)
+
+p = pacf(y, nlags=10)[1:]                  # drop lag 0
+band = 1.96 / np.sqrt(len(y))
+sig = np.abs(p) > band
+p_hat = int(np.argmin(sig)) if not sig.all() else len(sig)
+print("PACF:", np.round(p, 2))
+print(f"band ±{band:.3f} → PACF cuts off after lag {p_hat} → try AR({p_hat})")
+print("(A lone spike at a high lag is usually chance: 1 in 20 lags crosses the band by luck.)")
+</script>
+<script type="text/x-python" data-part="check">
+assert p_hat == 2, f"the PACF should cut off after lag 2, got {p_hat}"
+print("Correct: the data are AR(2) with φ = 0.6, 0.25.")
+</script>
+</div>
+
+<div class="lab" data-id="ar-ljung" data-title="Ljung–Box: is anything left in the residuals?">
+<div class="lab-task"><p>Fit <code>ARIMA(order=(1,0,0))</code> and <code>ARIMA(order=(2,0,0))</code> to the AR(2) series and store the Ljung–Box p-values at lag 10 of their residuals in <code>p_ar1</code> and <code>p_ar2</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, warnings
+warnings.filterwarnings("ignore")
+from statsmodels.tsa.arima_process import ArmaProcess
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.stats.diagnostic import acorr_ljungbox
+y = ArmaProcess(ar=[1, -0.6, -0.25], ma=[1]).generate_sample(500, distrvs=np.random.default_rng(0).standard_normal)
+
+p_ar1 = None  # TODO
+p_ar2 = None  # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, warnings
+warnings.filterwarnings("ignore")
+from statsmodels.tsa.arima_process import ArmaProcess
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.stats.diagnostic import acorr_ljungbox
+y = ArmaProcess(ar=[1, -0.6, -0.25], ma=[1]).generate_sample(500, distrvs=np.random.default_rng(0).standard_normal)
+
+def lb_p(order):
+    res = ARIMA(y, order=order).fit()
+    return acorr_ljungbox(res.resid, lags=[10])["lb_pvalue"].iloc[0], res.aic
+
+p_ar1, aic1 = lb_p((1, 0, 0))
+p_ar2, aic2 = lb_p((2, 0, 0))
+print(f"AR(1): Ljung-Box p = {p_ar1:.2g}, AIC {aic1:.0f}  → residual autocorrelation remains")
+print(f"AR(2): Ljung-Box p = {p_ar2:.2f}, AIC {aic2:.0f}  → residuals look like white noise")
+</script>
+<script type="text/x-python" data-part="check">
+assert None not in (p_ar1, p_ar2), "compute both p-values"
+assert p_ar1 < 0.01, "the under-specified AR(1) should fail Ljung-Box"
+assert p_ar2 > 0.05, "AR(2) residuals should pass"
+print("Diagnostics agree with the PACF.")
+</script>
+</div>
+
+<div class="lab" data-id="ar-ic" data-title="Order selection: AIC vs BIC">
+<div class="lab-task"><p>The data are ARMA(1,1). Fit <code>ARIMA(order=(p,0,q))</code> for p, q in 0…2 and store the order with the lowest AIC in <code>best_aic</code> and lowest BIC in <code>best_bic</code>, as tuples <code>(p, q)</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, warnings
+warnings.filterwarnings("ignore")
+from statsmodels.tsa.arima_process import ArmaProcess
+from statsmodels.tsa.arima.model import ARIMA
+y = ArmaProcess(ar=[1, -0.7], ma=[1, 0.5]).generate_sample(400, distrvs=np.random.default_rng(1).standard_normal)
+
+best_aic = None  # TODO
+best_bic = None  # TODO
+print(best_aic, best_bic)
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, warnings
+warnings.filterwarnings("ignore")
+from statsmodels.tsa.arima_process import ArmaProcess
+from statsmodels.tsa.arima.model import ARIMA
+y = ArmaProcess(ar=[1, -0.7], ma=[1, 0.5]).generate_sample(400, distrvs=np.random.default_rng(1).standard_normal)
+
+fits = {(p, q): ARIMA(y, order=(p, 0, q)).fit() for p in range(3) for q in range(3)}
+best_aic = min(fits, key=lambda k: fits[k].aic)
+best_bic = min(fits, key=lambda k: fits[k].bic)
+for k, r in sorted(fits.items(), key=lambda kv: kv[1].aic)[:4]:
+    print(k, f"AIC {r.aic:.1f}  BIC {r.bic:.1f}")
+print("AIC picks", best_aic, "| BIC picks", best_bic, "— BIC's heavier penalty finds the true ARMA(1,1) here")
+</script>
+<script type="text/x-python" data-part="check">
+assert best_bic == (1, 1), f"BIC should select (1, 1), got {best_bic}"
+assert best_aic is not None and sum(best_aic) >= 2, "AIC should pick an order at least as large"
+print("AIC favours forecast accuracy and may over-fit; BIC favours parsimony.")
+</script>
+</div>
+
+<div class="lab" data-id="ar-sarimax" data-title="SARIMAX with a promotion regressor">
+<div class="lab-task"><p>Daily sales with AR(1) noise plus a promotion effect. Forecast the last 30 days with <code>SARIMAX(order=(1,0,0), trend="c")</code> <b>without</b> exog (MAE <code>mae_plain</code>) and <b>with</b> <code>exog=promo</code> (MAE <code>mae_x</code>, passing the future promo plan to <code>forecast</code>). Store the fitted promo coefficient in <code>beta</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, warnings
+warnings.filterwarnings("ignore")
+from statsmodels.tsa.arima_process import ArmaProcess
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+rng = np.random.default_rng(2); n = 200
+promo = (rng.random(n) < 0.2).astype(float)          # planned in advance → known future covariate
+noise = ArmaProcess(ar=[1, -0.7]).generate_sample(n, distrvs=rng.standard_normal) * 3
+y = 50 + 12 * promo + noise
+tr, te = slice(0, 170), slice(170, 200)
+
+mae_plain = None  # TODO
+mae_x = None      # TODO
+beta = None       # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, warnings
+warnings.filterwarnings("ignore")
+from statsmodels.tsa.arima_process import ArmaProcess
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+rng = np.random.default_rng(2); n = 200
+promo = (rng.random(n) < 0.2).astype(float)
+noise = ArmaProcess(ar=[1, -0.7]).generate_sample(n, distrvs=rng.standard_normal) * 3
+y = 50 + 12 * promo + noise
+tr, te = slice(0, 170), slice(170, 200)
+
+m0 = SARIMAX(y[tr], order=(1, 0, 0), trend="c").fit(disp=False)
+mae_plain = np.abs(y[te] - m0.forecast(30)).mean()
+m1 = SARIMAX(y[tr], exog=promo[tr], order=(1, 0, 0), trend="c").fit(disp=False)
+mae_x = np.abs(y[te] - m1.forecast(30, exog=promo[te])).mean()
+beta = m1.params[1]                                   # [intercept, promo, ar.L1, sigma2]
+print(f"MAE without promo {mae_plain:.2f} → with promo {mae_x:.2f}; promo effect ≈ {beta:.1f} (true 12)")
+</script>
+<script type="text/x-python" data-part="check">
+assert None not in (mae_plain, mae_x, beta), "compute all three"
+assert mae_x < mae_plain * 0.8, "the known-future promo regressor should cut the error"
+assert 9 < beta < 15, f"promo coefficient should be near 12, got {beta:.1f}"
+print("SARIMAX recovers the driver effect and forecasts better — as long as you know the future promo plan.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="arima-8a71624" data-l="1"><summary>What do p, d and q mean in ARIMA?</summary><div class="ans"><p>p = number of autoregressive lags (past values), d = number of differences applied to make the series stationary, q = number of moving-average lags (past forecast errors). ARIMA(1,1,1) models the first difference as one AR and one MA term.</p></div></details>
+<details class="qa" data-id="arima-504229b" data-l="1"><summary>Why does ARIMA need stationarity?</summary><div class="ans"><p>ARMA estimation assumes the mean, variance and autocovariances are constant over time, so the relationships learned from the past apply to the future and parameters are identifiable. Non-stationary series (trends, unit roots) give spurious relationships and unstable estimates; differencing removes stochastic trends.</p></div></details>
+<details class="qa" data-id="arima-d80a90d" data-l="2"><summary>How do you choose p and q?</summary><div class="ans"><p>From the stationary series: PACF cutting off after lag p suggests AR(p); ACF cutting off after lag q suggests MA(q); both tailing off suggests ARMA. Then fit several candidates and choose by AICc/BIC, confirm residuals are white noise (Ljung–Box), and compare out-of-sample with a rolling backtest. Auto-ARIMA automates the search.</p></div></details>
+<details class="qa" data-id="arima-6e5f30a" data-l="2"><summary>ADF vs KPSS?</summary><div class="ans"><p>ADF's null is a unit root (non-stationary); rejecting it suggests stationarity. KPSS's null is stationarity; rejecting it suggests a unit root. Using both helps: ADF rejects + KPSS doesn't → stationary; ADF doesn't reject + KPSS rejects → difference; conflicting → possibly trend-stationary or borderline, consider detrending or fractional behaviour.</p></div></details>
+<details class="qa" data-id="arima-935a441" data-l="2"><summary>What happens if you over-difference?</summary><div class="ans"><p>You introduce a non-invertible MA component: lag-1 autocorrelation of about −0.5, an MA coefficient near −1, and larger forecast variance. Check the ACF after differencing and prefer the smallest d that achieves stationarity.</p></div></details>
+<details class="qa" data-id="arima-1a24fad" data-l="2"><summary>What is the difference between SARIMA and SARIMAX?</summary><div class="ans"><p>SARIMA models a single series using its own past and seasonal lags. SARIMAX adds exogenous regressors — in statsmodels, as a regression whose errors follow a SARIMA process. It captures known drivers (price, promotions, holidays, weather), but you must supply their future values when forecasting.</p></div></details>
+<details class="qa" data-id="arima-de442c4" data-l="3"><summary>Your SARIMAX uses temperature as a regressor. What's the problem at forecast time?</summary><div class="ans"><p>Future temperature is unknown: you'd have to plug in a weather forecast, whose errors propagate (and backtests that used actual temperatures are optimistic). Options: use the weather forecast available at each origin in the backtest too, use lagged temperature only, use climatological averages, or produce scenario forecasts. Always backtest with the covariate information that would really be available.</p></div></details>
+<details class="qa" data-id="arima-f5a6c79" data-l="2"><summary>What does the Ljung–Box test check?</summary><div class="ans"><p>Whether a set of residual autocorrelations up to lag h are jointly zero. H₀: residuals are independently distributed (white noise). A small p-value means the model has left autocorrelation unexplained — revise the orders or add terms. Degrees of freedom should be reduced by the number of fitted ARMA parameters.</p></div></details>
+<details class="qa" data-id="arima-de8889e" data-l="2"><summary>Why do ARIMA forecasts become flat?</summary><div class="ans"><p>For a stationary ARMA, the effect of the last observed values and errors decays geometrically, so forecasts converge to the unconditional mean. With d = 1 and no drift they converge to a constant level; with drift, to a straight line. MA terms affect only the first q steps. Long-horizon ARIMA forecasts carry little information beyond the mean/trend.</p></div></details>
+<details class="qa" data-id="arima-c15a0cd" data-l="2"><summary>AIC vs BIC for order selection?</summary><div class="ans"><p>AIC = −2 log L + 2k targets predictive accuracy and tends to choose slightly larger models; AICc corrects AIC for small samples; BIC = −2 log L + k ln n penalises parameters more and is consistent (selects the true model as n grows, if it's in the set). Compare only models with the same d and the same data.</p></div></details>
+<details class="qa" data-id="arima-8dbaa5a" data-l="2"><summary>How do you model multiple seasonalities with ARIMA?</summary><div class="ans"><p>SARIMA handles one seasonal period. Use dynamic harmonic regression: add Fourier terms for each period (e.g. 24 and 168 for hourly data) as exogenous regressors and let ARIMA errors handle short-term dynamics; choose the number of Fourier pairs by AICc. Alternatives: MSTL + ARIMA on the remainder, TBATS.</p></div></details>
+<details class="qa" data-id="arima-4e9289b" data-l="3"><summary>What is a Kalman filter and how does it relate to ARIMA?</summary><div class="ans"><p>A recursive algorithm for linear Gaussian state-space models: it predicts the hidden state and its uncertainty, then updates them when a new observation arrives, weighting by the relative uncertainties (the Kalman gain). ARIMA and ETS can be written in state-space form; statsmodels fits SARIMAX by computing the likelihood with the Kalman filter, which also handles missing observations naturally.</p></div></details>
+<details class="qa" data-id="arima-02ea483" data-l="3"><summary>When would you use VAR?</summary><div class="ans"><p>When several stationary series influence each other (e.g. interest rates, inflation, unemployment) and you want joint forecasts, Granger-causality tests or impulse-response analysis. Each variable is regressed on lags of all variables; parameters grow as k²p, so keep k small or regularise. For cointegrated non-stationary series use VECM.</p></div></details>
+<details class="qa" data-id="arima-5f0df93" data-l="2"><summary>What is GARCH used for?</summary><div class="ans"><p>Modelling time-varying volatility: the conditional variance depends on past squared shocks and past variance (σ²ₜ = ω + αε²ₜ₋₁ + βσ²ₜ₋₁). It captures volatility clustering in financial returns; the mean may be modelled separately (often near zero for returns) and GARCH used for risk measures and interval widths.</p></div></details>
+<details class="qa" data-id="arima-182d420" data-l="2"><summary>When would you not use ARIMA?</summary><div class="ans"><p>Strongly nonlinear or regime-switching dynamics, multiple seasonalities, many related series that benefit from a shared model, intermittent demand, very short series, or complex covariate interactions. Prefer ETS/Theta for simple robust baselines, global LightGBM for many series with covariates, Croston/TSB for intermittent demand, and deep models for large multivariate datasets.</p></div></details>
+</div>
+</main>
+</body>
+</html>

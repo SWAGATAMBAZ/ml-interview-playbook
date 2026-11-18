@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ML forecasting: LightGBM, global models, Prophet · ML Interview Playbook</title>
+<link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><script src="assets/demos.js"></script><script src="assets/demos2.js"></script><script src="assets/demos4.js"></script><script src="assets/lab.js"></script>
+</head>
+<body data-page="forecast-ml">
+<main>
+<div class="eyebrow">Forecasting · Level 3 · Machine learning for time series</div>
+<h1>ML forecasting: lag features, LightGBM, global models & Prophet</h1>
+<p class="lede">Turn a time series into a table — lags, rolling statistics, calendar and price features — and any regressor becomes a forecaster. Gradient boosting trained as one <b>global</b> model across thousands of series is what won the M5 retail competition and what most demand-forecasting teams run in production. This page covers the features, the leakage traps, multi-step strategies, regression with Fourier terms and Prophet.</p>
+<div class="toc"><a href="#simple">Plain English</a><a href="#steps">How it works</a><a href="#pitch">30-sec answer</a><a href="#tabular">Tabularising</a><a href="#features">Feature catalogue</a><a href="#leak">Leakage traps</a><a href="#multistep">Multi-step strategies</a><a href="#global">Local vs global</a><a href="#m5">M5 lessons</a><a href="#target">Targets & losses</a><a href="#fourier">Fourier regression</a><a href="#prophet">Prophet</a><a href="#key">Must-know</a><a href="#hp">Tuning</a><a href="#labs">Labs</a><a href="#qa">Q&A</a></div>
+
+<div class="callout layman" id="simple"><div class="tag">🧒 In plain English</div>
+<p>Classical models look at one shop's sales history and extrapolate. An ML forecaster instead builds a spreadsheet: each row is “one shop on one day”, the columns are clues (<i>sales yesterday, sales same day last week, average of the last 4 weeks, is it a holiday, is there a promotion, what's the price</i>), and the target is that day's sales. Then a gradient-boosting model learns the rules. Because you can stack <b>every shop and every product</b> into one spreadsheet, the model learns patterns shared across them — “promotions lift sales by ~30% in week one” — which a model of one shop could never see.</p></div>
+
+<h2 id="steps">How it works, step by step</h2>
+<ol class="steps">
+<li><b>Choose the forecast origin and horizon</b> (e.g. at Monday night, forecast the next 28 days).</li>
+<li><b>Build features</b> using only data available at the origin: lags ≥ horizon (or recursive), rolling windows on shifted data, calendar, known-future covariates, static attributes.</li>
+<li><b>Stack all series</b> into one long table with series identifiers as features (global model).</li>
+<li><b>Train</b> a gradient-boosting model (LightGBM/XGBoost/CatBoost) with a suitable loss (L2, Tweedie, Poisson, quantile).</li>
+<li><b>Produce multi-step forecasts</b> — recursive, direct (one model per horizon) or horizon-as-a-feature.</li>
+<li><b>Backtest</b> with rolling origins, compare against seasonal naive and ETS, and reconcile if hierarchical.</li>
+</ol>
+
+<div class="callout say" id="pitch"><div class="tag">🎯 Say this in the interview (30 seconds)</div>
+<p>“I'd frame it as supervised learning: features are lags, rolling means and standard deviations, calendar and holiday flags, price and promotion, and static attributes; the target is the value h steps ahead. I'd train one global LightGBM model across all series with a Tweedie or Poisson loss for sparse non-negative demand, scaling targets per series. The crucial part is leakage control — every feature must be computable at the forecast origin, so lags must be at least the horizon or the model is applied recursively. I'd choose recursive, direct or a multi-horizon setup, validate with rolling-origin backtests against seasonal naive, and remember trees can't extrapolate trends, so I'd detrend or model ratios.”</p></div>
+
+<h2 id="tabular">Tabularising a series</h2>
+<div class="widget" data-demo="windowing"><div class="widget-title">Sliding window: series → (features, target) rows</div><div class="widget-sub">Lookback L becomes the feature columns; the next H values are the targets. Every shift of the window is one training row.</div></div>
+<p>A series of length T with lookback L and horizon H gives T − L − H + 1 rows per series. With 30,000 series × 1,900 days (M5) that's tens of millions of rows — exactly what gradient boosting handles well.</p>
+
+<h2 id="features">The feature catalogue</h2>
+<div class="table-wrap"><table>
+<tr><th>Family</th><th>Examples</th><th>Notes</th></tr>
+<tr><td>Lags</td><td>y<sub>t−1</sub>, y<sub>t−7</sub>, y<sub>t−14</sub>, y<sub>t−28</sub>, y<sub>t−364</sub></td><td>Seasonal lags matter most; for direct horizon h, only lags ≥ h are legal</td></tr>
+<tr><td>Rolling windows</td><td>mean, std, min, max, median of the last 7/28/91 days (computed on shifted data)</td><td>Smooth level and volatility estimates</td></tr>
+<tr><td>Expanding / EWM</td><td>exponentially weighted mean with several half-lives</td><td>An ETS-like level as a feature</td></tr>
+<tr><td>Differences & ratios</td><td>y<sub>t−1</sub> − y<sub>t−8</sub>, y<sub>t−1</sub>/rolling mean</td><td>Momentum; scale-free features for global models</td></tr>
+<tr><td>Calendar</td><td>day of week, week of year, month, day of month, month-end, payday, quarter</td><td>Categorical or cyclic (sin/cos)</td></tr>
+<tr><td>Events</td><td>holiday flags, days to/from the next holiday, sporting events, school terms</td><td>Lead and lag windows around events</td></tr>
+<tr><td>Known future</td><td>planned price, discount depth, promotion type, ad spend, opening hours</td><td>Powerful — but check they're really known at the origin</td></tr>
+<tr><td>Price dynamics</td><td>price relative to its own rolling max/mean, price relative to category</td><td>Elasticities and cannibalisation</td></tr>
+<tr><td>Static</td><td>store, item, category, region, size, store type</td><td>Native categoricals in LightGBM/CatBoost; enables sharing</td></tr>
+<tr><td>Target encodings</td><td>mean sales per item × day-of-week (computed on training window)</td><td>Leakage-prone: compute strictly in the past</td></tr>
+<tr><td>Fourier terms</td><td>sin/cos of 2πkt/P for P = 7, 365.25</td><td>Smooth seasonality, especially for linear models</td></tr>
+<tr><td>External</td><td>weather (forecasts!), macro indicators, web traffic</td><td>Use the version that would have been available at the origin</td></tr>
+</table></div>
+
+<h2 id="leak">The leakage traps (the #1 reason ML forecasts look great offline)</h2>
+<ul>
+<li><b>Rolling features not shifted:</b> <code>rolling(7).mean()</code> includes today's target. Always <code>shift(1)</code> (or shift by h) <i>before</i> rolling, and group by series.</li>
+<li><b>Lags shorter than the horizon</b> in a direct model: to forecast 14 days ahead you don't know yesterday's value.</li>
+<li><b>Random K-fold CV</b>: future rows train the model that predicts the past. Use rolling-origin splits, with a gap if data arrive late.</li>
+<li><b>Global statistics</b> (scaling, target encoding, imputation) computed over the whole history including the test period.</li>
+<li><b>Covariates with hindsight:</b> actual weather, final revised figures, stock-outs only recorded later, promotions decided after the fact.</li>
+<li><b>Survivorship:</b> training only on products that still exist today.</li>
+</ul>
+
+<h2 id="multistep">Multi-step strategies</h2>
+<div class="table-wrap"><table>
+<tr><th>Strategy</th><th>How</th><th>Pros</th><th>Cons</th></tr>
+<tr><td><b>Recursive</b> (iterated)</td><td>One 1-step model; feed each prediction back as a lag for the next step</td><td>One model; uses all short lags</td><td>Errors accumulate; train/serve mismatch (trained on true lags, served on predictions)</td></tr>
+<tr><td><b>Direct</b></td><td>A separate model per horizon h, using only lags ≥ h</td><td>No error accumulation; each horizon optimised</td><td>H models; horizons can be inconsistent; long horizons lose recent information</td></tr>
+<tr><td><b>DirRec</b></td><td>Direct models that also take previous horizons' predictions as inputs</td><td>Compromise</td><td>Complex</td></tr>
+<tr><td><b>MIMO / multi-output</b></td><td>One model outputs the whole vector of H values</td><td>Coherent paths; natural for neural nets</td><td>Trees need H outputs or a wrapper</td></tr>
+<tr><td><b>Horizon as a feature</b></td><td>Stack rows for every h with h as an input column</td><td>One model, data sharing across horizons</td><td>Larger table; lags must still respect each h</td></tr>
+</table></div>
+<p>Neither recursive nor direct wins universally; with linear dynamics they're often similar, with nonlinear models and long horizons direct is usually safer. M5 winners used variants of both. Always report error <b>by horizon</b>.</p>
+
+<h2 id="global">Local vs global models</h2>
+<div class="procon"><div class="pro"><h4>Global (one model, all series)</h4><ul><li>Learns shared patterns (seasonality shapes, promo lift, holiday effects)</li><li>Works for short and new series (cold start via static features)</li><li>One model to train, monitor and deploy</li><li>Cross-learning reduces variance</li></ul></div>
+<div class="con"><h4>Local (one model per series)</h4><ul><li>Fits series-specific dynamics exactly</li><li>Robust when series are unrelated</li><li>Easy to parallelise and interpret</li><li>Classical ETS/ARIMA are local; thousands of fits to maintain</li></ul></div></div>
+<p><b>Making global models work:</b> scale each series (divide by its recent mean or use log/ratio targets) so big and small series share patterns; add series IDs and attributes as categoricals; weight series by business value; consider separate models per category if series are very heterogeneous.</p>
+
+<h2 id="m5">Lessons from the M5 competition</h2>
+<p>In M5, which used Walmart sales of 3,049 products across 10 stores, almost all of the top 50 methods used LightGBM, exploiting cross-series learning on tens of thousands of hierarchical series. Practical takeaways:</p>
+<ul>
+<li>Global gradient boosting with Tweedie/Poisson loss on raw counts or scaled targets.</li>
+<li>Features: lags at 28+ days for the direct horizon, rolling means/std, price features, calendar and SNAP/event flags.</li>
+<li>Ensembles of models trained per store or per category and with different seeds/horizons.</li>
+<li>Noise grows as you drill down the hierarchy — item-store level is extremely intermittent, so aggregate levels are more predictable.</li>
+<li>Weighted, scaled metrics (WRMSSE) match business value better than plain RMSE.</li>
+</ul>
+
+<h2 id="target">Targets and losses</h2>
+<div class="table-wrap"><table>
+<tr><th>Situation</th><th>Target / loss</th></tr>
+<tr><td>Positive, right-skewed values</td><td>log1p target with L2 loss (remember bias correction when back-transforming means), or Poisson/Gamma loss</td></tr>
+<tr><td>Counts with many zeros</td><td><b>Tweedie</b> (variance power 1.1–1.5) or Poisson loss in LightGBM</td></tr>
+<tr><td>Need a high service level</td><td>Quantile (pinball) loss at the required quantile, e.g. α = 0.9</td></tr>
+<tr><td>Trending series</td><td>Predict the change or the ratio to a recent level (trees can't extrapolate)</td></tr>
+<tr><td>Different scales across series</td><td>Divide by each series' recent mean; multiply back after prediction</td></tr>
+<tr><td>Metric is MAE</td><td>L1 objective (predicts the median)</td></tr>
+</table></div>
+
+<h2 id="fourier">Regression with Fourier terms (dynamic harmonic regression)</h2>
+<div class="callout math"><div class="tag">∑ Smooth seasonality with a few columns</div>
+$$y_t=\beta_0+\beta_1t+\sum_{k=1}^{K}\Big[a_k\sin\frac{2\pi kt}{P}+b_k\cos\frac{2\pi kt}{P}\Big]+\text{holidays}+\eta_t$$
+<p>K pairs approximate any smooth periodic shape with period P (even non-integer, e.g. 365.25). Small K = smooth, large K = wiggly; choose K by AICc or CV. Add several periods for multiple seasonality, and ARIMA errors for the remaining autocorrelation.</p></div>
+
+<h2 id="prophet">Prophet</h2>
+<div class="callout math"><div class="tag">∑ Prophet's additive model</div>
+$$y(t)=g(t)+s(t)+h(t)+\varepsilon_t$$
+<p>g = piecewise-linear (or logistic, with a capacity) trend with automatically placed changepoints; s = Fourier-series seasonalities (yearly, weekly, daily, custom); h = holiday effects with windows. It's a regression on time, fitted by MAP with Stan.</p></div>
+<ul>
+<li><b>Strengths:</b> easy for analysts, handles missing data and outliers, multiple seasonalities, holidays, interpretable components plots, uncertainty from trend changes.</li>
+<li><b>Weaknesses:</b> treats time as a regressor and ignores autocorrelation (no lags), so short-term accuracy is often worse than ETS/ARIMA; trend extrapolation can go wild; benchmark studies often find it beaten by simple baselines.</li>
+<li><b>Key knobs:</b> <code>changepoint_prior_scale</code> (trend flexibility — the most important), <code>seasonality_prior_scale</code>, <code>seasonality_mode</code> ('additive'/'multiplicative'), <code>holidays</code>, <code>growth='logistic'</code> with <code>cap</code>.</li>
+<li><b>NeuralProphet</b> adds autoregressive lags (AR-Net) and lagged regressors.</li>
+</ul>
+<script type="text/plain" class="snippet" data-title="python">
+# Prophet (run locally: pip install prophet) — not available in the in-browser labs
+from prophet import Prophet
+m = Prophet(changepoint_prior_scale=0.05, seasonality_mode="multiplicative", yearly_seasonality=True)
+m.add_country_holidays(country_name="IN")
+m.add_regressor("promo")                       # needs future values too
+m.fit(df)                                       # columns: ds, y, promo
+future = m.make_future_dataframe(periods=90); future["promo"] = promo_plan
+fc = m.predict(future)                          # yhat, yhat_lower, yhat_upper, components
+from prophet.diagnostics import cross_validation, performance_metrics   # rolling-origin backtest
+</script>
+
+<h2 id="key">Must-know points for interviews</h2>
+<ul class="keypts">
+<li><b>Tabularise:</b> lags, rolling stats (shifted!), calendar, events, prices, static attributes.</li>
+<li><b>Leakage is the biggest risk:</b> every feature must exist at the forecast origin.</li>
+<li><b>Multi-step:</b> recursive vs direct vs MIMO; report error per horizon.</li>
+<li><b>Global models</b> share information across series — the M5 lesson; scale targets per series.</li>
+<li><b>Loss choice:</b> Tweedie/Poisson for sparse counts, quantile for service levels.</li>
+<li><b>Trees can't extrapolate:</b> detrend, difference or predict ratios.</li>
+<li><b>Prophet</b> = trend + Fourier seasonality + holidays regression; easy, not autoregressive, often not the most accurate.</li>
+</ul>
+
+<h2 id="hp">Tuning a LightGBM forecaster</h2>
+<div class="table-wrap"><table class="hp">
+<tr><th>Parameter</th><th>Typical</th><th>Why</th></tr>
+<tr><td>objective</td><td>tweedie (variance_power 1.1–1.5), poisson, l2, quantile</td><td>Match the data distribution and the metric</td></tr>
+<tr><td>learning_rate / n_estimators</td><td>0.03–0.1 with early stopping on a time-based validation fold</td><td>Never early-stop on a random split</td></tr>
+<tr><td>num_leaves, min_data_in_leaf</td><td>63–255, 100+</td><td>Large data allows big trees; leaves need enough rows to be stable</td></tr>
+<tr><td>feature_fraction, bagging_fraction</td><td>0.5–0.9</td><td>Decorrelate, regularise</td></tr>
+<tr><td>categorical_feature</td><td>item, store, category, day of week</td><td>Native categorical splits</td></tr>
+<tr><td>Sample weights</td><td>Revenue or WRMSSE weights</td><td>Optimise what the business values</td></tr>
+</table></div>
+<script type="text/plain" class="snippet" data-title="python">
+import lightgbm as lgb
+df["lag_28"] = df.groupby("id")["sales"].shift(28)
+df["rmean_28_7"] = df.groupby("id")["sales"].transform(lambda s: s.shift(28).rolling(7).mean())
+model = lgb.LGBMRegressor(objective="tweedie", tweedie_variance_power=1.2, learning_rate=0.05,
+                          num_leaves=127, min_child_samples=100, subsample=0.8, subsample_freq=1,
+                          colsample_bytree=0.8, n_estimators=3000)
+model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], categorical_feature=["store", "item", "dow"],
+          callbacks=[lgb.early_stopping(100)])
+</script>
+
+<h2 id="labs">Labs</h2>
+<div class="lab" data-id="fml-features" data-title="Leak-free lag and rolling features">
+<div class="lab-task"><p>Given a long table with columns <code>id</code>, <code>t</code>, <code>y</code> for several series, write <code>add_features(df, h)</code> that adds <code>lag_h</code> (y shifted by h within each series) and <code>roll_mean_7</code> (the 7-row mean of the <b>shifted-by-h</b> series, within each series). No feature may use any value at or after time t − h + 1.</p></div>
+<div data-part="hint">Use <code>df.groupby("id")["y"].shift(h)</code>, then a grouped <code>rolling(7).mean()</code> on that shifted column (e.g. via <code>transform</code>).</div>
+<script type="text/x-python" data-part="starter">
+import numpy as np, pandas as pd
+rng = np.random.default_rng(0)
+df = pd.concat([pd.DataFrame({"id": k, "t": np.arange(60), "y": rng.poisson(5 + 3 * k, 60).astype(float)}) for k in range(3)], ignore_index=True)
+
+def add_features(df, h):
+    df = df.sort_values(["id", "t"]).copy()
+    # TODO: lag_h and roll_mean_7, both computed within each id
+    return df
+
+out = add_features(df, h=7)
+print(out.head(20))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np, pandas as pd
+rng = np.random.default_rng(0)
+df = pd.concat([pd.DataFrame({"id": k, "t": np.arange(60), "y": rng.poisson(5 + 3 * k, 60).astype(float)}) for k in range(3)], ignore_index=True)
+
+def add_features(df, h):
+    df = df.sort_values(["id", "t"]).copy()
+    g = df.groupby("id")["y"]
+    df[f"lag_{h}"] = g.shift(h)
+    df["roll_mean_7"] = g.transform(lambda s: s.shift(h).rolling(7).mean())
+    return df
+
+out = add_features(df, h=7)
+print(out[out.id == 1].iloc[5:16])
+print("Row t uses only y up to t-7: safe for a 7-day-ahead direct forecast.")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+o = add_features(df, 7)
+assert {"lag_7", "roll_mean_7"} <= set(o.columns), "add both columns"
+s = o[o.id == 2].set_index("t")
+assert np.isnan(s.loc[6, "lag_7"]) and s.loc[10, "lag_7"] == s.loc[3, "y"], "lag must be within the series and shifted by h"
+assert np.isclose(s.loc[20, "roll_mean_7"], s.loc[7:13, "y"].mean()), "rolling mean must cover t-13 … t-7 (shift, then roll)"
+assert o[o.id == 1].set_index("t").loc[0:6, "lag_7"].isna().all(), "series must not borrow values from the previous id"
+print("Leak-free features.")
+</script>
+</div>
+
+<div class="lab" data-id="fml-fourier" data-title="Fourier regression for weekly + yearly seasonality">
+<div class="lab-task"><p>Three years of daily data with a trend, a yearly cycle and a weekend effect. Build <code>fourier(t, P, K)</code> returning K sin/cos pairs, then fit <code>LinearRegression</code> on <code>[t, fourier(t, 365.25, 3), fourier(t, 7, 3)]</code> and forecast the last 90 days → <code>mae_f</code>. Compare with weekly seasonal naive <code>mae_sn</code>.</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.linear_model import LinearRegression
+rng = np.random.default_rng(0); n = 3 * 365; t = np.arange(n)
+y = 50 + 0.01 * t + 8 * np.sin(2 * np.pi * t / 365.25) + 5 * np.cos(4 * np.pi * t / 365.25) + 6 * (t % 7 >= 5) + rng.normal(0, 2, n)
+tr = t < n - 90
+
+def fourier(t, P, K):
+    return None  # TODO: columns sin(2πkt/P), cos(2πkt/P) for k = 1..K
+
+mae_f = None   # TODO
+mae_sn = None  # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.linear_model import LinearRegression
+rng = np.random.default_rng(0); n = 3 * 365; t = np.arange(n)
+y = 50 + 0.01 * t + 8 * np.sin(2 * np.pi * t / 365.25) + 5 * np.cos(4 * np.pi * t / 365.25) + 6 * (t % 7 >= 5) + rng.normal(0, 2, n)
+tr = t < n - 90
+
+def fourier(t, P, K):
+    return np.column_stack([f(2 * np.pi * k * t / P) for k in range(1, K + 1) for f in (np.sin, np.cos)])
+
+X = np.column_stack([t, fourier(t, 365.25, 3), fourier(t, 7, 3)])
+lr = LinearRegression().fit(X[tr], y[tr])
+mae_f = np.abs(y[~tr] - lr.predict(X[~tr])).mean()
+last_week = y[n - 90 - 7:n - 90]
+mae_sn = np.abs(y[~tr] - np.tile(last_week, 13)[:90]).mean()
+print(f"Fourier regression MAE {mae_f:.2f} vs weekly seasonal naive {mae_sn:.2f} (noise sd = 2)")
+print("13 columns capture two seasonalities, including the non-integer 365.25-day year.")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+F = fourier(np.arange(10), 7, 2)
+assert F is not None and F.shape == (10, 4), "K pairs → 2K columns"
+assert mae_f is not None and mae_sn is not None, "compute both errors"
+assert mae_f < 2.2 and mae_f < mae_sn / 3, "Fourier regression should be close to the noise level"
+print("Two seasonalities with a handful of columns.")
+</script>
+</div>
+
+<div class="lab" data-id="fml-multistep" data-title="Recursive vs direct multi-step forecasting">
+<div class="lab-task"><p>Lookback L = 24, horizon H = 12, training on the first 480 points. (1) <b>Recursive:</b> one <code>Ridge</code> 1-step model, feeding predictions back. (2) <b>Direct:</b> 12 Ridge models, the h-th trained to predict y<sub>t+h−1</sub> from the window. Evaluate from origins 480, 486, … and store mean absolute error per horizon in arrays <code>rec_err</code> and <code>dir_err</code> (length 12).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.linear_model import Ridge
+rng = np.random.default_rng(1); N = 600; t = np.arange(N); s = np.zeros(N)
+for i in range(2, N):
+    s[i] = 0.6 * s[i - 1] + 0.2 * s[i - 2] + rng.normal()
+y = 20 + 10 * np.sin(2 * np.pi * t / 12) + 3 * s
+L, H = 24, 12
+
+def rows(series, h):
+    X = np.array([series[i - L:i] for i in range(L, len(series) - h + 1)])
+    Y = np.array([series[i + h - 1] for i in range(L, len(series) - h + 1)])
+    return X, Y
+
+rec_err = np.zeros(H); dir_err = np.zeros(H)
+# TODO
+print(rec_err.round(2)); print(dir_err.round(2))
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.linear_model import Ridge
+rng = np.random.default_rng(1); N = 600; t = np.arange(N); s = np.zeros(N)
+for i in range(2, N):
+    s[i] = 0.6 * s[i - 1] + 0.2 * s[i - 2] + rng.normal()
+y = 20 + 10 * np.sin(2 * np.pi * t / 12) + 3 * s
+L, H = 24, 12
+
+def rows(series, h):
+    X = np.array([series[i - L:i] for i in range(L, len(series) - h + 1)])
+    Y = np.array([series[i + h - 1] for i in range(L, len(series) - h + 1)])
+    return X, Y
+
+train = y[:480]
+one_step = Ridge(1.0).fit(*rows(train, 1))
+direct = [Ridge(1.0).fit(*rows(train, h)) for h in range(1, H + 1)]
+origins = range(480, N - H, 6)
+rec_err = np.zeros(H); dir_err = np.zeros(H)
+for o in origins:
+    hist = list(y[o - L:o])
+    for h in range(H):                                    # recursive: predictions become inputs
+        p = one_step.predict(np.array(hist[-L:])[None])[0]
+        hist.append(p)
+        rec_err[h] += abs(p - y[o + h])
+    for h in range(H):                                    # direct: one model per horizon
+        dir_err[h] += abs(direct[h].predict(y[o - L:o][None])[0] - y[o + h])
+rec_err /= len(origins); dir_err /= len(origins)
+print("h      :", np.arange(1, H + 1))
+print("recursive:", rec_err.round(2))
+print("direct   :", dir_err.round(2))
+print("Same at h=1 (same model). Error grows with h for both; which wins later depends on the data and model.")
+</script>
+<script type="text/x-python" data-part="check">
+import numpy as np
+assert len(rec_err) == 12 and len(dir_err) == 12, "one error per horizon"
+assert np.isclose(rec_err[0], dir_err[0]), "at h = 1 both strategies use the same model"
+assert rec_err[0] > 0 and rec_err[-4:].mean() > 1.4 * rec_err[0], "error should grow with the horizon"
+assert dir_err[-4:].mean() > 1.4 * dir_err[0], "error should grow with the horizon for direct too"
+print("Always report error per horizon, not one averaged number.")
+</script>
+</div>
+
+<div class="lab" data-id="fml-global" data-title="Global beats local on many short series">
+<div class="lab-task"><p>60 short monthly series (48 points) share a seasonal shape but differ in scale. Forecast each series' final point with: (1) a <b>local</b> Ridge per series on its own 12-lag windows, (2) a <b>global</b> Ridge trained on all series' windows after dividing each series by its last-12 mean, and (3) seasonal naive. Store mean scaled absolute errors <code>e_local</code>, <code>e_global</code>, <code>e_snaive</code> (error ÷ that series' last-12 mean).</p></div>
+<script type="text/x-python" data-part="starter">
+import numpy as np
+from sklearn.linear_model import Ridge
+rng = np.random.default_rng(0); S, T, L = 60, 48, 12
+series = []
+for i in range(S):
+    lvl, amp = rng.uniform(20, 200), rng.uniform(0.1, 0.4); t = np.arange(T)
+    series.append(lvl * (1 + amp * np.sin(2 * np.pi * t / 12 + 0.3)) * (1 + 0.004 * t) + rng.normal(0, 0.05 * lvl, T))
+
+def rows(y):
+    return np.array([y[i - L:i] for i in range(L, len(y))]), y[L:]
+
+e_local = e_global = e_snaive = None  # TODO
+</script>
+<script type="text/x-python" data-part="solution">
+import numpy as np
+from sklearn.linear_model import Ridge
+rng = np.random.default_rng(0); S, T, L = 60, 48, 12
+series = []
+for i in range(S):
+    lvl, amp = rng.uniform(20, 200), rng.uniform(0.1, 0.4); t = np.arange(T)
+    series.append(lvl * (1 + amp * np.sin(2 * np.pi * t / 12 + 0.3)) * (1 + 0.004 * t) + rng.normal(0, 0.05 * lvl, T))
+
+def rows(y):
+    return np.array([y[i - L:i] for i in range(L, len(y))]), y[L:]
+
+# global model: stack scaled windows from every series
+XG, YG = [], []
+for y in series:
+    tr = y[:-1]; sc = tr[-12:].mean(); X, Y = rows(tr / sc); XG.append(X); YG.append(Y)
+glob = Ridge(1e-3).fit(np.vstack(XG), np.concatenate(YG))
+
+el, eg, en = [], [], []
+for y in series:
+    tr, actual = y[:-1], y[-1]; sc = tr[-12:].mean()
+    p_local = Ridge(1e-3).fit(*rows(tr)).predict(tr[-L:][None])[0]      # 35 rows, 12 features: overfits
+    p_global = glob.predict((tr[-L:] / sc)[None])[0] * sc
+    el.append(abs(p_local - actual) / sc); eg.append(abs(p_global - actual) / sc); en.append(abs(tr[-12] - actual) / sc)
+e_local, e_global, e_snaive = np.mean(el), np.mean(eg), np.mean(en)
+print(f"scaled error  local {e_local:.3f} | global {e_global:.3f} | seasonal naive {e_snaive:.3f}")
+print(f"global model trained on {sum(len(x) for x in XG)} rows instead of 35 per series")
+</script>
+<script type="text/x-python" data-part="check">
+assert None not in (e_local, e_global, e_snaive), "compute all three"
+assert e_global < 0.9 * e_local, "the global model should beat per-series models"
+assert e_global < e_snaive, "and beat seasonal naive"
+print("Cross-learning: short series borrow strength from each other.")
+</script>
+</div>
+
+<h2 id="qa">Interview questions</h2>
+<div class="qa-block">
+<details class="qa" data-id="forecast-ml-61be103" data-l="1"><summary>How do you use a regression model like XGBoost for forecasting?</summary><div class="ans"><p>Convert the series into a supervised table: for each time t, features from information available at the origin (lags, rolling statistics, calendar, events, known-future covariates, static attributes) and the target y at t + h. Train with time-ordered validation, then produce multi-step forecasts recursively or with direct models per horizon.</p></div></details>
+<details class="qa" data-id="forecast-ml-b46e92f" data-l="2"><summary>Recursive vs direct multi-step forecasting?</summary><div class="ans"><p>Recursive trains one one-step model and feeds predictions back as inputs: simple and uses recent lags, but errors compound and there's a train/serve mismatch. Direct trains a model per horizon on lags ≥ h: no compounding, but more models, less recent information for long horizons and possibly inconsistent paths. Hybrids (DirRec, MIMO, horizon-as-feature) sit in between. Choose by backtest error per horizon.</p></div></details>
+<details class="qa" data-id="forecast-ml-dad0e47" data-l="2"><summary>What is a global forecasting model and why does it often win?</summary><div class="ans"><p>One model trained on many series stacked together, with series identifiers/attributes as features. It learns shared patterns (seasonal shapes, promo and holiday effects), has far more training data per parameter (lower variance), handles short and new series, and is one artefact to maintain. It wins when series are related; per-series scaling is key.</p></div></details>
+<details class="qa" data-id="forecast-ml-4027ee0" data-l="2"><summary>Give examples of leakage in time-series feature engineering.</summary><div class="ans"><p>Rolling means that include the current target (no shift), lags shorter than the horizon in direct models, target encodings or scalers computed on the full history, random K-fold CV, covariates known only in hindsight (actual weather, revised data, recorded stock-outs), and back-filled missing values from the future.</p></div></details>
+<details class="qa" data-id="forecast-ml-1c30e1a" data-l="2"><summary>How do tree-based forecasters handle trend?</summary><div class="ans"><p>Poorly — they can't predict beyond the training range. Fixes: difference the target or predict the ratio to a recent level, detrend with a linear model and let trees model residuals, use LightGBM's <code>linear_tree</code>, or normalise each window by its last value/mean (as deep models do with RevIN).</p></div></details>
+<details class="qa" data-id="forecast-ml-09b5af6" data-l="2"><summary>Why use a Tweedie loss for retail demand?</summary><div class="ans"><p>Item-level demand is non-negative, right-skewed and has many zeros. Tweedie with variance power between 1 and 2 is a compound Poisson-Gamma distribution: a point mass at zero plus a continuous positive part. It models that shape directly (with a log link), unlike L2 loss which assumes symmetric errors and can predict negatives.</p></div></details>
+<details class="qa" data-id="forecast-ml-c2abda7" data-l="2"><summary>What did the M5 competition teach practitioners?</summary><div class="ans"><p>Global LightGBM models with rich lag, rolling, price and calendar features dominated the top of the leaderboard; cross-learning across tens of thousands of related series beat per-series statistical models; ensembles and careful validation mattered; lower levels of the hierarchy are much noisier; and the metric (weighted, scaled) shapes the right loss and weighting.</p></div></details>
+<details class="qa" data-id="forecast-ml-cf407b7" data-l="2"><summary>How does Prophet work, and what are its limitations?</summary><div class="ans"><p>It fits y = trend + seasonality + holidays + error: a piecewise-linear or logistic trend with changepoints, Fourier-series seasonalities and holiday windows, by MAP estimation. It's easy, robust to missing data and interpretable. But it has no autoregressive terms, so it ignores short-term dynamics; it can extrapolate trends badly; and benchmarks often show it underperforming ETS/ARIMA or even seasonal naive. Tune <code>changepoint_prior_scale</code> and validate by backtesting.</p></div></details>
+<details class="qa" data-id="forecast-ml-862a37c" data-l="2"><summary>What are Fourier terms and when would you use them?</summary><div class="ans"><p>Pairs sin(2πkt/P), cos(2πkt/P) for k = 1…K that approximate a smooth periodic pattern of period P. They handle long (365) or non-integer (52.18) periods with few parameters and allow several seasonalities at once — in linear regression, ARIMA errors (dynamic harmonic regression), Prophet, or as features for ML models.</p></div></details>
+<details class="qa" data-id="forecast-ml-8c6f4ae" data-l="3"><summary>How would you forecast a brand-new product with no history?</summary><div class="ans"><p>A global model with static features (category, price tier, brand, launch season) and age-since-launch as a feature, so it learns typical launch curves from similar past products; analogous-product methods (average the scaled curves of the k most similar launches); Bass diffusion models; or judgemental adjustments. Update quickly as the first weeks of data arrive and use wide intervals.</p></div></details>
+<details class="qa" data-id="forecast-ml-e95f1a7" data-l="3"><summary>How do you validate an ML forecaster properly?</summary><div class="ans"><p>Rolling-origin backtesting: several cut-off dates, at each one build features using only data up to the cut-off (including covariates as known then), train or reuse the model, forecast the full horizon, and score per horizon and per segment against seasonal naive/ETS. Add a gap if data arrive with delay. Use the same procedure for hyperparameter tuning and early stopping.</p></div></details>
+<details class="qa" data-id="forecast-ml-96a820e" data-l="2"><summary>Should you include the series ID as a feature in a global model?</summary><div class="ans"><p>Usually yes, as a categorical (LightGBM/CatBoost handle high cardinality reasonably) so the model can learn series-specific offsets — but rely mainly on scaled targets and descriptive attributes so the model generalises to new series. With very many IDs, regularise (min_data_per_group, cat_smooth) or use target-encoded statistics computed in the past.</p></div></details>
+</div>
+</main>
+</body>
+</html>
